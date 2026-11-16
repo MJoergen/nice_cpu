@@ -56,7 +56,9 @@ lines of an address and a name.
 Numbers are hex, with or without `0x`. With symbols, an address may be
 a label, `label+N`, or `label-N`. A label comes before a hex number
 that is spelled the same, such as `add`; a number with `0x` is always
-one. `help` lists the commands, and `help CMD` describes one.
+one. `help` lists the commands, one on a line, with their arguments
+and the first sentence of what each does, and `help CMD` describes
+one in full.
 
 | Command | What it does |
 |---|---|

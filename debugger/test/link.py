@@ -378,6 +378,20 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         out = command(dbg, "help s")
         check("dbg: help on a short name", out.startswith("step (s)"),
               repr(out))
+        out = command(dbg, "help wp")
+        check("dbg: help without the source's indent",
+              "\n " not in out, repr(out))
+        out = command(dbg, "help frob")
+        check("dbg: help on an unknown command", out ==
+              "unknown command 'frob'; 'help' lists them\n", repr(out))
+        names = [name[3:] for name in vars(nicedbg.Debugger)
+                 if name.startswith("do_") and name != "do_EOF"]
+        lines = command(dbg, "help").splitlines()
+        check("dbg: help has a line for each command, in order",
+              [line.split()[0] for line in lines[:-1]] == names,
+              repr(lines))
+        long = [line for line in lines if len(line) > 79]
+        check("dbg: help's lines fit 79 columns", not long, repr(long))
         out = command(dbg, "r TWO+1 1")
         check("dbg: a read at label+N",
               out == f"{at['TWO'] + 1:08x}: 12345678\n", repr(out))

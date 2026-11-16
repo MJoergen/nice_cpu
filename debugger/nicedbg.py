@@ -32,7 +32,9 @@ from __future__ import annotations
 import argparse
 import cmd
 import codecs
+import inspect
 import os
+import re
 import select
 import sys
 import termios
@@ -114,6 +116,13 @@ def number(text: str) -> int:
     if not 0 <= value <= 0xFFFFFFFF:
         raise ValueError(f"'{text}' does not fit in 32 bits")
     return value
+
+
+def help_line(doc: str) -> tuple[str, str]:
+    """The usage of a command and the first sentence of what it does,
+    from its description, "usage: text"."""
+    usage, _, text = " ".join(doc.split()).partition(": ")
+    return usage, re.split(r"\.(?:\s|$)", text)[0]
 
 
 def plain_load(link: Link, path: str) -> int:
@@ -287,9 +296,36 @@ class Debugger(cmd.Cmd):
         return line
 
     def do_help(self, arg: str) -> None:
-        """help [CMD]: lists the commands, or describes one, also by its
-        short name."""
-        super().do_help(ALIASES.get(arg.strip(), arg.strip()))
+        """help [CMD]: lists the commands, or describes one in full. CMD
+        may be a short name. The list has a line for each command: its
+        usage, and the first sentence of its description."""
+        name = ALIASES.get(arg.strip(), arg.strip())
+        if name:
+            method = getattr(self, f"do_{name}", None)
+            doc = inspect.getdoc(method) if method else None
+            if doc:
+                print(doc)
+            else:
+                print(f"unknown command '{name}'; 'help' lists them")
+            return
+        rows = [help_line(inspect.getdoc(getattr(self, f"do_{name}")) or name)
+                for name in self.commands()]
+        width = max(len(usage) for usage, _ in rows)
+        for usage, text in rows:
+            print(f"{usage:{width}}  {text}")
+        print("Numbers are hex. Ctrl-D quits. 'help CMD' says more about a "
+              "command.")
+
+    def commands(self) -> list[str]:
+        """The names of the commands, but EOF, in the order of their
+        definitions, those of a base class first. A board's command of
+        the same name keeps the place of nicedbg's."""
+        names: dict[str, None] = {}
+        for klass in reversed(type(self).__mro__):
+            for attr in vars(klass):
+                if attr.startswith("do_") and attr != "do_EOF":
+                    names[attr[3:]] = None
+        return list(names)
 
     def onecmd(self, line: str) -> bool:
         with self.lock:
@@ -406,7 +442,8 @@ class Debugger(cmd.Cmd):
     # The commands
 
     def do_status(self, arg: str) -> None:
-        """status: the state of the processor, the ROM, and the link."""
+        """status: shows the state of the processor, the ROM, and the
+        link."""
         link = self.link
         ctl = link.read_word(CONTROL)
         version = link.read_word(VERSION)
@@ -464,8 +501,8 @@ class Debugger(cmd.Cmd):
         return "interrupts: " + (", ".join(parts) if parts else "none")
 
     def do_regs(self, arg: str) -> None:
-        """regs: R0 to R15: live while the processor runs, and the stop's
-        while it is paused or has halted (DEBUG.md §6)."""
+        """regs: shows R0 to R15. They are live while the processor runs,
+        and the stop's while it is paused or has halted (DEBUG.md §6)."""
         self._regs()
 
     def do_r(self, arg: str) -> None:
@@ -517,8 +554,8 @@ class Debugger(cmd.Cmd):
         return link.read_word(REGS + n)
 
     def do_set(self, arg: str) -> None:
-        """set Rn VALUE: writes a register of a paused processor, as an
-        instruction would: R0 stays 0, bit 24 of R14 stays 1, and R15 is
+        """set Rn VALUE: writes a register of a paused processor. It does
+        as an instruction would: R0 stays 0, bit 24 of R14 stays 1, and R15 is
         where the processor goes on. SP, SR, and PC name R13, R14, and R15,
         and VALUE may be a label."""
         args = arg.split()
@@ -533,8 +570,8 @@ class Debugger(cmd.Cmd):
             print(f"R{n} {got:08x}")
 
     def do_pc(self, arg: str) -> None:
-        """pc [ADDR]: shows the PC of a paused processor and its
-        instruction, or sets the PC to ADDR, where the processor goes on at
+        """pc [ADDR]: shows the PC of a paused processor, or sets it. It
+        shows the PC and its instruction, or sets the PC to ADDR, where the processor goes on at
         the next go or step. A PC set onto a breakpoint runs its
         instruction."""
         if arg.strip():
@@ -550,8 +587,9 @@ class Debugger(cmd.Cmd):
         print(f"control {self.link.read_word(CONTROL):08x}")
 
     def do_load(self, arg: str) -> None:
-        """load FILE: holds the processor, hides the ROM, clears the memory,
-        disables the breakpoints, and loads the .bin file. 'go' starts
+        """load FILE: loads a .bin file, and leaves the processor held. It
+        holds the processor, hides the ROM, clears the memory, disables
+        the breakpoints, and loads the file. 'go' starts
         it."""
         if not arg.strip():
             raise ValueError("give the .bin file")
@@ -559,8 +597,8 @@ class Debugger(cmd.Cmd):
         print(f"loaded {n} words; the processor is held in reset")
 
     def do_run(self, arg: str) -> None:
-        """run: starts the program at 0 again, from a hold, a halt, a pause,
-        or while it runs. The memory is not loaded again."""
+        """run: starts the program at 0 again. It does so from a hold, a
+        halt, a pause, or while it runs. The memory is not loaded again."""
         rom = self._rom_bit()
         self.link.control(HOLD | rom)
         self.link.control(rom)
@@ -583,8 +621,8 @@ class Debugger(cmd.Cmd):
         self._wait_notice(pauses, halts)
 
     def do_step(self, arg: str) -> None:
-        """step (s) [N]: runs N steps of a paused processor, 1 by default,
-        and shows the PC after each, up to 16. It stops at a breakpoint,
+        """step (s) [N]: runs N steps of a paused processor, 1 by default.
+        It shows the PC after each, up to 16, and stops at a breakpoint,
         after a watchpoint's hit, and at a halt. An empty line steps
         again."""
         link = self.link
@@ -612,7 +650,7 @@ class Debugger(cmd.Cmd):
 
     def do_d(self, arg: str) -> None:
         """d [ADDR [N]]: disassembles N instructions from ADDR, 16 by
-        default, with the labels before them. Without ADDR, it goes on
+        default. The labels go before them. Without ADDR, it goes on
         after the last d, or at the PC of the last pause, step, or
         stop. The disassembler does not tell code from data."""
         args = arg.split()
@@ -632,8 +670,9 @@ class Debugger(cmd.Cmd):
         self.next_dis = addr
 
     def do_symbols(self, arg: str) -> None:
-        """symbols [FILE]: reads the labels of a .sym file, of niceasm.py
-        --symbols or nicebuild.py, in place of those read before. Without
+        """symbols [FILE]: reads the labels of a .sym file. They are those
+        of niceasm.py --symbols or nicebuild.py, and replace those read
+        before. Without
         FILE, it shows how many labels there are."""
         if arg.strip():
             self._use(Symbols(arg.strip()))
@@ -641,8 +680,8 @@ class Debugger(cmd.Cmd):
         print(f"{n} labels")
 
     def do_b(self, arg: str) -> None:
-        """b [ADDR]: sets a breakpoint at ADDR in a free slot, or, without
-        ADDR, lists them."""
+        """b [ADDR]: sets a breakpoint at ADDR, or lists them. A breakpoint
+        takes a free slot."""
         link = self.link
         count = link.read_word(BRK_COUNT)
         if count == 0:
@@ -693,9 +732,9 @@ class Debugger(cmd.Cmd):
         return count
 
     def do_wp(self, arg: str) -> None:
-        """wp [ADDR [r|w|rw]]: sets a watchpoint at ADDR in a free slot,
-        which stops after a step that writes the word (w, the default),
-        reads it (r), or either (rw), or, without ADDR, lists them."""
+        """wp [ADDR [r|w|rw]]: sets a watchpoint at ADDR, or lists them. A
+        watchpoint takes a free slot, and stops after a step that writes
+        the word (w, the default), reads it (r), or either (rw)."""
         link = self.link
         count = self._watch_count()
         en = link.read_word(WCH_EN)
@@ -738,7 +777,7 @@ class Debugger(cmd.Cmd):
         link.write(WCH_EN, [en & ~(3 << 2 * n)])
 
     def do_nmi(self, arg: str) -> None:
-        """nmi VEC: raises an NMI with the vector VEC, 0 to ff (link
+        """nmi VEC: raises an NMI with the vector VEC. VEC is 0 to ff (link
         version 8). A running processor takes it at once, unless it is in
         an interrupt routine, and a paused one at the next go or step."""
         link = self.link
@@ -760,8 +799,8 @@ class Debugger(cmd.Cmd):
             print(f"NMI {vector:02x} pending; 'go' or 'step' takes it")
 
     def do_send(self, arg: str) -> None:
-        r"""send TEXT: sends the text to the program, with escapes such as
-        \n, \r, and \x1b. It waits up to 2 s for room in the program's
+        r"""send TEXT: sends the text to the program. It takes escapes such
+        as \n, \r, and \x1b, and waits up to 2 s for room in the program's
         input buffer."""
         text = codecs.decode(arg, "unicode_escape")
         self.link.send_console(text.encode("latin-1"))
@@ -771,8 +810,9 @@ class Debugger(cmd.Cmd):
         self.link.end_input()
 
     def do_console(self, arg: str) -> None:
-        """console (c): passes the terminal through to the program, the keys
-        to its input and its output to the screen, until Ctrl-]. The Enter
+        """console (c): passes the keys to the program, until Ctrl-]. It
+        passes the terminal through, the keys to the program's input and
+        its output to the screen. The Enter
         key is CR, as in the emulator's window (DEVICES.md §1). Keys that
         its input buffer has no room for wait until the program reads."""
         fd = sys.stdin.fileno()

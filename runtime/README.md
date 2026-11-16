@@ -300,7 +300,9 @@ operand too. A function of the FPU needs k values of the stack above
 its operands, up to 15 in all for `POW`, so a caller keeps at most one
 value on the FPU's stack across these (ABI.md). A program that defines
 one of these labels itself, such as a Zig or Rust module that exports a
-function `pow`, cannot be joined with the library.
+function `pow`, cannot be joined with the library. `nicebuild.py` joins
+the library only for a label that the program uses and does not define,
+so such a program builds as long as it uses no float.
 
 ## C library
 

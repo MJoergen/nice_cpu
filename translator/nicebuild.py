@@ -89,6 +89,16 @@ def float_labels(float_nasm: str) -> Set[str]:
     return set(re.findall(r"^(_[A-Za-z0-9_.]+)", float_nasm, re.M))
 
 
+def uses_float_library(float_nasm: str, program: str) -> bool:
+    """Whether the translated program uses a label of the float library. A
+    label that the program defines itself is no use of the library: a
+    program without floats may export a function log or round of its own,
+    whose label is _log or _round, as the library's is."""
+    defined = set(re.findall(r"^([A-Za-z0-9_.]+)", program, re.M))
+    used = set(re.findall(r"[A-Za-z0-9_.]+", program)) - defined
+    return bool(float_labels(float_nasm) & used)
+
+
 def write_symbols(sym: str, program: str, output: str) -> None:
     """Writes the labels of the assembler's file sym to output, but with the
     name of each wasm function, from the comment before it in program, in
@@ -255,7 +265,7 @@ def main() -> None:
                  read(os.path.join(RUNTIME, "lib.nasm")),
                  read(os.path.join(RUNTIME, "muldiv_soft.nasm" if args.no_mpu else "muldiv_mpu.nasm"))]
         float_nasm = read(os.path.join(RUNTIME, "float_fpu.nasm"))
-        if float_labels(float_nasm) & set(re.findall(r"[A-Za-z0-9_.]+", program)):
+        if uses_float_library(float_nasm, program):
             parts.append(float_nasm)
         if not args.no_trap_report:
             parts.append(read(os.path.join(RUNTIME, "trapmsg.nasm")))

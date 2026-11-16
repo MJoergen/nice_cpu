@@ -422,6 +422,61 @@ def test_floats(tmp: str, lang: str) -> None:
             fail(what + name, f"the module reserves {words} words for its memory, not 2048")
 
 
+# Programs without floats that export a function with the name of a routine
+# of the float library, log in Zig and round in C, whose labels, _log and
+# _round, the library defines too. Each returns 3 * 5.
+OWN_NAMES = {
+    "zig": """var a: i32 = 5;
+export fn log(x: i32) i32 {
+    return x * 3;
+}
+export fn main() i32 {
+    const p: *volatile i32 = &a;
+    return log(p.*);
+}
+""",
+    "c": """volatile int a = 5;
+__attribute__((export_name("round"))) int round_(int x) { return x * 3; }
+int main(void) { return round_(a); }
+""",
+}
+# The same C program with a float operation, which needs the library.
+OWN_NAME_FLOAT_C = """volatile int a = 5;
+volatile float f = 1.5f;
+__attribute__((export_name("round"))) int round_(int x) { return x * 3; }
+int main(void) { return round_(a) + (int)(f * f); }
+"""
+
+
+def test_own_names(tmp: str, lang: str) -> None:
+    """A program that defines a label of the float library and uses none of
+    them is built without the library, and runs: the label is the
+    program's own. With a float operation, the library is joined, and the
+    label is then defined twice, which the assembler reports (runtime
+    README, Float library)."""
+    what = {"c": "C", "zig": "Zig"}[lang] + " with a function named as one of the float library's"
+    source = os.path.join(tmp, f"own.{lang}")
+    with open(source, "w") as f:
+        f.write(OWN_NAMES[lang])
+    out = os.path.join(tmp, f"own_{lang}.bin")
+    if check_build(what, ["-o", out, source], out):
+        check_run(what, run(out), 0, ["~R0  00000000 R1  0000000f .*"])
+    if lang != "c":
+        return
+    source = os.path.join(tmp, "own_float.c")
+    with open(source, "w") as f:
+        f.write(OWN_NAME_FLOAT_C)
+    out = os.path.join(tmp, "own_float.bin")
+    p = build(["-o", out, source])
+    lines = p.stderr.splitlines()
+    if (p.returncode != 1 or "nicebuild: niceasm.py failed with status 1" not in lines
+            or not any(re.fullmatch(r".*: error: symbol '_round' is already defined on line \d+", line)
+                       for line in lines)):
+        fail(what + ", and a float", f"exit status {p.returncode}\n{p.stdout}{p.stderr}")
+    if os.path.exists(out):
+        fail(what + ", and a float", "a .bin file of a program that does not assemble")
+
+
 def test_unwritable(tmp: str) -> None:
     """An output directory without write permission is found before the build.
     Root writes anywhere, so the test is skipped for root."""
@@ -505,6 +560,7 @@ def main() -> None:
             test_rom(tmp, "c")
             test_tail(tmp, "c")
             test_floats(tmp, "c")
+            test_own_names(tmp, "c")
             ran.append("C")
         else:
             skipped.append("C (no clang, wasm-ld, or llvm-ar for wasm32)")
@@ -514,6 +570,7 @@ def main() -> None:
             test_rom(tmp, "zig")
             test_tail(tmp, "zig")
             test_floats(tmp, "zig")
+            test_own_names(tmp, "zig")
             ran.append("Zig")
         else:
             skipped.append("Zig (no zig)")

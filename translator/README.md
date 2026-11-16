@@ -150,10 +150,12 @@ the module `nice`. Zig and Rust take one source file, the root of the
 program, and a Rust program that wants `nice.rs` mounts it itself (runtime
 README). The float library, `runtime/float_fpu.nasm`, which uses the FPU
 of DEVICES.md §11, is joined if the program calls it, for a float
-operation or a function of `math.h`: all of it, 483 words. A wasm trap
-writes a line with its code and address to the console before the
-processor halts, as `trapmsg.nasm` of the runtime README does, unless
-`--no-trap-report` leaves the report out. The defaults are the options of
+operation or a function of `math.h`: all of it, 483 words. A function of
+the program's own with the name of one of the library's, such as an
+exported `log`, is no call of it. A wasm trap writes a line with its code
+and address to the console before the processor halts, as `trapmsg.nasm`
+of the runtime README does, unless `--no-trap-report` leaves the report
+out. The defaults are the options of
 the recipes below, but for `-Wl,--allow-undefined`, which only `--asm`
 adds. The script builds `runtime/libc/libc.a` first if needed. `CLANG`, `ZIG`, and `RUSTC` in the environment name the
 compilers. If the compiler of the language is not installed, the script
@@ -577,7 +579,13 @@ Every `.sym` file must name every function. In each language a program
 with floats is built three ways, and each run must give its result: by
 default; with `--inline-fpu`, whose module must write the FPU's `CMD`,
 which the others must not; and with `--memory-bytes 8190`, whose module must reserve 2048 words for
-its memory. A language whose compiler is
+its memory.
+A C program and a Zig program without floats, each with a function of
+its own that has the name of one of the float library's, `round` and
+`log`, must build and run: the library, which defines the same label,
+is not joined. The C program with a float operation added must fail
+with the assembler's error, that `_round` is already defined.
+A language whose compiler is
 missing is skipped, and the PASS line says which; CI has Zig and clang, not Rust.
 `test/run.py --keep DIR` also leaves each
 program in `DIR/X.bin`, `DIR/X_soft.bin` for the run with `--no-mpu`, or

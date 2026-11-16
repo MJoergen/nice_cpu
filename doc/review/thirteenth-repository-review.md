@@ -180,6 +180,8 @@ C's `hypot` and `atan2` give the same bits, on the first and the fourth line.
 
 **Fix:** in nicebuild, a label counts as a use only where the program does not define it: take the labels at the start of the program's lines out of the set before the test. A program with floats that defines `_log` still fails, as the README says. A case in `build.py` for each: the program above, which must build, and one with a float, whose error is the README's.
 
+**Resolved.** `nicebuild.py` joins the float library only for a label that the program uses and does not define, which `uses_float_library` decides: the labels at the start of the program's lines are taken out of the names it holds. `build.py` builds and runs the program above and the C one that exports `round`, each with R1 = 15, and builds the C one with a float operation added, which must fail with the assembler's "symbol '_round' is already defined". With the old rule the first two fail. runtime/README.md and translator/README.md say that a function of the program's own with such a name is no call of the library. The rule of `runtime/libc/Makefile` for its tests, a label named anywhere, is as it was: no test of the C library defines such a label.
+
 ## 3. Test coverage
 
 ### 3.1 The tests never run 501 to 614 of the 5134 steps of the functions

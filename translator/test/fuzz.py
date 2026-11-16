@@ -65,11 +65,11 @@ that --inline-fpu writes. The operands are biased to the special values:
 the zeros of both signs, the infinities, NaNs, subnormals, ties of
 nearest, and the limits of the conversions. The model takes the
 arithmetic of emulator/test/fpu_model.py, which is exact. A NaN that an
-operation makes may be any NaN (WASM.md): the float library in software
-passes a payload on, and the FPU gives the canonical NaN. So no such NaN
-reaches the memory, main's result, or the sign of copysign, but through
-select(K, x, x != x), which makes every NaN the constant K. The modules of
-even seeds are as they were before floats, seed for seed.
+operation makes may be any NaN, as wasm leaves its bits open: the FPU
+gives the canonical NaN, and the model does not count on it. So no such
+NaN reaches the memory, main's result, or the sign of copysign, but
+through select(K, x, x != x), which makes every NaN the constant K. The
+modules of even seeds are as they were before floats, seed for seed.
 
 In 40% of the modules, statements and divisions may trap: an unreachable
 under a condition, divisions by a value that may be 0, div_s of a value
@@ -248,12 +248,12 @@ ALL_STORES = {**STORES, **FSTORES}
 
 # The floats. A value of f32 or f64 is its bits, as an i32 or i64 is, but
 # for ANY_NAN: the NaN that an operation makes, whose bits wasm leaves
-# open. The float library in software passes a NaN's payload on, and the
-# FPU gives the canonical NaN. So no value that may be ANY_NAN leaves the
-# floats but through guard(), which makes every NaN a constant, or
-# through a comparison or a conversion to an integer, which give the same
-# for every NaN. The arithmetic is that of emulator/test/fpu_model.py,
-# exact and with no host floats.
+# open. The FPU gives the canonical NaN, and the model does not count on
+# it. So no value that may be ANY_NAN leaves the floats but through
+# guard(), which makes every NaN a constant, or through a comparison or a
+# conversion to an integer, which give the same for every NaN. The
+# arithmetic is that of emulator/test/fpu_model.py, exact and with no
+# host floats.
 ANY_NAN = -1
 
 # Binary operations, unary operations, and comparisons: name -> (f32

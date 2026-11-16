@@ -578,9 +578,11 @@ pub const Link = struct {
         if (value & ctl_clear != 0) {
             self.hold();
             const fonts = self.cpu.mem.fonts;
+            const mode_word = self.cpu.mem.screen_mode_word;
             self.cpu.mem.deinit();
             self.cpu.mem = .init(self.gpa);
             self.cpu.mem.fonts = fonts;
+            self.cpu.mem.screen_mode_word = mode_word;
             // The old program is gone, and so are its halt and its stop.
             self.cleared = true;
             self.stop_break = null;

@@ -120,6 +120,14 @@ void nice_screen_clear(void);
 #define NICE_CLOCK_SEC_HI 0xFFFFFF48u
 #define NICE_CLOCK_STATUS 0xFFFFFF49u
 #define NICE_SCREEN 0xFFFF0000u
+// The screen's mode word (DEVICES.md §1.10): write NICE_MODE_CHUNKY and read
+// it back, to find out whether the system has 160x100 pixels, one word each
+// at NICE_SCREEN + 160*y + x, colored as a NICE_BG_* color.
+#define NICE_SCREEN_MODE 0xFFFFFF87u
+#define NICE_MODE_TEXT 0u
+#define NICE_MODE_CHUNKY 1u
+#define NICE_PIXEL_COLS 160
+#define NICE_PIXEL_ROWS 100
 
 // Reads the NICE word at a word address.
 __attribute__((import_module("nice"), import_name("peek")))

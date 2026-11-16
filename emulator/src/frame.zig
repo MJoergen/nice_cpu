@@ -1,6 +1,7 @@
 //! The frame of the window (doc/DEVICES.md §1): the character screen drawn
 //! with the font that the font base selects, in the colors of its words,
-//! with the cursor. It needs no SDL, so its tests run in every build.
+//! with the cursor, or the 160×100 pixels of the chunky mode (§1.10). It
+//! needs no SDL, so its tests run in every build.
 
 const std = @import("std");
 const font = @import("font.zig");
@@ -13,6 +14,17 @@ pub const rows = 25;
 pub const cells = cols * rows;
 pub const width = cols * font.width;
 pub const height = rows * font.height;
+
+/// The chunky mode (doc/DEVICES.md §1.10): 160×100 pixels, one word each,
+/// each a block of 8×8 pixels of the frame, which they cover as the text
+/// does.
+pub const pixel_cols = 160;
+pub const pixel_rows = 100;
+pub const pixels = pixel_cols * pixel_rows;
+pub const block = width / pixel_cols;
+comptime {
+    std.debug.assert(block * pixel_cols == width and block * pixel_rows == height);
+}
 
 /// A color as 8-bit R, G, and B.
 pub const Rgb = [3]u8;
@@ -98,6 +110,9 @@ pub const Frame = struct {
     shown: [cells]u64,
     /// The font of the last draw.
     glyphs: Glyphs,
+    /// The color of each pixel of the chunky mode, bits 31..20 of its word,
+    /// shifted down. All ones while the frame does not show the mode.
+    shown_pixels: [pixels]u32,
 
     pub fn init(gpa: std.mem.Allocator, invert: bool) !Frame {
         return .{
@@ -105,6 +120,7 @@ pub const Frame = struct {
             .invert = invert,
             .shown = @splat(std.math.maxInt(u64)),
             .glyphs = font.glyphs,
+            .shown_pixels = @splat(std.math.maxInt(u32)),
         };
     }
 
@@ -122,6 +138,11 @@ pub const Frame = struct {
         }
         const cur = cursor.at(blink_on);
         var changed = false;
+        if (self.shown_pixels[0] != std.math.maxInt(u32)) {
+            // From the chunky mode: every cell is drawn again.
+            self.shown_pixels = @splat(std.math.maxInt(u32));
+            self.shown = @splat(std.math.maxInt(u64));
+        }
         for (words, &self.shown, 0..) |w, *shown, i| {
             const look: Look = if (cur != null and cur.?.cell == i) cur.?.look else .none;
             const now = @as(u64, @backingInt(look)) << 32 | w;
@@ -130,6 +151,25 @@ pub const Frame = struct {
             self.drawCell(i, w, look);
             changed = true;
         }
+        return changed;
+    }
+
+    /// Draw the pixels of the chunky mode whose color has changed since the
+    /// last draw, all of them after a draw of the text, and return whether
+    /// any had. A pixel is the background color of its word.
+    pub fn drawPixels(self: *Frame, words: *const [pixels]u32) bool {
+        var changed = false;
+        for (words, &self.shown_pixels, 0..) |w, *shown, i| {
+            const color = w >> 20;
+            if (color == shown.*) continue;
+            shown.* = color;
+            const p = pixel(background(w));
+            const x0 = i % pixel_cols * block;
+            const y0 = i / pixel_cols * block;
+            for (0..block) |y| @memset(self.pixels[(y0 + y) * width + x0 ..][0..block], p);
+            changed = true;
+        }
+        if (changed) self.shown = @splat(std.math.maxInt(u64));
         return changed;
     }
 
@@ -314,4 +354,51 @@ test "the font base selects the font RAM or the ROM (DEVICES §1.8)" {
         try cpu.write(cpu_.font_base, v);
         try testing.expectEqual(&font.glyphs, fontOf(&cpu, &buf));
     }
+}
+
+test "the chunky mode draws each word as a block of 8x8 in its background (DEVICES §1.10)" {
+    var f = try Frame.init(testing.allocator, false);
+    defer f.deinit(testing.allocator);
+    var px: [pixels]u32 = @splat(0);
+    // Red at (0, 0), and white at (159, 99), the last pixel; bits 19..0 do
+    // not count, so the last is white whatever its character.
+    px[0] = 0xF000_0000;
+    px[pixels - 1] = 0xFFF_FFF41;
+    try testing.expect(f.drawPixels(&px));
+    try testing.expectEqual(red, at(&f, 0, 0));
+    try testing.expectEqual(red, at(&f, 7, 7));
+    try testing.expectEqual(black, at(&f, 8, 0));
+    try testing.expectEqual(black, at(&f, 0, 8));
+    try testing.expectEqual(black, at(&f, width - 9, height - 1));
+    try testing.expectEqual(white, at(&f, width - 8, height - 8));
+    try testing.expectEqual(white, at(&f, width - 1, height - 1));
+    // Only a change of the color draws: pixel (1, 0) at x = 8.
+    try testing.expect(!f.drawPixels(&px));
+    px[0] = 0xF00F_FF41;
+    try testing.expect(!f.drawPixels(&px));
+    f.pixels[0] = 0x1234_5678;
+    px[1] = 0x0F00_0000;
+    try testing.expect(f.drawPixels(&px));
+    try testing.expectEqual(0x1234_5678, f.pixels[0]);
+    try testing.expectEqual(0xFF00_FF00, at(&f, 8, 7));
+}
+
+test "a change of the mode draws the whole frame again" {
+    var f = try Frame.init(testing.allocator, false);
+    defer f.deinit(testing.allocator);
+    var words: [cells]u32 = @splat(0x000F_FF41);
+    var px: [pixels]u32 = @splat(0);
+    _ = f.draw(&words, &font.glyphs, .{}, true);
+    try testing.expectEqual(white, at(&f, 4, 6));
+    // The pixels are black, as their first draw shows.
+    try testing.expect(f.drawPixels(&px));
+    try testing.expectEqual(black, at(&f, 4, 6));
+    // Back to the same text: every cell is drawn again.
+    try testing.expect(f.draw(&words, &font.glyphs, .{}, true));
+    try testing.expectEqual(white, at(&f, 4, 6));
+    try testing.expectEqual(white, at(&f, width - 12, height - 26));
+    // And to the same pixels again.
+    try testing.expect(f.drawPixels(&px));
+    try testing.expectEqual(black, at(&f, 4, 6));
+    try testing.expectEqual(black, at(&f, width - 12, height - 26));
 }

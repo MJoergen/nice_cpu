@@ -4,7 +4,8 @@
 
 const std = @import("std");
 const c = @import("sdl");
-const Cpu = @import("cpu.zig").Cpu;
+const cpu_ = @import("cpu.zig");
+const Cpu = cpu_.Cpu;
 const frame = @import("frame.zig");
 const keys = @import("keys.zig");
 
@@ -101,8 +102,24 @@ pub const Window = struct {
         return true;
     }
 
-    /// Draw the cells that changed, and show the frame.
+    /// Draw the cells or the pixels that changed, as the mode word selects
+    /// (doc/DEVICES.md §1.10), and show the frame.
     fn redraw(self: *Window, cpu: *const Cpu, base: u32, blink_on: bool) void {
+        if (self.drawn(cpu, base, blink_on)) {
+            _ = c.SDL_UpdateTexture(self.texture, null, self.frame.pixels.ptr, frame.width * 4);
+        }
+        _ = c.SDL_RenderClear(self.renderer);
+        _ = c.SDL_RenderTexture(self.renderer, self.texture, null, null);
+        _ = c.SDL_RenderPresent(self.renderer);
+    }
+
+    /// Draw the frame, and return whether it changed.
+    fn drawn(self: *Window, cpu: *const Cpu, base: u32, blink_on: bool) bool {
+        if (cpu.peek(cpu_.screen_mode) == cpu_.mode_chunky) {
+            var px: [frame.pixels]u32 = undefined;
+            cpu.mem.peekWords(base, &px);
+            return self.frame.drawPixels(&px);
+        }
         var glyphs: frame.Glyphs = undefined;
         var words: [frame.cells]u32 = undefined;
         for (&words, 0..) |*w, i| w.* = cpu.peek(base +% @as(u32, @intCast(i)));
@@ -111,12 +128,7 @@ pub const Window = struct {
             .col = cpu.peek(frame.cursor_base + 1),
             .row = cpu.peek(frame.cursor_base + 2),
         };
-        if (self.frame.draw(&words, frame.fontOf(cpu, &glyphs), cursor, blink_on)) {
-            _ = c.SDL_UpdateTexture(self.texture, null, self.frame.pixels.ptr, frame.width * 4);
-        }
-        _ = c.SDL_RenderClear(self.renderer);
-        _ = c.SDL_RenderTexture(self.renderer, self.texture, null, null);
-        _ = c.SDL_RenderPresent(self.renderer);
+        return self.frame.draw(&words, frame.fontOf(cpu, &glyphs), cursor, blink_on);
     }
 };
 

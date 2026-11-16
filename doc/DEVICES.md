@@ -27,6 +27,7 @@ data read returns.
   - [1.7 Read counter](#17-read-counter)
   - [1.8 Font](#18-font)
   - [1.9 Receive interrupt](#19-receive-interrupt)
+  - [1.10 Chunky mode](#110-chunky-mode)
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
 - [4. Timer](#4-timer)
@@ -53,7 +54,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0x10000000`–`0x5FFFFFFF` | 5 × 2^28 | The byte windows onto words `0x00000000`–`0x03FFFFFF` (§9). |
 | `0xFFFE0000`–`0xFFFE1FFF` | 8192 | The font RAM (§1.8). |
 | `0xFFFE2000`–`0xFFFE3FFF` | 8192 | The character ROM (§1.8). |
-| `0xFFFF0000`–`0xFFFF07CF` | 2000 | The emulator's character screen, 80×25 (§1.1). |
+| `0xFFFF0000`–`0xFFFF3E7F` | 16000 | The emulator's screen: the characters of 80×25 in its first 2000 words (§1.1), or 160×100 pixels (§1.10). |
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
 | `0xFFFFFF02` | 1 | The console's receive interrupt (§1.9). |
@@ -64,7 +65,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
 | `0xFFFFFF83`–`0xFFFFFF85` | 3 | Reserved for I/O. |
 | `0xFFFFFF86` | 1 | Reserved for I/O. The emulator's window takes its font base from it (§1.8). |
-| `0xFFFFFF87` | 1 | Reserved for I/O. |
+| `0xFFFFFF87` | 1 | The screen's mode word (§1.10). |
 | `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (§11). With `--no-fpu`, the emulator makes them ordinary memory. |
 | `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card (§5). |
@@ -76,7 +77,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 
 ### 1.1 Screen
 
-The emulator maps a character screen of 25 rows of 80 words at `0xFFFF0000`, row by row: row r, column c is the word at `0xFFFF0000` + 80·r + c, row 0 is the top, column 0 is the left edge, and the last word is at `0xFFFF07CF`. The original emulator of 2004, `NICE.pm` ([REFERENCES.md](REFERENCES.md)), maps the screen at `0x400`. Here it is at `0xFFFF0000`, so that it does not overlap the code of programs longer than 1024 words, and the emulator's option `-2004` puts it back at `0x400` for the 2004 example programs.
+The emulator maps a character screen of 25 rows of 80 words at `0xFFFF0000`, row by row: row r, column c is the word at `0xFFFF0000` + 80·r + c, row 0 is the top, column 0 is the left edge, and the last word is at `0xFFFF07CF`. In the chunky mode of §1.10, the screen is 16000 words of pixels instead. The original emulator of 2004, `NICE.pm` ([REFERENCES.md](REFERENCES.md)), maps the screen at `0x400`. Here it is at `0xFFFF0000`, so that it does not overlap the code of programs longer than 1024 words, and the emulator's option `-2004` puts it back at `0x400` for the 2004 example programs.
 
 The screen word has the character in bits 7..0, the background color in bits 31..20, and the foreground color in bits 19..8. Each color is three 4-bit components, red, green, and blue, from the high bits to the low. A component `n` gives the byte `n × 0x11`, so `0x0` is no intensity and `0xF` is full. The emulator's option `--color` prints the screen with these colors as ANSI escapes. Programs that write the 2004 layout should note one difference: the 2004 IDE (`nice_ide.pl`) inverts the three foreground components, so that `0x0` is full intensity and `0xF` is none, and here it is not inverted. The emulator's option `--invert-fg` inverts it, for the 2004 programs. A word with only a character, such as `0x41`, is black on black here, but white on black in the 2004 IDE. The background is the same in both. The runtime names 15 colors, such as `NICE_FG_YELLOW` and `NICE_BG_BLUE`, in `runtime/colors.nasm` for assembly and in `nice.h`, `nice.zig`, and `nice.rs` ([runtime README](../runtime/README.md#screen-colors)).
 
@@ -94,7 +95,7 @@ The emulator reads its input from stdin, or from the file of its option `--input
 
 ### 1.3 Window
 
-The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the font of §1.8, which is Spleen until the program selects a font of its own, with the colors of §1.1. The window shows the 2000 words of the screen and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
+The emulator built with a window (its README says how) shows the screen in a window with its option `--window`, 1280×800 pixels, while the program runs. Each character is 16×32 pixels, from the font of §1.8, which is Spleen until the program selects a font of its own, with the colors of §1.1. The window shows the 2000 words of the screen, or the 16000 pixels of the chunky mode (§1.10), and nothing else; the console still writes to stdout, or to the host with `--link`. When the program halts, the window stays, with the last screen, until it is closed. Closing the window before then ends the run. With `--link` ([DEBUG.md §7](DEBUG.md#7-transports)), the window opens when the emulator starts and stays open over every run. It shows the screen also while the processor is held, halted, or paused, so the host's writes to the screen show at once. Closing the window ends the emulator, as a signal does.
 
 ### 1.4 Cursor
 
@@ -106,7 +107,7 @@ The window draws a cursor from three words, numbered as the screen registers of 
 | `0xFFFFFF81` | The cursor's column, 0 to 79. |
 | `0xFFFFFF82` | The cursor's row, 0 to 24. |
 
-The cursor swaps the foreground and background colors of its character. With a column or row out of range, no cursor is shown. The words are 0 at the start of a run, so the cursor is off.
+The cursor swaps the foreground and background colors of its character. With a column or row out of range, or in the chunky mode (§1.10), no cursor is shown. The words are 0 at the start of a run, so the cursor is off.
 
 ### 1.5 Keyboard
 
@@ -156,7 +157,7 @@ The font RAM and the base are 0 at the start of a run, and the debug link's clea
 
 The window draws every cell from the font that the base selects. While the font RAM is selected, a write to a glyph shows at the next redraw in every cell with its code, and a write to the base changes the whole screen at once. In the emulator, the base is ordinary memory that the window only reads, as the cursor's words are (§1.4), and is one of the words of NiceMonMEGA65's screen registers (§8).
 
-The fonts are memory to every access. An instruction fetch reads them as a data read does, `--dump` and the debug link read and write them, and a write to the ROM is dropped from each. `--screen` and `--color` print the codes of the screen as text, whatever the font.
+The fonts are memory to every access. An instruction fetch reads them as a data read does, `--dump` and the debug link read and write them, and a write to the ROM is dropped from each. `--screen` and `--color` print the codes of the screen as text, whatever the font. The chunky mode (§1.10) draws no font.
 
 ### 1.9 Receive interrupt
 
@@ -195,6 +196,23 @@ A program waits for a byte with E = 0, so that a byte that comes between its rea
     :               ...                     ; the byte is in R1
 
 The loop can leave a request pending: a byte that enters after E is cleared is read at once, and its request stays. A program that then sets another vector table and E = 1 takes it through that table. So before such a hand-over, a program clears the enable and takes the request: it sets E = 1 and then clears it again, with VBASE still on the table whose routine for v is only `RTI`. A request that a stopped timer leaves pending needs the same.
+
+### 1.10 Chunky mode
+
+The mode word at `0xFFFFFF87` selects how the screen is shown:
+
+| Value | Mode |
+|---|---|
+| 0 | Text: the 80×25 characters of §1.1. |
+| 1 | Chunky: 160×100 pixels, one word each. |
+
+In the chunky mode, the pixel in column x, 0 to 159, and row y, 0 to 99, is the word at `0xFFFF0000` + 160·y + x, row by row, as for the characters, so the 16000 words end at `0xFFFF3E7F`. Row 0 is the top, and column 0 the left edge. The pixel's color is bits 31..20 of its word, in the format of the background of §1.1, and bits 19..0 are ignored, so a screen of blank cells looks the same in both modes. Each pixel is a square block of 8×8 of the window's pixels (§1.3), and the 160×100 cover the same 1280×800 as the 25 rows of text. The cursor (§1.4) and the font (§1.8) are not shown. With `-2004`, the pixels start at `0x400`, as the characters do.
+
+The word reads back the mode it keeps. A write of a mode that the system has keeps it, and a write of any other value writes 0, the text. So a program that wants the chunky mode writes 1 and reads the word back: 1 means the system has the mode, and 0 that it does not, and the screen is still text. The word is 0 at the start of a run and after a reset of the system, and the debug link's clear makes it 0 ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). In the emulator it is a word of the memory, with the rule above for a write, so the clear makes it 0 as it does all the memory.
+
+`--screen` prints only the size of the mode, `Screen: 160x100 pixels`. `--color` prints the size and the pixels, two rows to a line, each pair as an upper half block, `▀`, with the top pixel's color in the foreground and the bottom one's in the background. The black pixels at the end of a line, and the lines after the last with a pixel that is not black, are left out, as the blanks of the text are.
+
+The mode changes only how the screen is shown. A write to a pixel's word is a write to memory in either mode, and the words keep their values when the mode changes. The routines of the runtime that write the screen, such as `nice_screen_put` and `nice_screen_clear`, write characters, and so are for the text.
 
 ## 2. Math unit
 
@@ -523,8 +541,8 @@ The emulator's station serves the frames that a board's does, by the same rules,
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF03`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF87`, `0xFFFFFF90`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF87` for its screen registers, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFD0`–`0xFFFFFFFF` for the debug registers of the link, which it serves in version 8 (**Debug link** below). It keeps the NMI request of version 8, but does not pass it to the core (MJoergen/NiceMonMEGA65#106).
-- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset.
+- **Reserved words.** `0xFFFFFF03`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF86`, `0xFFFFFF90`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF87` for its screen registers, with the mode word of §1.10 at `0xFFFFFF87`, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFD0`–`0xFFFFFFFF` for the debug registers of the link, which it serves in version 8 (**Debug link** below). It keeps the NMI request of version 8, but does not pass it to the core (MJoergen/NiceMonMEGA65#106).
+- **Screen.** A board's screen may be larger than the emulator's 80×25. NiceMonMEGA65's has up to 32K words. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset. A board may lack the chunky mode of §1.10, and then its mode word reads 0, so a program finds out (§1.10). A board that has it applies its display offset in the mode too. NiceMonMEGA65 does not have the mode yet (MJoergen/NiceMonMEGA65#144), and its `0xFFFFFF87` reads 0 and takes no write, so a program finds no mode there.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
 - **NMI.** No device of this file raises NMI. The debug link's request is a source of NMI ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), and the only one of the emulator but for `--nmi`, its own source, which goes first. A board may have more, such as a button or a watchdog, and merges them into the core's one NMI port, each request merging only with its own (ISA.md §7.1). NiceMonMEGA65 does not wire the link's request yet (MJoergen/NiceMonMEGA65#106).
 - **Receive interrupt.** A system may leave out the receive interrupt of §1.9. Then it has nothing at `0xFFFFFF02`, and the timer is its only source of IRQ. A board raises the request from its input FIFO, so one request covers its keyboard and its UART. NiceMonMEGA65 does not have it yet (MJoergen/NiceMonMEGA65#104).

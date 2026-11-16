@@ -24,7 +24,7 @@ OPTS_wrap      = -d 0xffffffff:1
 PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
   wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone skip skipreq clock clockhost stack \
-  conirq fpu fpustack fpudec fpufunc
+  conirq fpu fpustack fpudec fpufunc chunky
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -95,6 +95,9 @@ OPTS_net     = -d 0x200:17 -d 0xffffffb0:16
 # The frames sent go to test/eth.frames.out, checked after the probes.
 OPTS_eth     = --eth-in test/eth.in --eth-out test/eth.frames.out -d 0x200:33 -d 0xffffffc0:16
 OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
+OPTS_chunky  = --color -d 0xffffff87:1
+# chunky again, with --screen, which prints only the size of the mode.
+OPTS_chunky_screen = -s
 OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # fpu again, with the FPU's words ordinary memory: each read returns the
 # last value written there, or 0.
@@ -150,6 +153,7 @@ programs:
 	$(call check,skip_limit,test/skip.bin)
 	$(call check,skip_mem,test/skip.bin)
 	$(call check,stack_none,$(ASM)/count.bin)
+	$(call check,chunky_screen,test/chunky.bin)
 	@if cmp -s test/eth.frames.out test/eth.frames.expected; then echo "PASS eth frames"; \
 	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi
 	@rm -f test/*.out

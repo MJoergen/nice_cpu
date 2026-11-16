@@ -51,6 +51,13 @@ pub const font_rom: u32 = 0xFFFE_2000;
 pub const font_words: u32 = font.glyphs.len * font.height;
 pub const font_base: u32 = 0xFFFF_FF86;
 
+/// The screen's mode word (doc/DEVICES.md §1.10): 0 for the text of §1.1,
+/// 1 for 160×100 pixels. A write of another value writes 0, so that a
+/// program finds out which modes there are by reading back what it wrote.
+pub const screen_mode: u32 = 0xFFFF_FF87;
+pub const mode_text: u32 = 0;
+pub const mode_chunky: u32 = 1;
+
 /// Row `i % 32` of glyph `i / 32` of the character ROM.
 fn romRow(i: u32) u32 {
     return font.glyphs[i / font.height][i % font.height];
@@ -61,7 +68,8 @@ fn romRow(i: u32) u32 {
 /// The character ROM is part of it: a write there is dropped, so its pages
 /// are never allocated, and a read of an unallocated page looks there.
 /// Without `fonts` (`--no-font`), the font RAM and the character ROM are
-/// ordinary memory.
+/// ordinary memory, and without `screen_mode_word` (`--no-screen-mode`), the
+/// screen's mode word.
 pub const Memory = struct {
     const page_bits = 12;
     const Page = [1 << page_bits]u32;
@@ -71,6 +79,7 @@ pub const Memory = struct {
     pages: std.AutoHashMapUnmanaged(u20, *Page) = .empty,
     last: ?struct { n: u20, page: *Page } = null,
     fonts: bool = true,
+    screen_mode_word: bool = true,
 
     pub fn init(gpa: std.mem.Allocator) Memory {
         return .{ .gpa = gpa };
@@ -124,6 +133,7 @@ pub const Memory = struct {
             if (f >= font_words) return;
             value &= 0xFFFF;
         }
+        if (self.screen_mode_word and addr == screen_mode and value > mode_chunky) value = mode_text;
         const n: u20 = @truncate(addr >> page_bits);
         if (self.lookup(n)) |page| {
             page[addr & offset_mask] = value;
@@ -3548,6 +3558,32 @@ test "the font RAM keeps bits 15..0 of a write (DEVICES §1.8)" {
     try testing.expectEqual(0xFFFF_8001, cpu.read(font_ram - 1));
 }
 
+test "the mode word keeps the modes there are, and writes 0 for others (DEVICES §1.10)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try testing.expectEqual(mode_text, cpu.read(screen_mode));
+    try cpu.write(screen_mode, mode_chunky);
+    try testing.expectEqual(mode_chunky, cpu.read(screen_mode));
+    for ([_]u32{ 2, 0x101, 0xFFFF_FFFF }) |v| {
+        try cpu.write(screen_mode, mode_chunky);
+        try cpu.write(screen_mode, v);
+        try testing.expectEqual(mode_text, cpu.read(screen_mode));
+    }
+    // The words beside it are memory.
+    try cpu.write(screen_mode + 1, 7);
+    try testing.expectEqual(7, cpu.read(screen_mode + 1));
+}
+
+test "without the mode word, it is memory (--no-screen-mode)" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    cpu.mem.screen_mode_word = false;
+    try cpu.write(screen_mode, 2);
+    try testing.expectEqual(2, cpu.read(screen_mode));
+    try cpu.write(screen_mode, 0xFFFF_FFFF);
+    try testing.expectEqual(0xFFFF_FFFF, cpu.read(screen_mode));
+}
+
 test "without the fonts, their words are memory (--no-font)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
@@ -3558,6 +3594,8 @@ test "without the fonts, their words are memory (--no-font)" {
     try testing.expectEqual(0x1234_5678, cpu.read(a + 6));
     try cpu.write(font_ram, 0xFFFF_8001);
     try testing.expectEqual(0xFFFF_8001, cpu.read(font_ram));
+    try cpu.write(screen_mode, 2);
+    try testing.expectEqual(mode_text, cpu.read(screen_mode));
     var words: [2]u32 = undefined;
     cpu.mem.peekWords(font_rom + 32 * 0x41 + 5, &words);
     try testing.expectEqual([2]u32{ 0, 0x1234_5678 }, words);

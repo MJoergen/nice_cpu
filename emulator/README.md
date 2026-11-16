@@ -104,7 +104,7 @@ goes through these steps on a small program, and a
 | Option | Effect |
 |---|---|
 | `-t`, `--trace` | Print one line per instruction (see below). |
-| `-s`, `--screen` | After halting, print the 80×25 character screen. |
+| `-s`, `--screen` | After halting, print the 80×25 character screen, or only the size of the chunky mode (DEVICES.md §1.10). |
 | `--color` | Like `--screen`, with the colors of each word as 24-bit ANSI escapes (see below). |
 | `--invert-fg` | Like `--color`, with the foreground inverted, as in the 2004 IDE. |
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
@@ -124,6 +124,7 @@ goes through these steps on a small program, and a
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
 | `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
+| `--no-screen-mode` | Make the screen's mode word, `0xFFFFFF87`, ordinary memory, so that a program that reaches it runs as on an FPGA core with none (DEVICES.md §1.10). The window shows the chunky mode while the word is 1. |
 | `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time, and make a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skip N wait steps (see Performance counters and Waiting below). |
 | `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
@@ -151,6 +152,16 @@ and wherever the colors change, and `ESC[0m` at its end. The foreground is
 not inverted, as it is in the 2004 IDE, unless `--invert-fg` asks for it. Then
 each foreground component `n` becomes `0xF − n`, and the background stays.
 
+In the chunky mode of DEVICES.md §1.10, `--screen` prints only `Screen:
+160x100 pixels`. `--color` prints that line and then the pixels, two rows
+to a line, starting with `|`: each pair is an upper half block, `▀`, with
+the color of the top pixel, bits 31..20 of its word, in the foreground and
+that of the bottom one in the background, with the escape
+`ESC[38;2;R;G;B;48;2;R;G;Bm` at the start of the line and wherever the
+colors change, and `ESC[0m` at its end. Black pairs are dropped from the end
+of each line, and lines with no pixel that is not black from the bottom.
+`--invert-fg` does not change the pixels.
+
 The exit status says how the run ended:
 
 | Status | When |
@@ -169,7 +180,9 @@ empty argument counts as no program.
 ## Window
 
 With `--window`, niceemu shows the 80×25 screen in a window of 1280×800
-pixels while the program runs, as DEVICES.md §1 specifies. A resized window
+pixels while the program runs, as DEVICES.md §1 specifies, or the 160×100
+pixels of the chunky mode, when the mode word at `0xFFFFFF87` selects it
+(DEVICES.md §1.10). A resized window
 scales the screen and keeps its aspect. The characters are from the font
 that the font base at `0xFFFFFF86` selects (DEVICES.md §1.8): the
 character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at
@@ -181,7 +194,8 @@ tests can be compared ([hdl/README.md](../hdl/README.md)). The window
 still draws Spleen, and bits 15..0 of the font RAM's words. The
 window draws a cursor from `0xFFFFFF80`–`0xFFFFFF82`, and redraws about 60
 times a second. A cell is redrawn when its word, the cursor on it, or its
-glyph changes. `-2004` and `--invert-fg` work with it as with `--screen`.
+glyph changes, and a pixel of the chunky mode when its color changes.
+`-2004` and `--invert-fg` work with it as with `--screen`.
 
 The console writes to stdout, as without the window. It reads the file of
 `--input`, if given, and then the keys typed into the window, with the
@@ -263,8 +277,8 @@ address twice and a file with no words are errors.
 | `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (DEVICES.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
 | `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (DEVICES.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
 | `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
-| `0xFFFF0000`–`0xFFFF07CF` | 2000 | Character screen, 80×25. Ordinary memory. With `-2004` it is at `0x00000400`–`0x00000BCF` instead. |
-| `0xFFFF07D0`–`0xFFFFFEFF` | 63280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
+| `0xFFFF0000`–`0xFFFF3E7F` | 16000 | Screen: the characters of 80×25 in its first 2000 words, or 160×100 pixels in the chunky mode (DEVICES.md §1.10). Ordinary memory. With `-2004` it is at `0x00000400`–`0x0000427F` instead. |
+| `0xFFFF3E80`–`0xFFFFFEFF` | 49280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02` | 1 | `CONSOLE_IRQ`, the console's receive interrupt (DEVICES.md §1.9): the vector in bits 7..0 and the enable in bit 8. |
@@ -272,7 +286,8 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (DEVICES.md §4). Raises IRQ once every P steps. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF87` | 8 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
+| `0xFFFFFF80`–`0xFFFFFF86` | 7 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
+| `0xFFFFFF87` | 1 | The screen's mode word (DEVICES.md §1.10): 0 for the text, 1 for the chunky mode. A write of another value writes 0. With `--no-screen-mode`, ordinary memory. |
 | `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (DEVICES.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
 | `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (DEVICES.md §5). Two slots, with the images of `--sd0` and `--sd1`. |

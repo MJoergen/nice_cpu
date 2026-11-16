@@ -5,6 +5,8 @@ const Cpu = @import("cpu.zig").Cpu;
 const Clock = @import("cpu.zig").Clock;
 const Image = @import("cpu.zig").Image;
 const sector_bytes = @import("cpu.zig").sector_bytes;
+const screen_mode = @import("cpu.zig").screen_mode;
+const mode_chunky = @import("cpu.zig").mode_chunky;
 const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
 const eth = @import("eth.zig");
@@ -30,7 +32,8 @@ const usage =
     \\Options:
     \\  -t, --trace          Print one line per instruction.
     \\  -s, --screen         Print the 80x25 character screen at 0xFFFF0000.
-    \\      --color          Like --screen, with the colors as ANSI escapes.
+    \\      --color          Like --screen, with the colors as ANSI escapes,
+    \\                       and the pixels of the 160x100 mode.
     \\      --invert-fg      With --color, invert the foreground, as the 2004 IDE does.
     \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
@@ -63,6 +66,8 @@ const usage =
     \\      --no-font        Make the font RAM and the character ROM,
     \\                       0xFFFE0000-0xFFFE3FFF, ordinary memory, for
     \\                       comparing traces with an FPGA core.
+    \\      --no-screen-mode Make the screen's mode word, 0xFFFFFF87,
+    \\                       ordinary memory, for the same.
     \\      --step-time      Count one microsecond per step in 0xFFFFFF44 and
     \\                       0xFFFFFF45, and in the clock at 0xFFFFFF46-
     \\                       0xFFFFFF49 from 0, rather than the host's time,
@@ -125,6 +130,7 @@ const Options = struct {
     cycle_counter: bool = true,
     fpu: bool = true,
     fonts: bool = true,
+    screen_mode_word: bool = true,
     /// Count one microsecond per step rather than the host's time.
     step_time: bool = false,
     timer_irq: bool = true,
@@ -471,6 +477,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.fpu = false;
         } else if (std.mem.eql(u8, arg, "--no-font")) {
             opts.fonts = false;
+        } else if (std.mem.eql(u8, arg, "--no-screen-mode")) {
+            opts.screen_mode_word = false;
         } else if (std.mem.eql(u8, arg, "--step-time")) {
             opts.step_time = true;
         } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
@@ -718,6 +726,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     cpu.cycle_counter = opts.cycle_counter;
     cpu.fpu_enabled = opts.fpu;
     cpu.mem.fonts = opts.fonts;
+    cpu.mem.screen_mode_word = opts.screen_mode_word;
     // The clock counts from here, as a board's from its reset. A halt
     // stops it, the step limit does not (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
@@ -1052,6 +1061,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     cpu.cycle_counter = opts.cycle_counter;
     cpu.fpu_enabled = opts.fpu;
     cpu.mem.fonts = opts.fonts;
+    cpu.mem.screen_mode_word = opts.screen_mode_word;
     // Stopped while the processor is held, halted, or paused, and set to
     // 0 by the reset of a start (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
@@ -1223,6 +1233,7 @@ fn printMemory(out: *std.Io.Writer, cpu: *const Cpu, d: Dump) !void {
 /// colors of its words as 24-bit ANSI escapes, changing only where they
 /// change, and ends with a reset. With `invert`, the foreground is inverted.
 fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, invert: bool) !void {
+    if (cpu.peek(screen_mode) == mode_chunky) return printPixels(out, cpu, base, color);
     var words: [frame.rows][frame.cols]u32 = undefined;
     var rows: [frame.rows][frame.cols]u8 = undefined;
     var last_row: usize = 0;
@@ -1255,6 +1266,44 @@ fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, inv
             try out.writeAll("\x1b[0m");
         }
         try out.writeByte('\n');
+    }
+}
+
+/// Print the screen of the chunky mode (doc/DEVICES.md §1.10): its size,
+/// and with `color` its pixels, two rows to a line, as upper half blocks
+/// with the top pixel's color in the foreground and the bottom one's in
+/// the background, as 24-bit ANSI escapes, changing only where they change.
+/// Each line ends with a reset. The black pixels at the end of a line, and
+/// the lines after the last that has a pixel not black, are left out, as
+/// the blanks of the text are.
+fn printPixels(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool) !void {
+    try out.print("Screen: {d}x{d} pixels\n", .{ frame.pixel_cols, frame.pixel_rows });
+    if (!color) return;
+    var px: [frame.pixels]u32 = undefined;
+    cpu.mem.peekWords(base, &px);
+    const cols = frame.pixel_cols;
+    var lens: [frame.pixel_rows / 2]usize = @splat(0);
+    var last: usize = 0;
+    for (&lens, 0..) |*n, l| {
+        for (0..cols) |x| {
+            if ((px[2 * l * cols + x] | px[(2 * l + 1) * cols + x]) >> 20 != 0) n.* = x + 1;
+        }
+        if (n.* != 0) last = l + 1;
+    }
+    for (lens[0..last], 0..) |n, l| {
+        try out.writeByte('|');
+        var prev: ?[2]frame.Rgb = null;
+        for (0..n) |x| {
+            const now = [2]frame.Rgb{ frame.background(px[2 * l * cols + x]), frame.background(px[(2 * l + 1) * cols + x]) };
+            if (prev == null or !std.meta.eql(prev.?, now)) {
+                try out.print("\x1b[38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{
+                    now[0][0], now[0][1], now[0][2], now[1][0], now[1][1], now[1][2],
+                });
+                prev = now;
+            }
+            try out.writeAll("\u{2580}");
+        }
+        try out.writeAll("\x1b[0m\n");
     }
 }
 

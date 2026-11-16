@@ -1363,7 +1363,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `--no-cycle-counter`. The emulator's font RAM and character ROM, at
   `0xFFFE0000`–`0xFFFE3FFF` (DEVICES.md §1.8), are not in the core's
   memory model, so the emulator makes them ordinary memory with
-  `--no-font`. The floating-point unit's eight words,
+  `--no-font`, and neither is the screen's mode word at `0xFFFFFF87`
+  (DEVICES.md §1.10), which `--no-screen-mode` makes memory. The floating-point unit's eight words,
   `0xFFFFFF88`–`0xFFFFFF8F` (DEVICES.md §11), are memory on both sides,
   with the generic `G_FPU` false and `--no-fpu`, which leaves the FPU to
   its own tests. The generic `G_FETCH_STATS` false makes the

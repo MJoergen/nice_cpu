@@ -450,6 +450,15 @@ CASES: List[Case] = [
     # C gives 1 for 1^NaN and NaN^0; a NaN operand gives the NaN here.
     ("POW 1^NaN is the NaN", [d(1.0), QN], 0, "POW", [N], 0, None),
     ("POW NaN^0 is the NaN", [QN, 0], 0, "POW", [N], 0, None),
+    # For a Y within 2^-20 of 1 and an |X| above 2^31, e_pow.c takes
+    # log2 Y from a short series, which is up to some 700 ulp off, and
+    # POW takes it as for any other X (DEVICES.md §11.3). These are the
+    # correctly rounded values, by mpmath at 800 bits; e_pow.c gives
+    # 398, 447, 431, and 634 units in the last place more or less.
+    ("POW 0.99999981^3.29e9", [0x3FEFFFFF9B2003F2, 0x41E88783927172C9], 0, "POW", [0x08276C7D15F0CB77], 0, None),
+    ("POW 0.99999990^5.52e9", [0x3FEFFFFFCBEEABD1, 0x41F48E19F147AC52], 0, "POW", [0x0FAF6BBC0A66701A], 0, None),
+    ("POW 1.00000024^2.69e9", [0x3FF000003F7D991F, 0x41E40B1019BBF5A9], 0, "POW", [0x794F04B6E25838C8], 0, None),
+    ("POW 0.99999982^3.91e9, near 2^-1009", [0x3FEFFFFFA01AAAAA, 0x41ED25051130BE25], 0, "POW", [0x00EF631EAF81FC87], 0, None),
     ("POW2 10 is 1024", [d(10.0)], 0, "POW2", [d(1024.0)], 0, None),
     ("POW2 0.5 is SQRT 2", [d(0.5)], 0, "POW2", [0x3FF6A09E667F3BCD], 0, None),
     ("POW2 1023", [d(1023.0)], 0, "POW2", [0x7FE0000000000000], 0, None),
@@ -1077,6 +1086,7 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
     pi/2, for ATAN2 also pairs whose exponents are far apart, for the
     logarithms also next to 1, for EXP, POW2, and POW those whose result
     is finite and not zero, for POW also a negative Y with a whole X,
+    and a Y within 2^-20 of 1 with an |X| above 2^31,
     and for HYPOT pairs whose exponents are far apart, some of them huge
     or tiny."""
 
@@ -1112,6 +1122,17 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
                 return [a]
     if name == "POW":
         while True:
+            if rnd.randrange(5) == 0:
+                # Y within 2^-20 of 1 and |X| above 2^31, where e_pow.c
+                # takes the series that POW leaves out (DEVICES.md
+                # §11.3), with a result of any exponent.
+                near = rnd.getrandbits(rnd.randint(1, 31))
+                y = 1023 << 52 | near if rnd.randrange(2) else (1023 << 52) - 1 - near
+                ly = math.log2(float(F64.value(y)))
+                x = rnd.uniform(-1020, 1020) / ly if ly else 0.0
+                if 2.0**31 < abs(x) < 2.0**64:
+                    return [y, d(x)]
+                continue
             y = binade(1023 - 30, 1023 + 30) & ~(1 << 63)
             ly = math.log2(float(F64.value(y)))
             if ly == 0:

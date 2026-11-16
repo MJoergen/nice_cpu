@@ -96,8 +96,17 @@ def pow_args(rng: random.Random, single: bool) -> Tuple[float, ...]:
         return (logu(-10, 10, False)(rng, single), rng.uniform(-40, 40))
     if r < 0.6:
         return (-logu(-5, 5, False)(rng, single), float(rng.randint(-60, 60)))
-    if r < 0.8:
+    if r < 0.75 or (r < 0.85 and single):
         return (1 + rng.uniform(-1e-3, 1e-3), rng.uniform(-1e5, 1e5))
+    if r < 0.85:
+        # A base within 2^-20 of 1 to a power beyond 2^31, where the FPU
+        # departs from FreeBSD's pow (DEVICES.md §11.3), with a result of
+        # any exponent.
+        while True:
+            x = 1 + rng.choice([1, -1]) * math.ldexp(rng.uniform(0.5, 1), -rng.randint(22, 51))
+            y = rng.uniform(-1020, 1020) / math.log2(x)
+            if 2.0 ** 31 < abs(y) < 2.0 ** 64:
+                return (x, y)
     return (logu(-1074, 1023)(rng, single), logu(-30, 30)(rng, single))
 
 

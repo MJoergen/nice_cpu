@@ -801,12 +801,12 @@ request to the ACK of the read of `FPU_STATUS` after it, which adds some
 
 `make timing UNIT=fpu` places the FPU alone, out of context
 ([Timing](#timing)). On the MEGA65, with all the functions of
-DEVICES.md §11.3 (#182), it leaves +0.898 ns on its own paths with the
-default flow, less than the budget of 1.0 ns, on a path of the
-arithmetic unit to a DSP, and +9.502 ns at its inputs and +7.958 ns at
-its outputs; with the timing flow, +1.036 ns. It takes 9582 LUTs, 2704
-registers, 5 DSPs, and 5.5 block RAMs, the ROMs of the functions and
-their constants: more LUTs than the pipelined core.
+DEVICES.md §11.3 (#182), it leaves +0.364 ns on its own paths with the
+default flow, less than the budget of 1.0 ns, on the path from the top
+of the stack to the data of a read, and at its inputs +9.502 ns and at
+its outputs +7.958 ns; with the timing flow, +0.811 ns. It takes 9536
+LUTs, 2698 registers, 5 DSPs, and 5.5 block RAMs, the ROMs of the
+functions and their constants: more LUTs than the pipelined core.
 
 `tb_fpu_unit` checks the arithmetic unit, and `tb_fpu` the FPU, against
 the model of `emulator/test/fpu_model.py` (What the tests check), and

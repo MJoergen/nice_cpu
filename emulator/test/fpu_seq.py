@@ -160,10 +160,10 @@ CONSTANTS: Dict[str, int] = {
     "ivln10lo": bits(2.50829467116452752298e-11),
     "log10_2hi": bits(3.01029995663611771306e-01),
     "log10_2lo": bits(3.69423907715893078616e-13),
-    # FreeBSD's e_pow.c; its P1 to P5 are e_exp.c's, and its ivln2 is invln2
+    # FreeBSD's e_pow.c; its P1 to P5 are e_exp.c's. Its thrd, ivln2,
+    # ivln2_h, and ivln2_l are those of the series that POW leaves out.
     "dp_h1": bits(5.84962487220764160156e-01),
     "dp_l1": bits(1.35003920212974897128e-08),
-    "thrd": bits(3.3333333333333331e-01),
     "pL1": bits(5.99999999999994648725e-01),
     "pL2": bits(4.28571428578550184252e-01),
     "pL3": bits(3.33333329818377432918e-01),
@@ -177,8 +177,6 @@ CONSTANTS: Dict[str, int] = {
     "cp": bits(9.61796693925975554329e-01),
     "cp_h": bits(9.61796700954437255859e-01),
     "cp_l": bits(-7.02846165095275826516e-09),
-    "ivln2_h": bits(1.44269502162933349609e00),
-    "ivln2_l": bits(1.92596299112661746887e-08),
 }
 
 # The constants that the C code writes as hex, against their decimal.
@@ -207,7 +205,6 @@ assert CONSTANTS["log10_2hi"] == 0x3FD34413509F6000
 assert CONSTANTS["log10_2lo"] == 0x3D59FEF311F12B36
 assert CONSTANTS["dp_h1"] == 0x3FE2B80340000000
 assert CONSTANTS["dp_l1"] == 0x3E4CFDEB43CFD006
-assert CONSTANTS["thrd"] == 0x3FD5555555555555
 assert CONSTANTS["pL1"] == 0x3FE3333333333303
 assert CONSTANTS["pL6"] == 0x3FCA7E284A454EEF
 assert CONSTANTS["lg2"] == 0x3FE62E42FEFA39EF
@@ -216,8 +213,6 @@ assert CONSTANTS["lg2_l"] == 0xBE205C610CA86C39
 assert CONSTANTS["cp"] == 0x3FEEC709DC3A03FD
 assert CONSTANTS["cp_h"] == 0x3FEEC709E0000000
 assert CONSTANTS["cp_l"] == 0xBE3E2FE0145B01F5
-assert CONSTANTS["ivln2_h"] == 0x3FF7154760000000
-assert CONSTANTS["ivln2_l"] == 0x3E54AE0BF85DDF44
 
 # The programs. The names of the functions of §11.3 are in capitals; the
 # others are the helpers they call.
@@ -698,8 +693,9 @@ def EXP(x):
     return scale2(1.0 - ((lo - (x*c)/(2.0 - c)) - hi), k)
 
 def pow_log(ax):
-    # The log2 of ax of FreeBSD's e_pow.c, as t1 + t2, where |y| is at
-    # most 2^31. GETEXP and GETMANT give its n and ax, as they give the
+    # The log2 of ax of FreeBSD's e_pow.c, as t1 + t2, which C computes
+    # this way where |y| is at most 2^31, and POW for every y. GETEXP
+    # and GETMANT give its n and ax, as they give the
     # k and x' of the logarithms. Its k is 0 or 1, bp[k] is 1 + 0.5*k,
     # and dp_h[k] and dp_l[k] are (bp - 1)*2*dp_h1 and (bp - 1)*2*dp_l1,
     # which are +0 for k = 0, as C's are. C's first t_h, which it makes
@@ -730,17 +726,6 @@ def pow_log(ax):
     z_l = cp_l*p_h + p_l*cp + (bp - 1.0)*(2.0*dp_l1)
     t1 = chop(((z_h + z_l) + (bp - 1.0)*(2.0*dp_h1)) + n)
     return t1, z_l - (((t1 - n) - (bp - 1.0)*(2.0*dp_h1)) - z_h)
-
-
-def pow_log1(ax):
-    # The log2 of an ax within 2^-20 of 1 of FreeBSD's e_pow.c, as
-    # t1 + t2, where |y| is above 2^31.
-    t = ax - 1.0
-    w = (t*t)*(0.5 - t*(thrd - t*0.25))
-    u = ivln2_h*t
-    v = t*ivln2_l - w*invln2
-    t1 = chop(u + v)
-    return t1, v - (t1 - u)
 
 
 def pow_exp2(p_h, p_l):
@@ -807,6 +792,15 @@ def POW(x, y):
     # as Y and X: x^y. Its yisint is found where it is used: y is a
     # whole number where y == trunc(y), and odd where 0.5*y is not. The
     # sign of x is tested as x < 0 or 1/x < 0, which holds for -0.
+    #
+    # One part of C's code is left out. Where |y| is above 2^31 and x is
+    # within 2^-20 of 1, C takes log2(x) from a short series, and counts
+    # on the product ivln2_h*t to be exact: "t has 20 trailing zeros",
+    # "ivln2_h has 21 sig. bits". But ivln2_h, 0x3FF7154760000000, has
+    # 24, so the product rounds where t has more than 29, and the result
+    # is up to some 700 ulp off. pow_log, which C takes for every other
+    # y, is within the bound of POW there too, so it is taken here for
+    # every y that the tests before it let through.
     if y == 0.0:
         return 1.0
     if x == 1.0:
@@ -866,9 +860,7 @@ def POW(x, y):
             if y > 0.0:
                 return pow_sign(x, y)*H(0x7ff00000)
             return pow_sign(x, y)*0.0
-        t1, t2 = pow_log1(abs(x))
-    else:
-        t1, t2 = pow_log(abs(x))
+    t1, t2 = pow_log(abs(x))
     return pow_exp2(chop(y)*t1, (y - chop(y))*t1 + y*t2)*pow_sign(x, y)
 
 

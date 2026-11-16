@@ -24,7 +24,7 @@ from fractions import Fraction
 from math import isqrt
 
 import fpu_seq
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 # The flags, as bits 11..8 of FPU_STATUS hold them, shifted down by 8.
 INVALID = 1
@@ -901,6 +901,12 @@ class FPU:
         for r in results:
             self.push(r)
 
+    # The steps that function() runs, for the coverage of fpu_vectors.py:
+    # None, or a set that function() adds to, of a function's name, the
+    # number of a step of fpu_seq.PROGRAMS, and whether the step jumped,
+    # which only a JZ does one time and not another.
+    steps_run: Optional[Set[Tuple[str, int, bool]]] = None
+
     def function(self, c: Command) -> None:
         """A function of phase 2: its operands popped as any command pops
         them, then pushed again, and its sequence run on the stack. The
@@ -919,6 +925,7 @@ class FPU:
         pc = 0
         while pc < len(prog.code):
             step = prog.code[pc].split()
+            at, jumped = pc, False
             pc += 1
             if step[0] == "K":
                 self.push(prog.constants[step[1]])
@@ -928,6 +935,7 @@ class FPU:
             elif step[0] == "JZ":
                 if F64.is_zero(self.pop(1)[0]):
                     pc = prog.targets[step[1]]
+                    jumped = True
             elif step[0] == "JMP":
                 pc = prog.targets[step[1]]
             elif step[0] == "POLE":
@@ -935,6 +943,8 @@ class FPU:
             else:
                 n = int(step[1]) if len(step) > 1 else 0
                 self.command(NUMBERS[step[0]] | n << 8)
+            if FPU.steps_run is not None:
+                FPU.steps_run.add((c.name, at, jumped))
         r = self.x()
         fl = 0
         if F64.is_nan(r):

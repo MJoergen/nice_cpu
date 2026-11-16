@@ -20,9 +20,10 @@ A line that starts with # is a comment.
 The vectors are of two kinds. The directed ones come from the lists
 below, by group: the registers, every command number and the command
 words that are not valid, the depths 0, 1, 2, 15, and 16, the special
-values each with each, the rounding, the conversions, and the decimal
-commands. The random ones are a sequence of accesses from a seed, so
-that the depth and the faults take part.
+values each with each, the rounding, the conversions, the decimal
+commands, and the operands of the functions that run the steps which
+the other groups leave out. The random ones are a sequence of accesses
+from a seed, so that the depth and the faults take part.
 
 The coverage counts bins: the command, the class of each operand, the
 rounding case (exact, down, up, or a tie, by magnitude), the class of
@@ -30,6 +31,13 @@ the result, and the flags each command sets. For each S form it also
 counts the results that the command and then ROUND32 would not give,
 which round twice. It fails if a bin that can occur is empty, and if a
 command sets a flag that its row of FLAGS does not allow.
+
+Each step of the sequence of each function of §11.3 is a bin too, and
+a JZ is two, one for each way it goes. These count the directed vectors
+only, so that a step runs whatever the seed is: the emulator's table and
+the ROM of the cores are checked step by step only where an operand
+takes the path. The steps of DEAD_STEPS, which no operand reaches, need
+not run, and it fails if one of them does.
 
     fpu_vectors.py [-o FILE] [--seed S] [--count N]
 
@@ -47,6 +55,7 @@ from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import fpu_seq  # noqa: E402
 from fpu_model import (  # noqa: E402
     CANONICAL_NAN,
     CMD,
@@ -193,10 +202,71 @@ def decode(word: int) -> Tuple[Optional[str], int, int, Optional[str]]:
     return c.name, n, s, None
 
 
+# The operands of the functions that run the steps which the special
+# values and the hand-checked cases leave out, so that the directed
+# vectors run every step of every sequence, and take every JZ both ways
+# (the coverage, below). Their results are the model's: they show that
+# the emulator and the cores run these steps as the model does.
+STEP_OPERANDS: Dict[str, List[List[int]]] = {
+    # rem_pio2, which the three inline: an X of each sign in its ranges
+    # for n = 3 and n = 4; next to an odd multiple of pi/4, where it
+    # corrects fn by -1 and by +1; the high words that it leaves to its
+    # medium case; and an |X| from pi to 5 pi/4.
+    "SIN": [[0x4012D97D00000000], [0xC01196EE32DF51DA], [0x40165CC3CE764361], [0xC0192429B3D39DDF],
+            [0xC02AB41B09886FEA], [0xC1361738372F2277], [0xBFF921FB00000000], [0x4012D97CFDD2CB40],
+            [0x401921FB34528476], [0x400C000010000001]],
+    "COS": [[0x40139710A595C57C], [0xC01196EE32DF51DA], [0x4016A2454D0B42A6], [0xC0192429B3D39DDF],
+            [0xC02AB41B09886FEA], [0xC1361738372F2277], [0xBFF921FBE5F31BED], [0x4012D97C00000000],
+            [0x401921FBFFFFFFFF], [0xC00A20593AE436F6]],
+    # And tan_k for an X from -0.6744 to -pi/4.
+    "TAN": [[0x40158F9852255CBE], [0xC01196EE32DF51DA], [0x4016A2454D0B42A6], [0xC0192429B3D39DDF],
+            [0xC02AB41B09886FEA], [0xC1361738372F2277], [0x3FF921FB54442D18], [0x400921FB54442D18],
+            [0xC012D97CC407E2A9], [0xC01921FB00000001], [0x400921FC00000000], [0xBFE66827758397C4]],
+    # A negative X from 0.5 to 0.975 in size.
+    "ASIN": [[0xBFEF3332FFFFFFFF]],
+    # A reduced X from the fraction 0x6147A on, with k = 0 and with
+    # another k, and one below that fraction with k = 0.
+    "LN": [[0x3FF66876247B3559], [0x0B46A6213E555974], [0x3FF3916834170500]],
+    # Y and X. First an X from 2^31 to 2^64 in size, where the result is
+    # an infinity or a zero with the sign of pow_sign: -0.5 and -2 to
+    # 2^52 + 1 and to -(2^52 + 1), which are odd, a negative Y below 1
+    # and one above 1 in size to an even X, and a positive Y of each.
+    # Then pow_exp2 at z = 1024, with an overflow and without, and at
+    # z = -1075, with the results -0 and 2^-1074.
+    "POW": [[0xBFE0000000000000, 0x4330000000000001], [0xBFE0000000000000, 0xC330000000000001],
+            [0xC000000000000000, 0x4330000000000001], [0xC000000000000000, 0xC330000000000001],
+            [0xAC09B913DEA7B198, 0xC2DD792900000000], [0xF8E7D1A620357B8E, 0xC388F211ABA10DBC],
+            [0x0000000000000001, 0xC3E0000000000000], [0x432C6BF526341B24, 0xC3C455D55F50A97F],
+            [0x400B4776BDAAE23C, 0x408214F65B5259F0], [0x400B93072EF726EA, 0x4081ECB40477AE3C],
+            [0xC000000000000000, 0xC090CC0000000000], [0x3FE58505B2C7265E, 0x409D57F96C2D8F35]],
+}
+
+# The steps that no operand reaches, each with its reason: the function,
+# the first and the last step, numbered from 0 without the labels as
+# fpu_seq.PROGRAMS has them, and why. A JZ need not go the way that
+# leads to one of them. fpu_seq.py compiles a function as its source
+# stands, so these steps are in the tables too.
+DEAD_STEPS: List[Tuple[str, int, int, str]] = [
+    ("ATAN2", 181, 184, "atan_k's result for an x of -2^66 or below, and ATAN2 calls it with |Y / X|"),
+    ("ATAN2", 357, 361, "atan_k's -z for a negative x, and ATAN2 calls it with |Y / X|"),
+    ("POW2", 55, 55, "pow_exp2 at z = 1024, where POW2 has p_l = 0, so p_l + ovt > z - p_h holds"),
+    ("POW2", 78, 78, "pow_exp2 at z = -1075, where POW2 has p_l = 0, so p_l <= z - p_h holds"),
+]
+
+
 class Coverage:
     def __init__(self) -> None:
         self.bins: Dict[Tuple[str, ...], int] = {}
         self.errors: List[str] = []
+
+    def steps(self, ran: Set[Tuple[str, int, bool]]) -> None:
+        """The steps of the functions that ran, each a bin, and a JZ a
+        bin for each way it went."""
+        for name, at, jumped in ran:
+            if fpu_seq.PROGRAMS[name].code[at].startswith("JZ "):
+                self.hit("step", name, str(at), "jumps" if jumped else "passes")
+            else:
+                self.hit("step", name, str(at))
 
     def hit(self, *key: str) -> None:
         self.bins[key] = self.bins.get(key, 0) + 1
@@ -313,7 +383,8 @@ class Coverage:
         req += [("once", key) for key in FLAGS if key.endswith(".S")]
         for key, classes in RESULT_CLASSES.items():
             req += [("result", key, k) for k in classes]
-        return req
+        dead = dead_bins()
+        return req + [b for b in step_bins() if b not in dead]
 
     def check(self) -> List[str]:
         missing = [" ".join(b) for b in self.required() if b not in self.bins]
@@ -321,7 +392,42 @@ class Coverage:
             for (kind, *rest) in self.bins:
                 if kind == "rounding" and rest[0] == key and rest[1] not in cases:
                     self.errors.append(f"{key} rounds as {rest[1]}, which ROUNDING says cannot occur")
+        for b in dead_bins():
+            if b in self.bins:
+                self.errors.append(" ".join(b) + " runs, which DEAD_STEPS says cannot occur")
         return missing
+
+
+def step_bins() -> List[Tuple[str, ...]]:
+    """A bin for every step of every function, and two for a JZ, one for
+    each way it can go."""
+    bins: List[Tuple[str, ...]] = []
+    for name, prog in fpu_seq.PROGRAMS.items():
+        for at, step in enumerate(prog.code):
+            if step.startswith("JZ "):
+                bins += [("step", name, str(at), "jumps"), ("step", name, str(at), "passes")]
+            else:
+                bins.append(("step", name, str(at)))
+    return bins
+
+
+def dead_bins() -> Set[Tuple[str, ...]]:
+    """The bins of DEAD_STEPS, and of each JZ the way that leads to one of
+    them."""
+    dead = {(name, at) for name, first, last, _why in DEAD_STEPS for at in range(first, last + 1)}
+    bins: Set[Tuple[str, ...]] = set()
+    for name, prog in fpu_seq.PROGRAMS.items():
+        for at, step in enumerate(prog.code):
+            if step.startswith("JZ "):
+                if (name, prog.targets[step[3:]]) in dead:
+                    bins.add(("step", name, str(at), "jumps"))
+                if (name, at + 1) in dead:
+                    bins.add(("step", name, str(at), "passes"))
+                if (name, at) in dead:
+                    bins |= {("step", name, str(at), "jumps"), ("step", name, str(at), "passes")}
+            elif (name, at) in dead:
+                bins.add(("step", name, str(at)))
+    return bins
 
 
 def state_text(s: State) -> str:
@@ -473,6 +579,11 @@ def directed(g: Generator, rnd: random.Random) -> None:
     rounding(g, rnd)
     conversions(g, rnd)
     decimal_cmds(g, rnd)
+
+    g.comment("The functions: the operands that run the rest of their steps")
+    for name, rows in STEP_OPERANDS.items():
+        for ops in rows:
+            g.cmd(ops, name)
 
 
 def random_finite(rnd: random.Random, lo: int = 1, hi: int = 2046) -> int:
@@ -782,8 +893,12 @@ def main() -> None:
     p.add_argument("--count", type=int, default=20000, help="the accesses of the random sequence (20000)")
     a = p.parse_args()
     g = Generator()
+    ran: Set[Tuple[str, int, bool]] = set()
+    FPU.steps_run = ran
     directed(g, random.Random(a.seed))
     hand_cases(g)
+    FPU.steps_run = None
+    g.coverage.steps(ran)
     directed_count = len(g.lines)
     random_run(g, a.seed, a.count)
     failed = False

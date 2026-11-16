@@ -788,10 +788,14 @@ adds 20000 more, in which the depth and the faults take part. The
 coverage counts bins: the class of each operand of each command, the
 rounding case, exact, down, up, or a tie, the class of the result, the
 flags each command sets, and for each S form the results that the
-command and then `ROUND32` would not give. `make test` runs it, and it fails if a bin
-that can occur is empty, if a command sets a flag that its row of
-`FLAGS` does not allow, or if a line does not parse back and replay on
-the model. With `-o FILE` it writes the vectors. `make test` writes them
+command and then `ROUND32` would not give. Each step of the sequence of
+each function is a bin too, and a `JZ` is two, one for each way it goes:
+these count the directed lines only, so that every step runs whatever
+the seed is, and the emulator and the cores are checked on it.
+`make test` runs it, and it fails if a bin that can occur is empty, if
+a command sets a flag that its row of `FLAGS` does not allow, if a step
+of `DEAD_STEPS` runs, the 11 steps that no operand reaches, or if a
+line does not parse back and replay on the model. With `-o FILE` it writes the vectors. `make test` writes them
 to `test/fpu.vectors.out`, and the unit test of `src/fpu.zig` replays
 them on the emulator's unit (Floating-point unit above); `tb_fpu` in
 `hdl/` replays them on the FPU of the cores. `make fpu-long` writes and replays a

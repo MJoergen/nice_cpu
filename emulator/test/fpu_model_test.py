@@ -1099,21 +1099,29 @@ def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decim
 def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
     """Random finite operands of the function name, within its domain:
     for SIN, COS, and TAN up to 2^20 pi/2, some next to a multiple of
-    pi/2, for ATAN2 also pairs whose exponents are far apart, and pairs
-    whose quotient is just above a power of two with the result just
-    below it, for the logarithms also next to 1, for EXP, POW2, and POW
-    those whose result is finite and not zero, for POW also a negative Y
-    with a whole X, and a Y within 2^-20 of 1 with an |X| above 2^31,
-    and for HYPOT pairs whose exponents are far apart, some of them huge
-    or tiny, and pairs just above the same power of two."""
+    pi/2 and some next to an odd multiple of pi/4, for ATAN2 also pairs
+    whose exponents are far apart, and pairs whose quotient is just
+    above a power of two with the result just below it, for the
+    logarithms also next to 1, for EXP, POW2, and POW those whose result
+    is finite and not zero, for POW also a negative Y with a whole X,
+    and a Y within 2^-20 of 1 with an |X| above 2^31, and for HYPOT
+    pairs whose exponents are far apart, some of them huge or tiny, and
+    pairs just above the same power of two."""
 
     def binade(lo: int, hi: int) -> int:
         return rnd.getrandbits(52) | rnd.randint(lo, hi) << 52 | rnd.getrandbits(1) << 63
 
     if name in ("SIN", "COS", "TAN"):
-        if rnd.randrange(3) == 0:
+        kind = rnd.randrange(4)
+        if kind == 0:
             k = rnd.randint(1, 1 << rnd.randint(1, 20))
             return [(F64.round(k * pi / 2)[0] + rnd.randint(-20, 20)) | rnd.getrandbits(1) << 63]
+        if kind == 1:
+            # Next to an odd multiple of pi/4, where X 2/pi rounds to a
+            # half, and rem_pio2 corrects the n that it gets from it:
+            # the nearest double, most of the time.
+            k = 2 * rnd.randint(0, (1 << rnd.randint(1, 20)) - 1) + 1
+            return [(F64.round(k * pi / 4)[0] + rnd.choice([0, 0, 0, -1, 1])) | rnd.getrandbits(1) << 63]
         return [binade(1023 - 30, 1023 + 19)]
     if name in ("ASIN", "ACOS"):
         return [binade(1023 - rnd.choice([1, 2, 5, 30]), 1022)]

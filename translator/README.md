@@ -464,8 +464,10 @@ from a program's module in these ways:
   `WL.NAME.memory`. Every exported function gets the label `_name`, also
   when the name starts with `_`, so `__addsf3` becomes `___addsf3`.
 - There is no `___wasm_start`, and a start function, an export
-  `__wasm_call_ctors`, `memory.size`, and `memory.grow` are errors. So is any float instruction that would call the
-  float library, which a library module could be part of.
+  `__wasm_call_ctors`, `memory.size`, and `memory.grow` are errors. So
+  is any float instruction that uses the FPU, through the float library
+  or inline: a library module has no `___wasm_start`, which checks for
+  the FPU (WASM.md, Start-up).
 - Only the start of the memory is reserved, and it is part of the program
   image, with the data segments in it. By default, that is up to the end of
   the last data segment or the highest initial value of a mutable `i32`
@@ -678,4 +680,4 @@ programs are joined with the float library as `fuzz.py` joins them, and
 `--inline-fpu` implies it. So it compares the trap paths,
 `memory.grow`, which `fuzz.py`'s model does not know, and each mode of
 the translator, with floats and without. `--library` takes no floats,
-as a library module may not call the float library. It is not part of `make test`, since it takes minutes and needs git.
+as a library module may not use the FPU. It is not part of `make test`, since it takes minutes and needs git.

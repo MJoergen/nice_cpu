@@ -5031,7 +5031,8 @@ class FunctionTranslator:
                 raise WasmError(f"function {self.idx}: {name} is not supported", at)
             if self.t.library and (op in FLOAT_OPS or op in TRUNC_OPS or op in TRUNC_SAT_OPS
                                    or op in FLOAT_CMP_OPS):
-                # These call the float library, which would then call itself.
+                # These use the FPU, and a library module has no
+                # ___wasm_start to check for it (fpu_check).
                 raise WasmError(f"function {self.idx}: a library module may not use {name}", at)
             if not reachable:
                 # Skip to the else or end that makes the code reachable again.

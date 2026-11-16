@@ -1,4 +1,4 @@
-; The trap report (trapmsg.nasm) for a code above 7. As trapreport.nasm, but
+; The trap report (trapmsg.nasm) for a code above 9. As trapreport.nasm, but
 ; with R1 = 12. The report writes "trap ?: unknown trap at 00001abc" and a
 ; newline: "?" in place of the digit, and the name of code 0. The processor
 ; halts as there, with exit status 2 (as after any halt but HALT), R1 = 12,

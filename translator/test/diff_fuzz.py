@@ -36,8 +36,8 @@ NaN's bits are the same in both, and are compared too.
 --no-mpu, --grow (--memory-pages 2), --unchecked (--no-bounds-checks),
 --library (--library lib --memory-bytes 65536), and --inline-fpu, which
 implies --floats, are the modes of nicewasm that both versions run in.
---library takes no floats, as a library module may not call the float
-library (WASM.md). A module whose translations differ
+--library takes no floats, as a library module may not use the FPU
+(translator/README.md). A module whose translations differ
 is written to diff_SEED.wasm in the current directory.
 
 make diff runs a few hundred modules against OLD, main by default. This
@@ -428,7 +428,7 @@ def main() -> None:
     nompu, grow = "--no-mpu" in args, "--grow" in args
     floats = "--floats" in args or "--inline-fpu" in args
     if floats and "--library" in args:
-        sys.exit("diff_fuzz.py: --library takes no floats: a library module may not call the float library")
+        sys.exit("diff_fuzz.py: --library takes no floats: a library module may not use the FPU")
     opts: List[str] = []
     pages = 1
     if grow:

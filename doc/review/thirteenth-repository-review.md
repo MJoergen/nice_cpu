@@ -283,6 +283,8 @@ The same run had two more changes, which pass too:
 
 **Fix:** a line of each in `encoding.nasm` or `errors.py`, and a word in §10.2: a product has no space before its `*`.
 
+**Resolved.** `errors.py` has `.ORG 0x10 + 2` and `.RES 1 + 1`, each before a `HALT` whose address shows the sum, `MOVE R1, 4* x` and `JMP 4* x` with x = 3, which give 12, and `MOVE R1, 'a' +1`, whose error must be the one of a missing comma, as a string joins nothing. Each of the three changes above now fails one or two of them. ISA.md §10.2 says that a product has no space before its `*`, and that `4* x` is the product, and the assembler's README says the same. The warning for `4 * x` keeps its text.
+
 ### 3.7 Smaller gaps
 
 - **`--ram` alone, and a library module.** nicewasm reserves only the start of the memory for `--memory-bytes`, for `--ram`, and for a library module. With the last two out of that test, the tests of the runtime, the translator, and the benchmarks pass. WASM.md gives `nice.grow` as −1 for both.

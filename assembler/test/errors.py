@@ -143,6 +143,10 @@ CASES: List[Tuple[str, str]] = [
      " commas separate the operands"),
     (" .DAT 1 2,3", "1: error: no comma between '1' and '2': on a line with commas, only"
      " commas separate the operands"),
+    # A string is never part of an expression, so no operator joins it
+    # to the word beside it.
+    (" MOVE R1, 'a' +1", "1: error: no comma between ''a'' and '+1': on a line with commas, only"
+     " commas separate the operands"),
     (" MOVE R1 a + b", "1: error: MOVE takes 2 operands, got 4"),
     (" JMP a b", "1: error: JMP takes 1 operand, got 2"),
     ("S .EQU 'ab'", "1: error: a string ('ab') is only allowed after .ASCII_L and .ASCII_B"),
@@ -298,6 +302,14 @@ GOOD: List[Tuple[str, str]] = [
     # ADD is 3<<21, R1 1<<14, a constant source 0x30<<7, R3 3: 00605803.
     (" ADD R1, 2 + 1, R3", "00000000 00605803\n00000001 00000003\n"),
     ("N .EQU 2 + 3\n .DAT 4*N, N - 1", "00000000 00000014\n00000001 00000004\n"),
+    # .ORG and .RES take one operand, so all of their words: HALT, 0x60<<21,
+    # at 0x12 and at 2.
+    (" .ORG 0x10 + 2\n HALT", "00000012 0c000000\n"),
+    (" .RES 1 + 1\n HALT", "00000002 0c000000\n"),
+    # A '*' at the end of a word joins it to the next, as a '+' does: 4*3.
+    # MOVE is 0, R1 1<<14, and a constant source 0x30<<7: 00005800.
+    ("x .EQU 3\n MOVE R1, 4* x", "00000000 00005800\n00000001 0000000c\n"),
+    ("x .EQU 3\n JMP 4* x", "00000000 0003d800\n00000001 0000000c\n"),
     (" .DAT 1 +5", "00000000 00000001\n00000001 00000005\n"),
     (" .DAT 1 +5, 3", "00000000 00000006\n00000001 00000003\n"),
     (" INT 1 + 2", "00000000 0c400003\n"),

@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V2.3` | none yet |
 | `V2.2` | `V2.2` |
 | `V2.1` | `V2.1` |
 | `V2.0` | `V2.0`, `V2.0.1` |
@@ -36,6 +37,221 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V2.3 (2026-11-16)
+
+The FPU has the functions of `math.h`, `SIN` to `HYPOT`, each a sequence
+of its own commands, in the emulator and in `hdl/src/fpu.vhd` (#182,
+#183). The C library's `math.h` runs on them, and the float library in
+software is gone (#184). A program that uses floats checks for the FPU
+at its start, and traps with code 9 without it (#179). The emulator's
+screen has a chunky mode of 160x100 pixels (#187). niceasm takes spaces
+in an expression (#174), the runtime names the screen's colors (#175), a
+heap works in a memory with only its start reserved (#168), the C
+library has `scanf` without floats (#177), and the Enter key is CR in
+nicedbg's console and ends a line in the runtime (#189, #191).
+
+**Upgrade notes.**
+
+- **The float library in software is gone** (#184): `runtime/float.zig`,
+  `float.wasm`, and the generated `float.nasm`, `--no-fpu` of nicewasm
+  and nicebuild, `make -C runtime float.nasm`, and `NO_FPU=1` in the
+  Makefiles of the runtime, the C library, and the benchmarks. A program
+  that uses floats runs only on a system with the FPU. Its start-up code
+  checks for it and traps with code 9 (#179), where in `V2.2` it
+  computed wrong results. The check writes `0xFFFFFF88`, `0xFFFFFF8C`,
+  and `0xFFFFFF8D`, which lie in the range of the screen's registers on
+  a NiceMonMEGA65 before its `V2.2`. `niceemu --no-fpu` stays.
+- **The functions of `math.h` have other bits** (#184). `log`, `log2`,
+  `exp`, and `pow` follow fdlibm and FreeBSD where they followed musl,
+  so `exp(1)` is the double above e. The float functions round a
+  binary64 result, so `acosf(-1)` and `atanf` of an infinity are the
+  nearest floats. `exp2` and `hypot` are new. The library defines the
+  label of each, such as `_pow`, so a program that uses floats and
+  exports a function of such a name no longer assembles. A program
+  without floats does.
+- **niceasm reads a line with a comma by its commas only** (#174).
+  `ADD R1 R2, R3` is an error now, and `.DAT 1 +5, 3` is two words, 6
+  and 3, where it was three.
+- **The console's Enter key is CR** (#189, #191). nicedbg's console
+  sends CR where it sent LF, and `fgetc`, and so `getchar`, `fgets`,
+  and `scanf`, return a CR as `'\n'` and a CR LF as one `'\n'`. A program
+  that read the bytes of `stdin` as they came has `nice_getc` for that.
+  `readLine` and `read_line` end a line at a lone CR too.
+- **The emulator's screen is 16000 words** (#187),
+  `0xFFFF0000`–`0xFFFF3E7F`, and `0xFFFFFF87` is the screen's mode word,
+  where it was reserved and kept any value: a write of a value other
+  than 0 and 1 now writes 0. `--no-screen-mode` makes it memory again,
+  and the runs that compare a core with the emulator pass it.
+- **`hdl/src` has a new file, `fpu_seq_pkg.vhd`**, which `fpu.vhd`
+  needs: a build that lists the files, as NiceMonMEGA65's `core.mk`
+  does, adds it after `fpu_pkg.vhd`. The FPU takes 5.5 block RAMs with
+  it, where it took none.
+- **The FPU misses its timing budget out of context.** On the MEGA65 it
+  leaves +0.364 ns on its own paths in the default flow and +0.811 ns
+  in the `timing` flow, where the budget is 1.0 ns and `V2.2` left
+  +1.276 ns and +1.097 ns. It still meets 100 MHz. The worst path, from
+  the top of the stack to the data of a read, is none that the
+  functions touch: the same ROM with one function at another address
+  leaves +0.898 ns, so the figure follows the placement
+  (hdl/README.md). A board checks its own build.
+- `0x1E` and `0x1F` of the FPU are `XMUL` and `CHOP`, and `0x40`–`0x4F`
+  the functions, where they set the invalid flag. `SINH` to `ATANH`,
+  `0x50`–`0x55`, which DEVICES.md named in `V2.2`, are not defined.
+- nicewasm takes the imports `nice.heap_end` and `nice.grow` (#168), and
+  `malloc` and the heaps of `nice.zig` and `nice.rs` use them. A module
+  built against the runtime of `V2.3` does not translate with the
+  nicewasm of `V2.2`.
+- nicedbg's `help` prints one line for each command (#190), which a tool
+  that reads it must follow (MJoergen/NiceMonMEGA65#143).
+- The demo joins `runtime/colors.nasm` (#175), so a build that joins
+  `demo.nasm` by itself needs the file too.
+- `bench/words.py` has no `--library`.
+- The debug link stays version 8, and Zig stays 0.17.0.
+- The board follows in MJoergen/NiceMonMEGA65#150.
+
+**Specification and documents**
+
+- DEVICES.md §11.3: the functions `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`,
+  `ATAN`, `ATAN2`, `LN`, `LOG2`, `LOG10`, `EXP`, `POW2`, `POW`, and
+  `HYPOT`, among `0x40`–`0x4F` (#182). Each is a sequence of the FPU's
+  commands that follows a C source, musl's, fdlibm's, or FreeBSD's,
+  operation by operation, and the section names the source, the bound
+  of its error, and the values it needs on the stack above its
+  operands. `SIN`, `COS`, and `TAN` take an operand below 2^20 · π/2,
+  and give a NaN beyond. All are within 1 ulp, but `HYPOT`, within
+  1.1, and `ATAN2`, within 1.6, whose bits are musl's. `POW` leaves out
+  the series of `e_pow.c` for a Y next to 1, which is up to some 700
+  ulp off for an |X| above 2^31, and takes its general path there.
+- DEVICES.md §11.3: `XMUL`, a product and then its error, and `CHOP`,
+  which clears the low word of X (#182).
+- DEVICES.md §11.3: a proven bound for `SCALE10` beyond k = 22, in
+  `doc/review/scale10-bound.md`, where it gave only what samples showed
+  (#181).
+- DEVICES.md §11.5: the times of the functions in the FPGA
+  implementation, and that a program with floats is joined with all of
+  `float_fpu.nasm`, 483 words.
+- DEVICES.md §1.10: the screen's mode word at `0xFFFFFF87`, 0 for the
+  text and 1 for 160x100 pixels, a word each at
+  `0xFFFF0000` + 160 y + x, colored by bits 31..20 (#187). A write of a
+  mode that a system lacks writes 0, so a program reads back what it
+  wrote.
+- DEVICES.md §8: NiceMonMEGA65 has the FPU from its `V2.2` on, at
+  `0xFFFFFF88`–`0xFFFFFF8F`, and serves version 8 of the link (#188).
+- ISA.md §10.1, §10.2, and Appendix B: on a line with a comma, only
+  commas separate the operands, and an operand may hold spaces around a
+  `+` or a `-`, and after a `*` (#174).
+- WASM.md: trap code 9, no FPU, and the check at the start (#179); the
+  imports `nice.heap_end` and `nice.grow` (#168). It no longer names a
+  float library in software.
+- doc/review/decisions.md: no C compiler that targets NICE (#66), no
+  linker or split C library (#67), no step counter on the debug link
+  (#147), no C library that prints 15 digits with the FPU (#186), and
+  nicebuild keeps the whole memory of a program (#168).
+- doc/review/thirteenth-repository-review.md, a review of the documents
+  and the tests before this release, with its findings resolved.
+
+**Assembler (`niceasm`)**
+
+- An operand may hold spaces: `MOVE R1, end - data`, `JMP end + 2`,
+  `N .EQU 2 + 3` (#174). An instruction or directive of one operand
+  takes all of its words. A product has no space before its `*`, which
+  starts a comment at the start of a word.
+
+**Emulator (`niceemu`)**
+
+- The FPU's functions (DEVICES.md §11.3), with `XMUL` and `CHOP`. The
+  steps are in `src/fpu_seq.zig`, which `test/fpu_seq.py` writes from
+  programs in a subset of Python, and `make test` checks that it is
+  current. The reference model runs the same steps, and its directed
+  vectors run every step of the functions and take every jump both
+  ways.
+- The unit test replays the FPU's vectors whenever they change. Zig
+  took the run from its cache when only the vectors had changed, and
+  `build.zig` now names the file as an input of the run.
+- The chunky mode of the screen (#187): the window draws each pixel as
+  a block of 8x8, `--screen` prints the size, and `--color` the pixels,
+  two rows to a line. `--no-screen-mode` makes the mode word memory.
+- A trap with code 9 is named "no FPU".
+- The version is 2.3.0.
+
+**Debugger (`nicedbg`)**
+
+- The console passes the keys as typed, so Enter is CR, as in the
+  emulator's window and on a board's UART (#189). It prints its first
+  line once the terminal's modes are set.
+- `help` prints one line for each command, with its arguments and its
+  short name (#190).
+
+**Runtime (`runtime/`)**
+
+- `math.h` on the FPU (#184): `acos`, `asin`, `atan`, `atan2`, `exp`,
+  `exp2`, `fmod`, `hypot`, `ldexp`, `log`, `log10`, `log2`, `pow`,
+  `round`, and `scalbn`, and their float versions, are routines of
+  `float_fpu.nasm`. `sin`, `cos`, and `tan` use the FPU below
+  2^20 · π/2, and musl's reduction from there. A program that uses all
+  the functions gets 7268 words of them, where it got 23413, and `sin`
+  takes 43 steps on the emulator, where it took 670.
+- The C library has `iscanf`, `fiscanf`, `siscanf`, and their `v`
+  forms, which read no floats, so that a program that calls only them
+  is joined without the float library (#177).
+- `colors.nasm`, `nice.h`, `nice.zig`, and `nice.rs` name 15 colors of
+  the screen, each as a foreground and as a background (#175), and the
+  last three name the screen's mode word, its two modes, and the size
+  in pixels.
+- A line ends at CR too (#191): in `fgetc` and what reads through it,
+  and in `readLine` and `read_line`.
+- `malloc`, and the heaps of `nice.zig` and `nice.rs`, work in a memory
+  with only its start reserved, and take a memory that ends before the
+  heap starts as an empty heap (#168).
+- `trapmsg.nasm` names code 9 "no FPU".
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- `___wasm_start` checks for the FPU in a module that uses a float
+  instruction or imports a function of `math.h`, and traps with code 9
+  without it (#179). The check takes 16 words.
+- The imports `nice.heap_end`, the end of the memory in bytes, and
+  `nice.grow`, which is `memory.grow` where the memory can grow and −1
+  where only its start is reserved (#168).
+- nicebuild joins the float library only for a label that the program
+  uses and does not define, so a program without floats may have a
+  function named `log` or `round`.
+- `fuzz.py` and `diff_fuzz.py` make modules with floats (#180), and
+  `diff_fuzz.py` runs its seeds in parallel.
+
+**FPGA cores (`hdl/`)**
+
+- `fpu.vhd` runs the functions from a ROM of steps and a ROM of
+  constants, in `src/fpu_seq_pkg.vhd`, which `emulator/test/fpu_seq.py
+  --vhdl` writes, and `make test` checks that it is current (#183). A
+  step that is a command runs the states of that command, so a function
+  gives the bits of the emulator. The ROM of steps has 5100 words,
+  and there are 185 constants. The FPU takes 9536 LUTs and 5.5 block
+  RAMs, where it took 9239 and none.
+- `tb_fpu` replays the functions' vectors, bounds the cycles of each
+  function 20% above the slowest operand that a scan found, and resets
+  the FPU at 50 distances into a `POW`. The probe `fpufunc` runs the
+  functions on both cores against the emulator. A property says that a
+  reset leaves no function running.
+- `make programs` makes 911 programs and runs 643, where it ran 610:
+  the float modes of `fuzz.py` and the new tests.
+
+**Benchmarks**
+
+- `bench.c` runs the same instructions in its phases. The heap's new
+  imports move its code, and the estimate is 2351155 cycles, 0.5% more
+  than in `V2.2`; the pipelined core takes 2351494. Dhrystone takes 2278
+  cycles a run on the pipelined core, 0.249 DMIPS/MHz, where it took
+  2276, and CoreMark 1078661 cycles an iteration, 0.927 CoreMark/MHz,
+  where it took 1065384. `float.c` takes 617442 cycles, and 355798 with
+  `--inline-fpu`, as before.
+- The figures of the float library in software are in HISTORY.md.
+
+**Demo (`demo/`)**
+
+- The demo names its colors with `runtime/colors.nasm`, which its
+  Makefile joins (#175). Its image is the same, word for word.
 
 ## V2.2 (2026-11-14)
 

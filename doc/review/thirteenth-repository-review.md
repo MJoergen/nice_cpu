@@ -55,6 +55,8 @@ The newest section is `V2.2`. RELEASE.md step 2.8 asks for the section, and for 
 
 **Fix:** write the section, with the line "The version is 2.3.0." under the emulator's heading, and the row of the table.
 
+**Resolved.** RELEASE_NOTES.md has a section for `V2.3`, with the upgrade notes that this finding lists, and those that the fixes of this review change or add: a program with floats that exports a name of the library's no longer assembles, and one without floats does (§2.3); `POW` leaves out the series next to 1 (§2.1); `HYPOT` and `ATAN2` have the bounds that hold (§2.2); the FPU misses its budget of 1.0 ns out of context, with the cause (§2.1); and `words.py` has no `--library` (§4.4). The table of board tags has the row `V2.3`, "none yet", and the emulator's heading the line of the version.
+
 ### 1.2 The table of board tags says "none yet" for `V2.1` and `V2.2`
 
 RELEASE_NOTES.md lines 17 and 18. NiceMonMEGA65 has both tags: its `V2.1`, of 2026-11-14, pins c7d7974, which is `V2.1` here, and its `V2.2`, of 2026-11-15, pins 1bd0085, which is `V2.2`. RELEASE.md step 2.8 keeps a row at "none yet" only until the board follows. DEVICES.md §8 already says that the board has the FPU "from its `V2.2` on".
@@ -105,6 +107,8 @@ The board follows a release at its own pace (RELEASE.md step 7), and it has issu
 - Its timing with the FPU was met by +0.114 ns on the R3 and +0.152 ns on the R6 at its `V2.2`. The functions add some 340 LUTs to the FPU, which now takes 5.5 block RAMs, and its slack out of context fell from +1.276 ns to +0.898 ns.
 
 **Fix:** an issue in NiceMonMEGA65 for the three, named in the notes of §1.1.
+
+**Resolved.** MJoergen/NiceMonMEGA65#150 has the three, and the notes of `V2.3` name it. For the timing it gives the board's own figures with the FPU of `V2.2`, +0.076 ns on the R6, +0.120 ns on the R3, and +0.017 ns on the Nexys4DDR, and the FPU's out of context after §2.1, +0.364 ns in the default flow and +0.811 ns in the timing flow. The functions add 297 LUTs and 5.5 block RAMs to the FPU of `V2.2`, which had none, not the 343 and 2.5 above: 9536 LUTs after §2.1, where `V2.2` had 9239. The issue also says that `tools/mon.py` can drop its own `do_console` (#189), and lists what else to look at when the submodule moves.
 
 ### 1.6 The rest of the checklist
 

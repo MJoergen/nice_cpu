@@ -170,8 +170,8 @@ Since DECODE predicts backward conditional jumps taken
 loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
 core at commit 98d2bed, 2.55 per instruction and 9.6% fewer than the 1384879 of the
 program at that commit. `bench.c` closes its loops the same way
-(translator/README.md), and at commit af029f1 takes 2339110 cycles for 1652811
-instructions, 1.42 per instruction and 1.9% fewer than the 2384635
+(translator/README.md), and at commit 7b98bfa takes 2351494 cycles for 1652811
+instructions, 1.42 per instruction and 1.4% fewer than the 2384635
 above.
 
 On the pipelined core, `make core` also prints how long data reads waited
@@ -180,10 +180,10 @@ speculative reads would remove ([hdl/README.md](../hdl/README.md), The
 pipelined core). The cycles count from reset, so they include the start-up
 and the output:
 
-    bench: Read waits: 2443048 cycles; went on: 146 for the condition, 0 for an older micro-operation; dropped: 0, 0
+    bench: Read waits: 2436331 cycles; went on: 80 for the condition, 0 for an older micro-operation; dropped: 0, 66
     hand:  Read waits: 1260303 cycles; went on: 269 for the condition, 2002 for an older micro-operation; dropped: 0, 52002
 
-So such waits cost 0.006% and 0.18% of the cycles (MICROARCH.md §5.3).
+So such waits cost 0.003% and 0.18% of the cycles (MICROARCH.md §5.3).
 
 
 The hand-written program gains less, because more of its time goes to
@@ -338,19 +338,19 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1697010 instructions, 2423672 cycles (estimate), CPI 1.428
-      cycles above 1/instruction: 726662
+    bench.bin: 1697007 instructions, 2435862 cycles (estimate), CPI 1.435
+      cycles above 1/instruction: 738855
       ...
-      taken jumps resolved in WRITE (flush)                        270200  0.159/instr  37.2%
-      jumps DECODE resolves (early-redirect bubble)                 61016  0.036/instr   8.4%
+      taken jumps resolved in WRITE (flush)                        270193  0.159/instr  36.6%
+      jumps DECODE resolves (early-redirect bubble)                 55103  0.032/instr   7.5%
       ...
-      read data a cycle after the bus (registered request)         103501  0.061/instr  14.2%
-      read data used by more than a register write                 180100  0.106/instr  24.8%
+      read data a cycle after the bus (registered request)         103501  0.061/instr  14.0%
+      read data used by more than a register write                 180100  0.106/instr  24.4%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         51746     82003  1.585   mpu 0.35, bus 0.15, early 0.06, adjust 0.02
+      rng64         51746     82004  1.585   mpu 0.35, bus 0.15, early 0.05, adjust 0.02
       ...
-      total       1652811   2338771  1.415
+      total       1652811   2351155  1.423
 
 The bubbles are the core's. A jump that WRITE resolves leaves WRITE in
 cycle c − 2 and flushes in the same cycle, and the redirect reaches
@@ -370,7 +370,7 @@ the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2338771 cycles, 1.42 per instruction, and those of `hand.nasm` 1252534,
+2351155 cycles, 1.42 per instruction, and those of `hand.nasm` 1252534,
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -388,12 +388,12 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2338771 cycles, against 2336718 without, and those of
+phases take 2351155 cycles, against 2349102 without, and those of
 `hand.nasm` 1252534 against 1248275. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2248783 cycles and 1172037. `pipecycles.py --test` checks the model on
+Without it, the phases take 2261167 cycles and 1172037. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -409,13 +409,13 @@ their loops with them:
 
 | Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 82003 | 82060 | −57 | 62257 | 62270 | −13 |
-| `crc32` | 80706 | 80762 | −56 | 40233 | 40246 | −13 |
-| `bst` | 402829 | 402885 | −56 | 225654 | 225667 | −13 |
-| `heapsort` | 378589 | 378646 | −57 | 273617 | 273630 | −13 |
-| `vm` | 1232110 | 1232167 | −57 | 602050 | 602064 | −14 |
-| `strings` | 162534 | 162590 | −56 | 48723 | 48736 | −13 |
-| total | 2338771 | 2339110 | −339 | 1252534 | 1252613 | −79 |
+| `rng64` | 82004 | 82060 | −56 | 62257 | 62270 | −13 |
+| `crc32` | 83012 | 83069 | −57 | 40233 | 40246 | −13 |
+| `bst` | 403350 | 403407 | −57 | 225654 | 225667 | −13 |
+| `heapsort` | 370956 | 371012 | −56 | 273617 | 273630 | −13 |
+| `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
+| `strings` | 163721 | 163778 | −57 | 48723 | 48736 | −13 |
+| total | 2351155 | 2351494 | −339 | 1252534 | 1252613 | −79 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
@@ -639,13 +639,13 @@ gives it from `dhry.input`; and the three result lines, which must agree
 with each other and with the number of runs. `make test` runs it on the
 emulator's output and `make core-dhry` on the core's.
 
-100 runs, measured at commit af029f1:
+100 runs, measured at commit 7b98bfa:
 
 | Where | Cycles per run | DMIPS/MHz |
 |---|---|---|
 | emulator (one cycle per instruction) | 1508 | 0.377 |
 | multi-cycle core | 17431 | 0.032 |
-| pipelined core | 2276 | 0.250 |
+| pipelined core | 2278 | 0.249 |
 
 The emulator's row counts instructions. The program prints DMIPS/MHz truncated to three decimals. For comparison, Arm gives 0.87
 DMIPS/MHz for the Cortex-M0 under the ground rules, on its Cortex-M0
@@ -715,16 +715,15 @@ runs it on both cores ([release/RELEASE.md](../release/RELEASE.md)).
 The run rules ask for at least 10 seconds for a result that is
 reported, and for a simulator a fixed number of iterations instead. So
 the figures here count cycles and are not CoreMark scores; that needs a
-board and the run of 0 iterations. Measured with the cores of commit
-5022cfe:
+board and the run of 0 iterations. Measured at commit 7b98bfa:
 
 | Where | Iterations | Cycles per iteration | CoreMark/MHz |
 |---|---|---|---|
 | emulator (one cycle per instruction) | 10 | 675095 | 1.481 |
 | multi-cycle core | 1 | 7898812 | 0.126 |
-| pipelined core | 1 | 1065384 | 0.938 |
+| pipelined core | 1 | 1078661 | 0.927 |
 
-The pipelined core takes 1.58 cycles per instruction, against 1.53 in
+The pipelined core takes 1.60 cycles per instruction, against 1.51 in
 Dhrystone. On the emulator the run of 0 iterations makes 2000, which
 take 1350217511 instructions. For comparison, Arm gives 2.33
 CoreMark/MHz for the Cortex-M0, in its Cortex-M Processor Comparison

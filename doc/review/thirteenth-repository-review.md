@@ -94,6 +94,8 @@ That is 0.5% more. The model gives 2351155, 339 below the core, as before. bench
 
 **Fix:** release step 2.4, as for `V2.2`: the summary line, the table of the phases, the cycles per instruction, and the comparison with `hand.nasm` in bench/README.md, from `make -C bench cycles` and `make -C bench core`.
 
+**Resolved.** bench/README.md has the figures of 7b98bfa: the summary line and the causes of `make cycles`, the model's 2351155 cycles and the core's 2351494 by phase, the model without the four rules, 2349102, and without `--read-late`, 2261167, and the read waits of `make core`. Dhrystone and CoreMark were run on both cores again, as their code moved too: Dhrystone takes 2278 cycles a run on the pipelined core, for 2276, and CoreMark 1078661 cycles an iteration, for 1065384; the multi-cycle core's figures and the emulator's are as they were. MICROARCH.md §5.6 has the 1697007 instructions. `release.py figures` passes.
+
 ### 1.5 NiceMonMEGA65 has no issue for what `V2.3` asks of it
 
 The board follows a release at its own pace (RELEASE.md step 7), and it has issues for two of this release's changes: MJoergen/NiceMonMEGA65#144, the chunky mode, and #143, `help`. Three more things break or go stale there when its submodule moves, and no issue names them:

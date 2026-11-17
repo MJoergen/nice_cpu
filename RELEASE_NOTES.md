@@ -38,7 +38,7 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
-## V2.3 (2026-11-16)
+## V2.3 (2026-11-17)
 
 The FPU has the functions of `math.h`, `SIN` to `HYPOT`, each a sequence
 of its own commands, in the emulator and in `hdl/src/fpu.vhd` (#182,

@@ -69,7 +69,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 
 | Target | What it runs | Takes |
 |---|---|---|
-| `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 19 minutes in GHDL on 20 CPUs, bound by `tb_fpu`, which takes 10 alone, and 18 in nvc, bound by the interrupt sweeps (2026-11-16) |
+| `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 13 minutes in GHDL on 20 CPUs, bound by the interrupt sweeps of `hazard.nasm` (2026-11-18), and 18 in nvc, bound by the same (2026-11-16) |
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
 | `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
@@ -772,9 +772,9 @@ of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
 §6).
 
-The most cycles of each command in `tb_fpu` on 2026-11-16, from its
-request to the ACK of the read of `FPU_STATUS` after it, which adds some
-6 (What the tests check):
+The most cycles of each command in `tb_fpu` on 2026-11-16, the most of
+its shares, from its request to the ACK of the read of `FPU_STATUS` after
+it, which adds some 6 (What the tests check):
 
 | Commands | Cycles at most |
 |---|---|
@@ -1043,13 +1043,18 @@ Those resets come as a command starts, and a function runs for thousands
 of cycles. So it resets `POW` at 50 distances from its request: each of
 the first 32 cycles, six further in, and the last 12 before its end.
 After each, `SQRT` and then `HYPOT` must give their results.
-`make run/fpu FPU_SEED=2 FPU_COUNT=200000` runs a longer sequence.
+As each line stands alone, the lines are dealt out in turn to
+`FPU_SHARES` shares, 8, which run in parallel, `run/fpu/1` to
+`run/fpu/8`, and each runs those last checks too. A share has its line
+numbers, which its reports give. `make run/fpu` runs them all, and
+`make run/fpu FPU_SEED=2 FPU_COUNT=200000` a longer sequence.
 
 `test/fpu_slow_vectors.py` adds the slowest `DIGITS`, `SCALE10`, `FMOD`,
 and functions that a scan found, with `--scan` the lines of that scan, and
 `tb_fpu`'s generic `G_SLOW` reports each command slower than it. Its
-lines come after a line `#timed`: from there on `tb_fpu` times every
-command, and neither follows one at once nor resets one. For each
+lines come after a line `#timed`, and each share has its part of them
+after its own: from there on `tb_fpu` times every command, and neither
+follows one at once nor resets one. For each
 command that the next access does not follow at once, `tb_fpu` counts
 the cycles from its request to the ACK of the read of STATUS after it,
 which adds some 6, and fails if the most of a command is over its bound:

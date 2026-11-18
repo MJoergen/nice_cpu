@@ -73,16 +73,25 @@ $(FPU_UNIT_RUNS:%=run/fpu_unit/%): run/fpu_unit/%:
 # emulator/test/fpu_vectors.py, over the FPU's bus: the directed ones and
 # a random sequence from the seed FPU_SEED, FPU_COUNT accesses long, and
 # then the slowest commands of test/fpu_slow_vectors.py, whose cycles it
-# bounds.
+# bounds. Each line stands alone, so the lines are dealt out in turn to
+# FPU_SHARES shares, run/fpu/1 to run/fpu/N, which run in parallel, each
+# with its share of the timed lines after its own "#timed". run/fpu runs
+# them all.
 FPU_SEED ?= 1
 FPU_COUNT ?= 20000
+FPU_SHARES ?= 8
+FPU_RUNS = $(addprefix run/fpu/,$(shell seq 1 $(FPU_SHARES)))
 
-run/fpu:
+run/fpu: $(FPU_RUNS)
+
+$(FPU_RUNS): run/fpu/%:
 	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/fpu_vectors.py --seed $(FPU_SEED) \
-	  --count $(FPU_COUNT) -o vectors > /dev/null \
-	  && $(PYTHON) $(CURDIR)/test/fpu_slow_vectors.py >> vectors \
+	  --count $(FPU_COUNT) -o all > /dev/null \
+	  && $(PYTHON) $(CURDIR)/test/fpu_slow_vectors.py >> all \
+	  && awk -v k=$* -v n=$(FPU_SHARES) '/^#timed/ { print; next } /^#/ || /^$$/ { next } \
+	    i++ % n == k - 1' all > vectors \
 	  && $(call sim_run,tb_fpu,-gG_VECTORS=vectors) > tb_fpu.log 2>&1); \
-	if [ $$? -eq 0 ]; then echo "PASS tb_fpu"; else echo "FAIL tb_fpu"; \
+	if [ $$? -eq 0 ]; then echo "PASS tb_fpu $*/$(FPU_SHARES)"; else echo "FAIL tb_fpu $*/$(FPU_SHARES)"; \
 	  tail -30 $(RUNDIR)/tb_fpu.log; exit 1; fi
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
@@ -630,7 +639,7 @@ run/irqcompare: emulator
 
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) run/fpu $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000

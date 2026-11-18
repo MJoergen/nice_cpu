@@ -891,3 +891,10 @@ below its variables, the stack started lower, and with 4K words of it at
 `0xFFFFE000`, F11 would have overwritten the stack's first word. Then F11
 tested the 8192 words up to `0xCFFF`, which leave 12K to a monitor
 (#195).
+
+## The time of `tb_fpu`
+
+Until 2026-11-18, `tb_fpu` replayed all of the FPU's 55861 vectors in one
+run, which took 10 minutes in GHDL, about half of `make -C hdl test`'s
+19 on 20 CPUs. Then the lines were dealt out to 8 shares that run in
+parallel, which took 86 seconds together (#193).

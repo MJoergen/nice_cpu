@@ -898,3 +898,11 @@ Until 2026-11-18, `tb_fpu` replayed all of the FPU's 55861 vectors in one
 run, which took 10 minutes in GHDL, about half of `make -C hdl test`'s
 19 on 20 CPUs. Then the lines were dealt out to 8 shares that run in
 parallel, which took 86 seconds together (#193).
+
+## The load of `make test`
+
+Until 2026-11-18, `make -C hdl test` ran one target per CPU, and each
+interrupt sweep among them ran a pool of one simulation per CPU of its
+own, as `make programs` did: the load average of a machine with 20 CPUs
+reached about 100. Then the sweeps and `make programs` took a token from
+make's jobserver for each simulation (#197).

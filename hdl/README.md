@@ -106,7 +106,12 @@ core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
 The runs go in parallel, one per CPU, or as many as `-j` gives, and
-their PASS and FAIL lines come in the order they finish. Each run leaves
+their PASS and FAIL lines come in the order they finish. The interrupt
+sweeps and `make programs` run many simulations each, from a pool of
+threads in `test/irq_sweep.py` and `test/programs.py`. Under make, each
+of those simulations takes a token from make's jobserver first
+(`test/core_runs.py`), so that all of them and make's own runs together
+stay within `-j`, also under the top-level `make test`. Each run leaves
 its files in a directory of its own, `build/run/GROUP/NAME`, where GROUP
 is `unit`, `trace`, or the core: for a run on a core, the core's trace
 and output in `core.out`, the emulator's in `core.expected`, and the
@@ -1320,7 +1325,8 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   instruction: 3 and 7 cycles on the multi-cycle core, and 1, 2, and 3
   on the pipelined one. A delayed run is compared only through
   `test/irq_compare.py`. The runs go in parallel, on all
-  cores; set the number with `-j`. Each worker runs the simulator in its own
+  cores; set the number with `-j`, which under make with `-j` its
+  jobserver bounds too. Each worker runs the simulator in its own
   directory under `build/sweep`, because the LLVM and GCC backends of GHDL
   write an executable where they run. `test/irqhazard.nasm` and
   `test/latecount.nasm` are swept the same way, without the delays.

@@ -397,9 +397,11 @@ define check_selfcheck
 
 endef
 
-# $(1) is the program, in $(BUILD), and $(2) any more options.
+# $(1) is the program, in $(BUILD), and $(2) any more options. The "+"
+# gives the script make's jobserver (test/core_runs.py), and runs it under
+# make -n too.
 define check_sweep
-	@$(PYTHON) test/irq_sweep.py --core $(CORE) $(SIM_ARGS) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
+	+@$(PYTHON) test/irq_sweep.py --core $(CORE) $(SIM_ARGS) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
 	  $(BUILD)/$(1).bin
 
 endef
@@ -629,6 +631,10 @@ seqcheck:
 run/split:
 	@$(PYTHON) test/programs.py --test
 
+# The check of test/core_runs.py's client of make's jobserver.
+run/jobserver:
+	@$(PYTHON) test/core_runs.py
+
 # The check of the timing budget against made-up reports.
 run/budget:
 	@$(PYTHON) test/timing_budget.py --test
@@ -639,7 +645,7 @@ run/irqcompare: emulator
 
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/jobserver run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
@@ -696,7 +702,7 @@ programs: emulator analyze
 	@for m in "" --no-mpu --unchecked --grow --windows --inline-fpu; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \
 	    || exit 1; done > $(BUILD)/programs_fuzz.log 2>&1 || { cat $(BUILD)/programs_fuzz.log; exit 1; }
-	@$(PYTHON) test/programs.py --core $(CORE) $(SIM_ARGS) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
+	+@$(PYTHON) test/programs.py --core $(CORE) $(SIM_ARGS) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
 
 # Analyzes the VHDL for SIM, and analyze-ghdl for GHDL's synthesis.
 analyze: analyze-$(SIM)

@@ -298,3 +298,13 @@ proposed again. The open items are the
   (DEBUG.md §6, DEVICES.md §3), so a host reads `CYCLE_LO` before and
   after the step. Neither `mon.py` nor the board's debugger asked for it,
   and `0xFFFFFFD2`–`0xFFFFFFD3` stay free for a later minor.
+- **`IDIV` of a nonzero value by 0 as ±∞ with the division-by-zero
+  flag** (#198), as `DIV` does. The word operators work on integers, and
+  an integer quotient by zero has no infinite value, so it is invalid,
+  as every other failure of a word operator is. An infinity can vanish
+  in later arithmetic, as 1 / ∞ is 0, where a NaN stays. The parallel
+  with `DIV` would break at the edges: 5 `IDIV` −0 would be +∞ where
+  5 / −0 is −∞, and 0.7 `IDIV` 0 a NaN where 0.7 / 0 is +∞. `IDIV` and
+  `MOD` by 0 would set different flags. No integer division gives an
+  infinity: x86, wasm, Java, Python, Rust, and Lua trap or raise an
+  error, RISC-V gives −1, and ARM 0.

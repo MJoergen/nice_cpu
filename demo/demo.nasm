@@ -38,9 +38,9 @@
 ; monitor, runtime/test/monitor_console.nasm, does. Each demo starts with
 ; SP as it was at the entry, and F12 clears the screen and returns from
 ; there with the status 0. The variables are at VARS, past the image, and
-; F11 tests the RAM from RAM_LO, past them, up to 0xDFFF, below a
-; monitor's stack and variables, which on NiceMonMEGA65 start at
-; 0xFFFFF000. The vector table of the timer's interrupt is the page 0x8000
+; F11 tests the RAM from RAM_LO, past them, up to 0xCFFF, below a
+; monitor's stack and variables, which are at the top of the address
+; space. The vector table of the timer's interrupt is the page 0x8000
 ; of the image. So the demo writes no memory but these words, the screen,
 ; the cursor's registers, the math unit, the timer, the network station's
 ; addresses when F11 sets them, and the stack. The words are the same in
@@ -98,10 +98,12 @@ P_US            .EQU    0xFFFFFF44
 P_USH           .EQU    0xFFFFFF45
 
 ; The variables, from VARS, after the image (see the entry), and the RAM
-; that F11 tests, from RAM_LO up to the stack. The stack starts below
-; the monitor's variables at 0xFFFFF000, which on the Nexys4DDR are RAM
-; word 0xF000, as its 64K words repeat, and 0x1F000 on the MEGA65, so
-; RAM_LO + RAM_N stays below 0xE000.
+; that F11 tests, from RAM_LO up to 0xCFFF. A monitor's stack and
+; variables are at the top of the address space, and on the Nexys4DDR,
+; whose 64K words of RAM repeat, 0xFFFFF000 is RAM word 0xF000, and
+; 0xFFFFD000 is 0xD000. So RAM_LO + RAM_N stays at 0xD000, which leaves
+; the top 12K words to a monitor, its stack, and what it keeps below them
+; (MJoergen/NiceMonMEGA65#152). The MEGA65 has 128K words.
 VARS            .EQU    0xA000
 SIEVE           .EQU    VARS            ; the sieve of F7, a word for each number
 SIEVE_N         .EQU    2048            ; its numbers, 0 to SIEVE_N - 1
@@ -137,7 +139,7 @@ S_TICKS         .EQU    VARS+2049       ; the interrupts of the timer
 B_MODE          .EQU    VARS+2050       ; 0, or 1 or 2 while an IP or MAC address is typed
 VARS_N          .EQU    2064            ; the words from VARS
 RAM_LO          .EQU    0xB000          ; the RAM tested
-RAM_N           .EQU    12288           ; up to 0xDFFF
+RAM_N           .EQU    8192            ; up to 0xCFFF
 
 ; The timer, and the vector of its interrupt, whose entry in the table at
 ; VBASE * 256 is at 0x8041, in the image (see the entry)
@@ -1606,7 +1608,7 @@ S_TEXTS         .DAT    242, LINK, S1
                 .DAT    -1
 
 S1              .ASCII_L 'A self-test, which runs each time that F11 starts it'
-S_RAM           .ASCII_L 'RAM, 0000B000 to 0000DFFF'
+S_RAM           .ASCII_L 'RAM, 0000B000 to 0000CFFF'
 S_MATH          .ASCII_L 'Math unit, multiply and divide'
 S_TIMER         .ASCII_L 'Timer, 10 interrupts every 1000 cycles'
 S_COUNT         .ASCII_L 'Performance counters'

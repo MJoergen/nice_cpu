@@ -184,7 +184,7 @@ Screen:
 |
 |  A self-test, which runs each time that F11 starts it
 |
-|    RAM, 0000B000 to 0000DFFF                     PASS
+|    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
 |    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
@@ -208,7 +208,7 @@ Screen:
 |
 |  A self-test, which runs each time that F11 starts it
 |
-|    RAM, 0000B000 to 0000DFFF                     PASS
+|    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
 |    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
@@ -234,7 +234,7 @@ Screen:
 |
 |  A self-test, which runs each time that F11 starts it
 |
-|    RAM, 0000B000 to 0000DFFF                     PASS
+|    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
 |    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
@@ -258,7 +258,7 @@ Screen:
 |
 |  A self-test, which runs each time that F11 starts it
 |
-|    RAM, 0000B000 to 0000DFFF                     PASS
+|    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
 |    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
@@ -284,7 +284,7 @@ Screen:
 |
 |  A self-test, which runs each time that F11 starts it
 |
-|    RAM, 0000B000 to 0000DFFF                     PASS
+|    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
 |    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
@@ -315,7 +315,7 @@ Screen:
 |
 |  A self-test, which runs each time that F11 starts it
 |
-|    RAM, 0000B000 to 0000DFFF                     PASS
+|    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                FAIL FFFFFF23 FFFFFFFF
 |    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS

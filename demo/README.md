@@ -112,7 +112,7 @@ and shows PASS or FAIL for each:
 
 | Test | What it checks |
 |---|---|
-| RAM | The 12288 words from `0x0000B000` to `0x0000DFFF`, above the demo's variables and below a monitor's stack, RAM on every board: each is written with its address, and then with its address inverted, and read back |
+| RAM | The 8192 words from `0x0000B000` to `0x0000CFFF`, above the demo's variables and below a monitor's stack, RAM on every board: each is written with its address, and then with its address inverted, and read back |
 | Math unit | Signed and unsigned products and quotients of 32 bits, a division by zero, the most negative number divided by −1, and quotients of 64 bits, against known results |
 | Timer | 10 interrupts, one every 1000 cycles, which must come within 9500 to 10500 cycles of the start |
 | Performance counters | The instructions of a known sequence, and over a loop, at least as many cycles as instructions, some microseconds, and 1 to 255 cycles per microsecond |
@@ -185,11 +185,14 @@ The demo keeps most of its state in registers, and its variables at
 `0xA000`–`0xA7FF` and their numbers from `0xA800`, and the comet keeps the
 addresses of its cells and its state at the same addresses, as only one
 demo runs at a time. The comet tells what is in a cell from the screen
-itself. F11 tests the RAM from `0xB000` to `0xDFFF`. These are RAM words
-on every board, below a monitor's stack and variables: on NiceMonMEGA65
-those start at `0xFFFFF000`, and the RAM repeats through the address
-space, so `0xFFFFEFFF` is RAM word `0xEFFF` with 64K words and `0x1EFFF`
-with 128K ([DEVICES.md §8](../doc/DEVICES.md#8-systems-built-on-the-fpga-core)).
+itself. F11 tests the RAM from `0xB000` to `0xCFFF`. These are RAM words
+on every board, below a monitor's stack and variables: those are at the
+top of the address space, and the RAM repeats through it, so
+`0xFFFFD000` is RAM word `0xD000` with 64K words and `0x1D000` with 128K
+([DEVICES.md §8](../doc/DEVICES.md#8-systems-built-on-the-fpga-core)).
+That leaves the top 12K words of a board with 64K to a monitor: on
+NiceMonMEGA65, its variables from `0xFFFFF000`, the RAM that it keeps
+below them, and its stack below that.
 The assembler checks that the image stays below `VARS`, as the variables
 and the tested RAM are `.RES` blocks. The demo writes only these words,
 the screen, the cursor's registers, the math unit, the timer, the

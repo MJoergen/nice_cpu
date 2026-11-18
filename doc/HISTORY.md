@@ -881,3 +881,13 @@ to 10550 when the float library got the functions of `math.h`. It ran
 180304 instructions, 5.9 times fewer than with the float library in
 software, and took 617442 cycles on the pipelined core, 3.1 times fewer
 than the 1902079 that it took in V2.2 with that library.
+
+## The RAM that the demo tests
+
+Until 2026-11-18, the demo's F11 tested the 12288 words from `0xB000` to
+`0xDFFF`, below a monitor's stack at `0xFFFFF000`, which is RAM word
+`0xF000` on a board with 64K words. When NiceMonMEGA65 moved BASIC's RAM
+below its variables, the stack started lower, and with 4K words of it at
+`0xFFFFE000`, F11 would have overwritten the stack's first word. Then F11
+tested the 8192 words up to `0xCFFF`, which leave 12K to a monitor
+(#195).

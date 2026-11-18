@@ -798,10 +798,10 @@ a rounding by brute force, and the S forms, which round once, on every
 pair of such values against a format of 6 bits; and in exact
 arithmetic, the constants against `decimal`, `ISQRT` against
 `math.isqrt`, `SCALE10`, correctly rounded for k up to 22 and within its
-bound beyond, `DIGITS` against Python's `%e`, constants of 15 digits
-through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must come back, and
-the functions within the bounds of DEVICES.md §11.3, against series in
-`decimal` to 90 digits. Each function is checked on 400 random operands,
+bound beyond, `DIGITS` against Python's `%e` digit for digit, constants
+of 15 digits through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must
+come back, and the functions within the bounds of DEVICES.md §11.3,
+against series in `decimal` to 90 digits. Each function is checked on 400 random operands,
 some of them from where its error is the largest, and `ATAN2` and
 `HYPOT` on the operands of their worst errors that are known.
 

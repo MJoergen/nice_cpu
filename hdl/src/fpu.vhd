@@ -28,14 +28,17 @@
 -- * DIGITS takes the binary exponent with ILOGB, and from it the decimal
 --   exponent e = ceil((E + 1) log10 2), which a 32-bit constant gives
 --   exactly for every binary64 value. That e is the largest that can give
---   n digits, so a loop of SCALE10, NEAREST, and a comparison with
+--   n digits, so a loop of SCALE10, a rounding to D, and a comparison with
 --   10^(n-1), lowering e until there are n digits, ends with the largest
 --   e for which D >= 10^(n-1). Where D is then exactly 10^(n-1), the
 --   digits may have rounded up to it, so the loop tries the e below once:
 --   if its D is below 10^n, that e and D are the model's, the smallest e
---   for which D < 10^n; if not, 10^(n-1) and the e above are. The digits
---   go to BCD by shifting and adding 3 to each digit of 5 or more, then
---   left to the top.
+--   for which D < 10^n; if not, 10^(n-1) and the e above are. D rounds
+--   once: SCALE10 leaves its pair, (h, l), unsummed, or for a count of at
+--   most 22, the product or quotient h and l with the sign of its error,
+--   from MULERR. D is NEAREST of h, and one more toward l where h is
+--   halfway between two whole numbers. The digits go to BCD by shifting
+--   and adding 3 to each digit of 5 or more, then left to the top.
 -- * FROMBCD multiplies by 10 and adds a digit, 16 times, then UTOF.
 -- * The word operators convert their operands with FTOW, compute in 32
 --   bits, IDIV and MOD with a restoring divider of the magnitudes, and
@@ -251,7 +254,8 @@ architecture synthesis of fpu is
       LONG_ST, ISQRT_ST, SCALE_ST, SCALE2_ST, SCALE10_ST, S10_ST, S10_SMALL_ST, S10_LOOP_ST,
       MP1_ST, MP2_ST, MP3_ST, MP4_ST, MP5_ST, MP6_ST, MP7_ST, MP8_ST, MP9_ST, MP10_ST,
       XMUL_ST, XMUL2_ST,
-      S10_FIN_ST, DIGITS_ST, DLOG_ST, DMUL_ST, DEXP_ST, DLOOP_ST, DSCALE_ST, DNEAR_ST, DINT_ST,
+      S10_FIN_ST, DIGITS_ST, DLOG_ST, DMUL_ST, DEXP_ST, DLOOP_ST, DQP_ST, DQE_ST, DQR_ST, DERR_ST,
+      DSCALE_ST, DFRAC_ST, DHALF_ST, DNEAR_ST, DINT_ST,
       BCD_ST, ALIGN_ST, DPUSH_ST, FROMBCD_ST, UTOF_ST, WORD_ST, WORDY_ST, WORDX_ST, IDIV_ST,
       WORD_END_ST, STEP_ST, FETCH_ST, K_ST
    );
@@ -392,6 +396,13 @@ architecture synthesis of fpu is
    signal eq_r   : std_logic;
    signal lt_r   : std_logic;
    signal dtry_r : boolean;
+   -- D rounds once from SCALE10's pair (rh, rl): the high part rounded,
+   -- and whether the high part is that plus 1/2 with a low part above 0,
+   -- or minus 1/2 with one below, which moves D by one toward it, a cycle
+   -- after the difference as ge_r.
+   signal dint_r  : t_word64;
+   signal hup_r   : boolean;
+   signal hdown_r : boolean;
    -- Whether the unit's result is infinite, a NaN, or a zero, a cycle
    -- after it, for the states that UWAIT_ST goes on to.
    signal uinf_r  : boolean;
@@ -1148,6 +1159,8 @@ begin
          eq_r     <= bool_to_sl(u_result = tens_r);
          lt_r     <= bool_to_sl(unsigned(u_result) < unsigned(tenn_r));
          uinf_r   <= f_inf(u_result);
+         hup_r    <= u_result = X"3FE0000000000000" and rl_r(63) = '0' and not f_zero(rl_r);
+         hdown_r  <= u_result = X"BFE0000000000000" and rl_r(63) = '1' and not f_zero(rl_r);
          unan_r   <= f_nan(u_result);
          uzero_r  <= f_zero(u_result);
          -- The tests of the operands, for ARITH2_ST and DIGITS_ST, which
@@ -1545,13 +1558,43 @@ begin
             when S10_SMALL_ST =>
                s10_res_r <= u_result;
                cflags_r  <= u_flags;
-               state_r   <= s10_ret_r;
+               t10_v     := C_TENS(minimum(to_integer(s10_k_r(4 downto 0)), 22));
+               if s10_ret_r /= DSCALE_ST then
+                  state_r <= s10_ret_r;
+               elsif s10_neg_r = '1' then
+                  -- For DIGITS, the sign of the error: of a quotient q,
+                  -- that of the remainder Y - q · 10^k, which is
+                  -- (Y - p) - (q · 10^k - p) for the product p rounded,
+                  -- and of a product, its error.
+                  ucall(OP_MUL, u_result, t10_v, DQP_ST);
+               else
+                  ucall(OP_MULERR, s10_y_r, t10_v, DERR_ST);
+               end if;
+
+            when DQP_ST =>
+               p_r   <= u_result;
+               t10_v := C_TENS(minimum(to_integer(s10_k_r(4 downto 0)), 22));
+               ucall(OP_MULERR, s10_res_r, t10_v, DQE_ST);
+            when DQE_ST =>
+               e_r <= u_result;
+               -- p is within an ulp of Y, so Y - p is exact.
+               ucall(OP_SUB, s10_y_r, p_r, DQR_ST);
+            when DQR_ST => ucall(OP_SUB, u_result, e_r, DERR_ST);
+            when DERR_ST =>
+               rl_r    <= u_result;
+               state_r <= DSCALE_ST;
 
             -- For each bit i of the count, from 0 to 8, a product with the
             -- pair of bit i, and for bit 9, two with that of bit 8.
             when S10_LOOP_ST =>
                if s10_i_r = 11 or (s10_i_r >= 9 and s10_k_r(9) = '0') then
-                  ucall(OP_ADD, rh_r, rl_r, S10_FIN_ST);
+                  if s10_ret_r = DSCALE_ST then
+                     -- DIGITS rounds the pair itself.
+                     s10_res_r <= rh_r;
+                     state_r   <= DSCALE_ST;
+                  else
+                     ucall(OP_ADD, rh_r, rl_r, S10_FIN_ST);
+                  end if;
                elsif s10_i_r >= 9 or s10_k_r(s10_i_r) = '1' then
                   if s10_neg_r = '1' then
                      bh_r <= C_TENTH_HI(minimum(s10_i_r, 8));
@@ -1649,8 +1692,23 @@ begin
                s10_ret_r <= DSCALE_ST;
                state_r   <= S10_ST;
 
+            -- D from the pair (s10_res_r, rl_r): the high part rounded,
+            -- then one more toward the low part where the high part is
+            -- halfway, by an ADD, of +0 if not, so that ge_r, eq_r, and
+            -- lt_r compare D.
             when DSCALE_ST =>
-               ucall(OP_INTEGRAL, s10_res_r, s10_res_r, DNEAR_ST);
+               ucall(OP_INTEGRAL, s10_res_r, s10_res_r, DFRAC_ST);
+            when DFRAC_ST =>
+               dint_r <= u_result;
+               ucall(OP_SUB, s10_res_r, u_result, DHALF_ST);
+            when DHALF_ST =>
+               if hup_r then
+                  ucall(OP_ADD, dint_r, C_ONE, DNEAR_ST);
+               elsif hdown_r then
+                  ucall(OP_ADD, dint_r, C_MONE, DNEAR_ST);
+               else
+                  ucall(OP_ADD, dint_r, (others => '0'), DNEAR_ST);
+               end if;
 
             when DNEAR_ST =>
                if dtry_r then

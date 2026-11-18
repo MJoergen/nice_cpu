@@ -906,3 +906,13 @@ interrupt sweep among them ran a pool of one simulation per CPU of its
 own, as `make programs` did: the load average of a machine with 20 CPUs
 reached about 100. Then the sweeps and `make programs` took a token from
 make's jobserver for each simulation (#197).
+
+## The rounding of `DIGITS`
+
+Until 2026-11-18, `DIGITS n` took D as `NEAREST` of `SCALE10` of |X| by
+n − 1 − e. `SCALE10` rounded the scaled value to a binary64 value
+first, onto or across a halfway point, and `NEAREST` then rounded that
+the wrong way: about 1% of the values had another last digit than C's
+`%.*e`, such as -41610939429.713 for -41610939429.7131 with 15 digits.
+Then D rounded once, from the exact product or from `SCALE10`'s pair
+(#200).

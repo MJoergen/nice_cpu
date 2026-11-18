@@ -398,14 +398,11 @@ def mul_pair(a: Tuple[int, int], b: Tuple[int, int]) -> Tuple[int, int]:
     return h, F64.sub(e, F64.sub(h, p)[0])[0]
 
 
-def scale10(y: int, k: int) -> Result:
-    """Y · 10^k for a finite nonzero Y, by SCALE10's sequence (§11.3)."""
-    neg = k < 0
+def scale10_pair(y: int, k: int) -> Tuple[int, int]:
+    """SCALE10's pair for a count k above 22 in magnitude: the high and
+    the low part, before the sum that rounds them once (§11.3)."""
+    table = TEN_PAIRS[1 if k < 0 else 0]
     k = min(abs(k), 650)
-    if k <= 22:
-        p = f64(Fraction(10) ** k)
-        return F64.div(y, p) if neg else F64.mul(y, p)
-    table = TEN_PAIRS[1 if neg else 0]
     r = (y, 0)
     for i in range(9):
         if k >> i & 1:
@@ -413,9 +410,18 @@ def scale10(y: int, k: int) -> Result:
     if k >> 9 & 1:
         r = mul_pair(r, table[8])
         r = mul_pair(r, table[8])
-    if F64.is_inf(r[0]):
-        return r[0], OVERFLOW
-    return F64.add(r[0], r[1])
+    return r
+
+
+def scale10(y: int, k: int) -> Result:
+    """Y · 10^k for a finite nonzero Y, by SCALE10's sequence (§11.3)."""
+    if abs(k) <= 22:
+        p = f64(Fraction(10) ** abs(k))
+        return F64.div(y, p) if k < 0 else F64.mul(y, p)
+    h, l = scale10_pair(y, k)
+    if F64.is_inf(h):
+        return h, OVERFLOW
+    return F64.add(h, l)
 
 
 def floor_log10(x: Fraction) -> int:
@@ -430,15 +436,23 @@ def floor_log10(x: Fraction) -> int:
 
 def digits(a: int, n: int) -> Tuple[int, int]:
     """DIGITS n of a finite nonzero a: the digits as a whole number D,
-    and the exponent e. D is NEAREST of SCALE10 of |a| by n - 1 - e, and
-    e is the smallest whole number for which D < 10^n. At e =
-    floor(log10 |a|) + 1, |a| is scaled below 10^(n-1), so D < 10^n, and
-    D only grows as e falls."""
+    and the exponent e. D is |a| · 10^(n-1-e) rounded once to a whole
+    number, ties to even: the exact product for a count of at most 22,
+    and the exact sum of SCALE10's pair beyond. e is the smallest whole
+    number for which D < 10^n. At e = floor(log10 |a|) + 1, |a| is scaled
+    below 10^(n-1), so D < 10^n, and D only grows as e falls."""
     ax = F64.abs(a)
 
     def d_at(e: int) -> int:
-        d = F64.to_integral(scale10(ax, n - 1 - e)[0], "even")[0]
-        return trunc(F64.value(d))
+        k = n - 1 - e
+        if abs(k) <= 22:
+            x = F64.value(ax) * Fraction(10) ** k
+        else:
+            h, l = scale10_pair(ax, k)
+            x = F64.value(h) + F64.value(l)
+        i = x.numerator // x.denominator
+        frac = x - i
+        return i + (frac > Fraction(1, 2) or (frac == Fraction(1, 2) and i & 1 == 1))
 
     e = floor_log10(F64.value(ax)) + 1
     dv = d_at(e)

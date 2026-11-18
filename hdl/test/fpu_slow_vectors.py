@@ -15,9 +15,10 @@ operands:
   from -660 to 660. DIGITS lowers its exponent until the digits come
   out, and each round runs SCALE10, whose time grows with the bits of
   its count. In the scan of 2026-11-16, the first that timed every
-  line, the slowest DIGITS took 3365 cycles from its request to the ACK
-  of the read of STATUS after it, and the slowest SCALE10, of 1.5 by
-  -511, 1243.
+  line, the slowest SCALE10, of 1.5 by -511, took 1243 cycles from its
+  request to the ACK of the read of STATUS after it. In that of the
+  DIGITS lines on 2026-11-18, after D rounded once (#200), the slowest
+  DIGITS took 3372.
 - SCALE10 by counts with many bits set, 255, 511, and 639, both ways.
 - FMOD with the largest difference of the exponents.
 - SIN, COS, and TAN, which take the most rounds of the reduction near a
@@ -56,19 +57,19 @@ from fpu_vectors import Generator  # noqa: E402
 
 # The slowest of the scan: the value and n.
 SLOW_DIGITS = [
-    (0x75154FDD7F73BF3B, 3),
     (0x7580A6650B926D66, 5),
+    (0x75154FDD7F73BF3B, 3),
     (0x754AA3D4DF50AF0C, 4),
     (0x7620427EAD4CFED7, 8),
-    (0x75EA03FDE214CAF1, 7),
-    (0x7728CF768B2F9C5A, 13),
-    (0x74AB4781EAD1989D, 1),
     (0x768967E5EEC84E30, 10),
     (0x7580A6650B926D68, 5),
-    (0x76BFC1DF6A7A61BB, 11),
+    (0x75EA03FDE214CAF1, 7),
     (0x754AA3D4DF50AF0A, 4),
-    (0x74E10CB132C2FF63, 2),
-    (0x775F03542DFB8370, 14),
+    (0x74AB4781EAD1989D, 1),
+    (0x768967E5EEC84E2E, 10),
+    (0x7654531E58A03E8C, 9),
+    (0x7728CF768B2F9C5B, 13),
+    (0x7728CF768B2F9C5A, 13),
 ]
 
 

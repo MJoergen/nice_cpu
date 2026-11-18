@@ -777,9 +777,10 @@ of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
 §6).
 
-The most cycles of each command in `tb_fpu` on 2026-11-16, the most of
-its shares, from its request to the ACK of the read of `FPU_STATUS` after
-it, which adds some 6 (What the tests check):
+The most cycles of each command in `tb_fpu` on 2026-11-16, and of
+`DIGITS` on 2026-11-18, the most of its shares, from its request to the
+ACK of the read of `FPU_STATUS` after it, which adds some 6 (What the
+tests check):
 
 | Commands | Cycles at most |
 |---|---|
@@ -794,7 +795,7 @@ it, which adds some 6 (What the tests check):
 | `ISQRT` | 101 |
 | `SCALE10` | 1243 |
 | `FMOD` | 2117 |
-| `DIGITS` | 3365 |
+| `DIGITS` | 3372 |
 | `SIN` and `COS` | 1537 and 1552 |
 | `TAN` | 2043 |
 | `ASIN` and `ACOS` | 1106 and 954 |

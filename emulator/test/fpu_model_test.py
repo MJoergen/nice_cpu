@@ -17,9 +17,10 @@ The model is the oracle of the FPU's tests, so this checks it four ways:
    is the 53 >= 2 · 24 + 2 of §11.3.
 4. In exact arithmetic: the constants against decimal, ISQRT against
    math.isqrt, SCALE10 correctly rounded for k <= 22 and within its
-   proven bound beyond, DIGITS against Python's '%.*e', constants of 15 digits
-   through FROMBCD, SCALE10, and DIGITS 15, which must come back, and the
-   functions within their bounds, against series in decimal.
+   proven bound beyond, DIGITS against Python's '%.*e' digit for digit,
+   constants of 15 digits through FROMBCD, SCALE10, and DIGITS 15, which
+   must come back, and the functions within their bounds, against series
+   in decimal.
 
 The random cases have fixed seeds. It exits 1 on the first failure."""
 
@@ -628,6 +629,31 @@ CASES: List[Case] = [
      [0x9999999999999990, d(1.0)], 0, None),
     ("DIGITS 3 of -9.996 carries to 1.00e1", [d(-9.996)], 0, "DIGITS 3", [0x1000000000000000, d(1.0)], 0, None),
     ("DIGITS 15 of 0.1", [d(0.1)], 0, "DIGITS 15", [0x1000000000000000, d(-1.0)], 0, None),
+    # D rounds once (#200). Each value's exact digits, then the 15 kept:
+    # SCALE10 would round the scaled value to a binary64 first, onto or
+    # across the half, and NEAREST then round that the wrong way.
+    # -41610939429.71305084228515625: 416109394297130|5084 rounds up. The
+    # product by 10^4 rounds to the tie 416109394297130.5.
+    ("DIGITS 15 of -41610939429.713050842 rounds once", [0xC2236069184B6D15], 0, "DIGITS 15",
+     [0x4161093942971310, d(10.0)], 0, None),
+    # -4142999993928.9052734375: 414299999392890|5273 rounds up.
+    ("DIGITS 15 of -4142999993928.905273 rounds once", [0xC28E24F057F2473E], 0, "DIGITS 15",
+     [0x4142999993928910, d(12.0)], 0, None),
+    # 6963412326841754583040: 696341232684175|4583 rounds down. The
+    # quotient by 10^7 rounds up to the tie.
+    ("DIGITS 15 of 6.963412326841754583e21 rounds once", [0x447797CC23985DB1], 0, "DIGITS 15",
+     [0x6963412326841750, d(21.0)], 0, None),
+    # -782853507103817472: 782853507103817|472 rounds down, by 10^-3.
+    ("DIGITS 15 of -7.82853507103817472e17 rounds once", [0xC3A5BA823BE42EFE], 0, "DIGITS 15",
+     [0x7828535071038170, d(17.0)], 0, None),
+    # -3.916452910938414777...e-13: 391645291093841|4777 rounds down, by
+    # 10^27, where the scaled value is SCALE10's pair.
+    ("DIGITS 15 of -3.9164529109384147e-13 rounds once", [0xBD5B8F411CF57545], 0, "DIGITS 15",
+     [0x3916452910938410, d(-13.0)], 0, None),
+    # Exact ties go to even: 25 / 10 is 2.5 exactly, and 0.125 · 10^2 is 12.5.
+    ("DIGITS 1 of 25 is a tie, to 2e1", [d(25.0)], 0, "DIGITS 1", [0x2000000000000000, d(1.0)], 0, None),
+    ("DIGITS 1 of 35 is a tie, to 4e1", [d(35.0)], 0, "DIGITS 1", [0x4000000000000000, d(1.0)], 0, None),
+    ("DIGITS 2 of 0.125 is a tie, to 1.2e-1", [d(0.125)], 0, "DIGITS 2", [0x1200000000000000, d(-1.0)], 0, None),
     # π = 3.14159265358979|32...
     ("DIGITS 15 of π", [0x400921FB54442D18], 0, "DIGITS 15", [0x3141592653589790, 0], 0, None),
     # MAX = 1.79769313486231|57e308; 308 = 0x134 = 1.203125 · 2^8.
@@ -1322,9 +1348,10 @@ def scale10_check(rnd: random.Random) -> None:
 
 def digits_check(rnd: random.Random) -> None:
     """DIGITS n against Python's '%.*e', which rounds the exact value
-    once, on random finite values, 300 for each n. Up to 6 digits they
-    are the same; SCALE10 rounds before NEAREST, so beyond 6 the digits
-    may differ by one in the last place. D has n digits always."""
+    once, on random finite values, 300 for each n. D rounds once too, so
+    the two are the same: §11.3's pair beyond a count of 22 could only
+    differ within 2^-46 ulp of a tie, which no sample comes near. D has n
+    digits always."""
     for n in range(1, 16):
         for _ in range(300):
             a = rnd.getrandbits(63)
@@ -1336,13 +1363,7 @@ def digits_check(rnd: random.Random) -> None:
                 return
             mant, exp = f"{h(a):.{n - 1}e}".split("e")
             pv, pe = int(mant.replace(".", "")), int(exp)
-            if (dv, e) == (pv, pe):
-                continue
-            # The two as whole numbers of units in the last place of the
-            # larger exponent.
-            top = max(e, pe)
-            off = abs(dv * 10 ** (e - top + 10) - pv * 10 ** (pe - top + 10))
-            if n <= 6 or off > 10**10:
+            if (dv, e) != (pv, pe):
                 fail(f"DIGITS {n} of {a:016X}: {dv}e{e}, '%.{n - 1}e' gives {pv}e{pe}")
                 return
 

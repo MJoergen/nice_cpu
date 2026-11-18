@@ -63,7 +63,7 @@ architecture simulation of tb_fpu is
    -- ACK of the read of STATUS after it, which adds some 6 cycles: the
    -- times of DEVICES.md §11.5 with a margin, and for the commands that it
    -- gives no time, some twice what they take. DIGITS, which §11.5 gives up
-   -- to some 3400, takes at most 3365 on the slowest values that a scan
+   -- to some 3400, takes at most 3372 on the slowest values that a scan
    -- found (test/fpu_slow_vectors.py), and its bound is 20% above that,
    -- as are those of SIN and COS, at most 1552, TAN, at most 2043, ASIN,
    -- 1106, ACOS, 954, ATAN, 944, ATAN2, 1323, LN, 922, LOG2, 1144, LOG10,

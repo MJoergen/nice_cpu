@@ -469,12 +469,11 @@ fn mulPair(a: Pair, b: [2]u64) Pair {
     return .{ .h = h, .l = e - (h - p) };
 }
 
-/// Y · 10^k for a finite nonzero Y, by SCALE10's sequence.
-fn scale10(y: u64, k0: i32) u64 {
-    const neg = k0 < 0;
+/// SCALE10's pair for a finite nonzero Y and a count above 22 in
+/// magnitude: the high and the low part, before the sum that rounds them.
+fn scale10Pair(y: u64, k0: i32) Pair {
     const k: u32 = @min(@abs(k0), 650);
-    if (k <= 22) return bits(if (neg) f(y) / pow10[k] else f(y) * pow10[k]);
-    const table = if (neg) &ten_down else &ten_up;
+    const table = if (k0 < 0) &ten_down else &ten_up;
     var r: Pair = .{ .h = f(y), .l = 0 };
     for (0..9) |i| {
         if (k >> @intCast(i) & 1 != 0) r = mulPair(r, table[i]);
@@ -483,8 +482,48 @@ fn scale10(y: u64, k0: i32) u64 {
         r = mulPair(r, table[8]);
         r = mulPair(r, table[8]);
     }
+    return r;
+}
+
+/// Y · 10^k for a finite nonzero Y, by SCALE10's sequence.
+fn scale10(y: u64, k0: i32) u64 {
+    const k: u32 = @min(@abs(k0), 650);
+    if (k <= 22) return bits(if (k0 < 0) f(y) / pow10[k] else f(y) * pow10[k]);
+    const r = scale10Pair(y, k0);
     if (std.math.isInf(r.h)) return bits(r.h);
     return bits(r.h + r.l);
+}
+
+/// |X| · 10^k for DIGITS, as a pair whose sum rounds once to D. For a
+/// count of at most 22, the high part is the product or the quotient,
+/// rounded, and the low part has the sign of its exact error, and is 0
+/// only where it is exact: the error of the product, or the remainder
+/// over 10^k, both exact in binary128, as fma would give them (see
+/// isqrt for why not @mulAdd). Beyond, it is SCALE10's pair.
+fn digitsPair(y: u64, k0: i32) Pair {
+    const k: u32 = @abs(k0);
+    if (k > 22) return scale10Pair(y, k0);
+    const p: f128 = pow10[k];
+    if (k0 < 0) {
+        const q = f(y) / pow10[k];
+        return .{ .h = q, .l = @floatCast((@as(f128, f(y)) - @as(f128, q) * p) / p) };
+    }
+    const h = f(y) * pow10[k];
+    return .{ .h = h, .l = @floatCast(@as(f128, f(y)) * p - @as(f128, h)) };
+}
+
+/// The sum of a pair rounded to a whole number, ties to even, for a high
+/// part below 2^52, whose low part is within half a unit of its last
+/// place. Only where the high part is halfway between two whole numbers
+/// can the low part move the result, by one toward it. At 2^52 and above
+/// the result is the high part, which is enough for DIGITS: it compares
+/// such a D only with 10^n, at most 10^15.
+fn nearestPair(r: Pair) f64 {
+    const d = nearest(r.h);
+    const frac = r.h - d;
+    if (frac == 0.5 and r.l > 0) return d + 1;
+    if (frac == -0.5 and r.l < 0) return d - 1;
+    return d;
 }
 
 /// The exponent E of a finite nonzero X, with 2^E <= |X| < 2^(E+1).
@@ -521,22 +560,22 @@ fn frombcd(a: u64) Result {
 }
 
 /// DIGITS n of a finite nonzero X, n from 1 to 15: the digits D and the
-/// exponent e. D is NEAREST of SCALE10 of |X| by n - 1 - e, and e the
-/// smallest whole number for which D < 10^n. The search finds the
-/// largest e with D >= 10^(n-1), as no e above floor(log10 |X|) + 1 has
-/// one, and that D is below 10^n. Where it is exactly 10^(n-1), the
-/// first n digits may have rounded up to it, and then the e below gives
-/// a D below 10^n.
+/// exponent e. D is |X| · 10^(n - 1 - e) rounded once to a whole number,
+/// from digitsPair, and e the smallest whole number for which D < 10^n.
+/// The search finds the largest e with D >= 10^(n-1), as no e above
+/// floor(log10 |X|) + 1 has one, and that D is below 10^n. Where it is
+/// exactly 10^(n-1), the first n digits may have rounded up to it, and
+/// then the e below gives a D below 10^n.
 fn digits(a: u64, n: u8) struct { d: u64, e: i32 } {
     const ax = a & ~sign_bit;
     const lowest: f64 = @floatFromInt(std.math.pow(u64, 10, @as(u64, n) - 1));
     // log10 2 < 0.30103, so this is at least floor(log10 |X|) + 1.
     var e: i32 = @divFloor((exponent(ax) + 1) * 30103, 100000) + 2;
     while (true) : (e -= 1) {
-        const d = nearest(f(scale10(ax, @as(i32, n) - 1 - e)));
+        const d = nearestPair(digitsPair(ax, @as(i32, n) - 1 - e));
         if (d < lowest) continue;
         if (d == lowest) {
-            const below = nearest(f(scale10(ax, @as(i32, n) - e)));
+            const below = nearestPair(digitsPair(ax, @as(i32, n) - e));
             if (below < 10 * lowest) return .{ .d = @intFromFloat(below), .e = e - 1 };
         }
         return .{ .d = @intFromFloat(d), .e = e };

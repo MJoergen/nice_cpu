@@ -784,7 +784,7 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 | `0x67` | `MOD` | The remainder of `IDIV`, so Y = Q · X + R. A remainder that is not zero has the sign of Y. |
 
 - For `SHL` and `SHR`, a shift by 32 or more gives 0, as the processor's shifts do (ISA.md §5.2). A negative count gives the canonical NaN and sets the invalid flag.
-- `IDIV` and `MOD` by 0 give the canonical NaN and set the invalid flag. `IDIV` of −2³¹ by −1 is 2³¹, which a binary64 value holds. The datapath does them as `DIV` and `TRUNC`, which is exact for 32-bit operands, as #161 shows, but for the sign of a zero: `DIV` and `TRUNC` give −0 for `IDIV` of −1 by 2, where the result is +0.
+- `IDIV` and `MOD` by 0 give the canonical NaN and set the invalid flag. `IDIV` of −2³¹ by −1 is 2³¹, which a binary64 value holds. They divide the 32-bit integers, so `IDIV` of −1 by 2 is +0.
 - With BASIC's tokens equal to the command numbers, every operator of BASIC is one write of `FPU_CMD`.
 
 **Constants.**

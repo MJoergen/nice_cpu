@@ -770,7 +770,7 @@ A command on two values takes Y and X, pops both, and pushes the result. Y is th
 - `FTOI` and `FTOU` saturate a value out of range to the largest or the smallest integer, and give 0 for a NaN, and set the invalid flag for both. That is wasm's `trunc_sat`, with the flag for its `trunc`.
 - A signed 32-bit integer converts both ways through `FPU_X_W`, with no command. An unsigned one is pushed by a write of `FPU_X_LO` and `UTOF`. A 64-bit one is pushed by writes of `FPU_X_LO` and `FPU_X_HI`, and `ITOF` or `UTOF`.
 
-**Words.** These are BASIC's operators on whole numbers. Each operand is rounded toward zero, and must then fit a signed 32-bit integer, as bit 21 of the class says (§11.2). An operand that does not fit, or a NaN, gives the canonical NaN and sets the invalid flag. The result is a signed 32-bit integer as a binary64 value, which is exact. A result of zero is +0, whatever the signs of the operands, as an integer has one zero only.
+**Words.** These are BASIC's operators on whole numbers. Each operand is rounded toward zero, and must then fit a signed 32-bit integer, as bit 21 of the class says (§11.2). An operand that does not fit, or a NaN, gives the canonical NaN and sets the invalid flag. The result is a signed 32-bit integer as a binary64 value, which is exact, but for `IDIV` of −2³¹ by −1, which is 2³¹. A result of zero is +0, whatever the signs of the operands, as an integer has one zero only.
 
 | Number | Name | What it does |
 |---|---|---|

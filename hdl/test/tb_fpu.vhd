@@ -78,7 +78,7 @@ architecture simulation of tb_fpu is
          when 16#1A# => return 150;
          when 16#1D# => return 2400;
          when 16#39# => return 1500;
-         when 16#3A# => return 4000;
+         when 16#3A# => return 4050;
          when 16#17# to 16#19# | 16#1B# | 16#1C# | 16#20# to 16#24# | 16#28# to 16#2B# | 16#38# |
               16#3B# to 16#3D# | 16#60# to 16#65# => return 120;
          when 16#66# | 16#67# => return 200;

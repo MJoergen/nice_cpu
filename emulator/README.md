@@ -801,9 +801,10 @@ arithmetic, the constants against `decimal`, `ISQRT` against
 bound beyond, `DIGITS` against Python's `%e` digit for digit, constants
 of 15 digits through `FROMBCD`, `SCALE10`, and `DIGITS 15`, which must
 come back, and the functions within the bounds of DEVICES.md §11.3,
-against series in `decimal` to 90 digits. Each function is checked on 400 random operands,
-some of them from where its error is the largest, and `ATAN2` and
-`HYPOT` on the operands of their worst errors that are known.
+against series in `decimal` to 90 digits. Each function is checked on
+400 random operands, some of them from where its error is the largest,
+and `ATAN2` and `HYPOT` on the operands of their worst errors that are
+known.
 
 `test/fpu_vectors.py` writes the FPU's test vectors from the model, one
 line for each access: the state before it, the access, and the state

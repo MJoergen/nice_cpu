@@ -33,7 +33,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [instret.nasm](instret.nasm) | Reads of the instruction counter right after a store, after a read, and twice in one instruction. |
 | [hazard.nasm](hazard.nasm) | The hazards of MICROARCH.md §5, each with no padding. It checks itself. |
 | [programs.py](programs.py) | Runs the programs in some directories on the core and on the emulator, for `make programs`. |
-| [core_runs.py](core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`, in GHDL or nvc. |
+| [core_runs.py](core_runs.py) | Runs a program on the core, or on the emulator, for `irq_sweep.py` and `programs.py`, in GHDL or nvc. Under make with `-j`, each run takes a token from make's jobserver first, which make gives only to a recipe line with the Makefile's `$(JOBSERVER)` in front. Run by itself, it tests that client, as `make run/jobserver` does. |
 | [irq_compare.py](irq_compare.py) | Compares a run with interrupt requests against the emulator, from the steps where the core took them. |
 | [irq_sweep.py](irq_sweep.py) | Runs a program with an NMI before each of its steps, and with an IRQ before each. |
 | [sidefx_prog.py](sidefx_prog.py) | Writes a program with every pair of side effects on one register. |

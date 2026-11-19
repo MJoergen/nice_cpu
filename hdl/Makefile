@@ -397,11 +397,15 @@ define check_selfcheck
 
 endef
 
-# $(1) is the program, in $(BUILD), and $(2) any more options. The "+"
-# gives the script make's jobserver (test/core_runs.py), and runs it under
-# make -n too.
+# In front of a recipe line, $(JOBSERVER) is the "+" that gives a script
+# make's jobserver (test/core_runs.py). A "+" also runs its line under
+# make -n, -q, and -t, where a sweep would take its hours. So under those
+# it is nothing: make -n prints the line, and the script does not run.
+JOBSERVER = $(if $(strip $(foreach o,n q t,$(findstring $(o),$(firstword -$(MAKEFLAGS))))),,+)
+
+# $(1) is the program, in $(BUILD), and $(2) any more options.
 define check_sweep
-	+@$(PYTHON) test/irq_sweep.py --core $(CORE) $(SIM_ARGS) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
+	$(JOBSERVER)@$(PYTHON) test/irq_sweep.py --core $(CORE) $(SIM_ARGS) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
 	  $(BUILD)/$(1).bin
 
 endef
@@ -633,10 +637,14 @@ run/split:
 
 # The check of test/core_runs.py's client of make's jobserver, with this
 # make. THIS_MAKE is its name without the "$(MAKE)" in the recipe that
-# would have make take the line for a recursive make.
+# would have make take the line for a recursive make. The script runs
+# make jobserver-probe, with -j, -n, and -q, for what $(JOBSERVER) does.
 THIS_MAKE := $(MAKE)
 run/jobserver:
 	@$(PYTHON) test/core_runs.py --make '$(THIS_MAKE)'
+
+jobserver-probe:
+	$(JOBSERVER)@$(PYTHON) test/core_runs.py --probe
 
 # The check of the timing budget against made-up reports.
 run/budget:
@@ -705,7 +713,7 @@ programs: emulator analyze
 	@for m in "" --no-mpu --unchecked --grow --windows --inline-fpu; do \
 	  $(PYTHON) ../translator/test/fuzz.py $$m --keep $(PROGRAMS)/fuzz 1 $(FUZZ_PROGRAMS) \
 	    || exit 1; done > $(BUILD)/programs_fuzz.log 2>&1 || { cat $(BUILD)/programs_fuzz.log; exit 1; }
-	+@$(PYTHON) test/programs.py --core $(CORE) $(SIM_ARGS) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
+	$(JOBSERVER)@$(PYTHON) test/programs.py --core $(CORE) $(SIM_ARGS) --build $(BUILD) --emu $(EMU) --shard $(SHARD) $(PROGRAMS)/runtime $(PROGRAMS)/translator $(PROGRAMS)/fuzz
 
 # Analyzes the VHDL for SIM, and analyze-ghdl for GHDL's synthesis.
 analyze: analyze-$(SIM)
@@ -848,4 +856,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test seqcheck runs programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean
+.PHONY: test seqcheck runs jobserver-probe programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean

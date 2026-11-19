@@ -15,9 +15,10 @@ says. Make gives the jobserver as two descriptors of a pipe,
 "--jobserver-auth=R,W" in MAKEFLAGS, which make before 4.2 calls
 "--jobserver-fds=R,W", and only to a recipe that it takes for a
 recursive make, one with a "+" in front; make 4.4 gives a named pipe,
-"fifo:PATH". The script holds one token already, the one make ran it
-with, so one run at a time needs none from the pipe. Without a
-jobserver, the threads of the pool are the bound.
+"fifo:PATH". hdl/Makefile's $(JOBSERVER) is that "+". The script holds
+one token already, the one make ran it with, so one run at a time needs
+none from the pipe. Without a jobserver, the threads of the pool are the
+bound.
 """
 
 import argparse
@@ -207,8 +208,7 @@ def difference(expected: str, got: str) -> str | None:
 def self_test(make: str) -> None:
     """The jobserver client against pipes with tokens in them, a named
     pipe, descriptors that are not pipes, and make itself, the program
-    that make names."""
-    import sys
+    that make names, on hdl/Makefile's jobserver-probe."""
     import tempfile
     import time
 
@@ -260,18 +260,28 @@ def self_test(make: str) -> None:
         os.write(js.fds[1], b"+")
         assert most_at_once(js, 5) == 2
         assert Jobserver(f"--jobserver-auth=fifo:{fifo}x").fds is None, "no such pipe"
-        # Make itself gives the jobserver to a recipe with "+".
-        mk = os.path.join(d, "Makefile")
-        probe = f'{sys.executable} -c "import sys; sys.path.insert(0, {HERE!r}); ' \
-                'import core_runs; print(core_runs.JOBSERVER.fds is not None)"'
-        with open(mk, "w") as m:
-            m.write(f"a:\n\t+@{probe}\n")
-        run = subprocess.run([make, "-s", "-j3", "-f", mk], capture_output=True, text=True)
-        assert run.stdout == "True\n", run.stdout + run.stderr
+
+    # Make itself gives the jobserver to a recipe with hdl/Makefile's
+    # $(JOBSERVER) in front, and does not run that recipe under -n or -q.
+    def probe(*options: str) -> tuple[str, int]:
+        run = subprocess.run([make, "--no-print-directory", "-j3", *options, "jobserver-probe"],
+                             cwd=os.path.join(HERE, ".."), capture_output=True, text=True)
+        return run.stdout, run.returncode
+
+    assert probe() == ("True\n", 0), probe()
+    out, status = probe("-n")
+    assert out.endswith("test/core_runs.py --probe\n") and out.count("\n") == 1 and status == 0, out
+    assert probe("-q") == ("", 1), probe("-q")
     print("PASS core_runs.py --test")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tests the client of make's jobserver.")
     parser.add_argument("--make", default="make", help="the make to test with (default make)")
-    self_test(parser.parse_args().make)
+    parser.add_argument("--probe", action="store_true",
+                        help="print whether this process has make's jobserver, and do no more")
+    main_args = parser.parse_args()
+    if main_args.probe:
+        print(JOBSERVER.fds is not None)
+    else:
+        self_test(main_args.make)

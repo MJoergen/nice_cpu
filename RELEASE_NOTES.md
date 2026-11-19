@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V2.4` | none yet |
 | `V2.3` | `V2.3`, `V2.3.1` |
 | `V2.2` | `V2.2` |
 | `V2.1` | `V2.1` |
@@ -37,6 +38,85 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V2.4 (2026-11-19)
+
+The FPU's `DIGITS` rounds its digits once, so they are those of C's
+`%.*e` (#200). The demo's F11 tests the RAM up to `0xCFFF`, which leaves
+the top 12K words of a board to its monitor (#195). `make -C hdl test`
+takes 13 minutes in GHDL, where it took 19, and keeps the load of the
+machine within `-j` (#193, #197).
+
+**Upgrade notes.**
+
+- **`DIGITS n` gives another last digit for about 1% of the values**
+  (#200), in the emulator and in `hdl/src/fpu.vhd`. With 15 digits,
+  -41610939429.713050842 gave the digits 416109394297130, and now gives
+  416109394297131, as C does. The digits are |X| · 10^k rounded once,
+  ties to even, where `SCALE10` rounded to a binary64 value first, and
+  `NEAREST` then rounded that. An expected output with such a digit
+  changes. The board follows in MJoergen/NiceMonMEGA65#154.
+- **The demo's F11 tests 8192 words**, `0xB000`–`0xCFFF`, where it
+  tested the 12288 up to `0xDFFF` (#195). Its image and the text of its
+  screen change, so a board that keeps the demo in its ROM builds the
+  ROM again.
+- **The FPU misses its timing budget out of context, as in `V2.3`.** On
+  the MEGA65 it leaves +0.424 ns on its own paths in the default flow
+  and +0.330 ns in the `timing` flow, where the budget is 1.0 ns and
+  `V2.3` left +0.364 ns and +0.811 ns. It still meets 100 MHz. The
+  worst path is from the operation of the arithmetic unit to its
+  multiplier in the default flow, and from the top of the stack to the
+  start of the arithmetic unit in the `timing` flow. The functions of
+  `V2.3` took the margin (#194), and the six new states of `DIGITS`
+  are the only change to the FPU since. It takes 10045 LUTs and 2760
+  registers, where it took 9536 and 2698. A board checks its own build.
+- `hdl/src` has the same files and the same ports: only `fpu.vhd`
+  changes. The debug link stays version 8, and Zig stays 0.17.0.
+
+**Specification and documents**
+
+- DEVICES.md §11.3: the digits of `DIGITS n` are |X| · 10^k, with
+  k = n − 1 − e, rounded once to a whole number, ties to even (#200).
+  They are those of a correctly rounded conversion for every k from −22
+  to 22, which for 15 digits takes |X| from about 10^−8 to 10^37, and
+  beyond unless the product is within 2^−46 ulp of a halfway point.
+- DEVICES.md §11.3: `IDIV` and `MOD` divide the 32-bit integers, where
+  the section said that the datapath does them as `DIV` and `TRUNC`
+  (#199), and `IDIV` of −2³¹ by −1 is named as the one result of a word
+  operator that is no signed 32-bit integer. The FPU does as before.
+- doc/review/decisions.md: `IDIV` of a nonzero value by 0 stays
+  invalid, and gives no infinity (#198).
+
+**Emulator (`niceemu`)**
+
+- `DIGITS` rounds once (#200). `test/fpu_model_test.py` checks the
+  model's digits against Python's `%e`, digit for digit, and the values
+  of the issue and three exact ties are hand-checked vectors.
+- The version is 2.4.0.
+
+**FPGA cores (`hdl/`)**
+
+- `fpu.vhd` rounds `DIGITS` once, with six more states and no new
+  arithmetic (#200). The slowest `DIGITS` that a scan found takes 3372
+  cycles, where it took 3365, and `tb_fpu` bounds it at 4050.
+- `tb_fpu` replays the FPU's vectors in 8 shares in parallel,
+  `run/fpu/1` to `run/fpu/8`, in 86 seconds together, where its one run
+  took 10 minutes in GHDL (#193).
+- The interrupt sweeps and `make programs` take a token from make's
+  jobserver for each simulation (#197), so `make test` runs as many
+  simulations at once as `-j` says, also under the top-level `make
+  test`: a load of 20 to 26 on 20 CPUs, where it reached 100. `make -n`
+  prints the sweeps and `make programs`, and does not run them.
+
+**Benchmarks**
+
+- The figures are those of `V2.3`: neither the cores, the translator,
+  nor the runtime changes.
+
+**Demo (`demo/`)**
+
+- F11 tests the 8192 words from `0xB000` to `0xCFFF` (#195), and its
+  screen names them.
 
 ## V2.3 (2026-11-17)
 

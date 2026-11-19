@@ -11,11 +11,12 @@ write an executable where they run.
 Under make with -j, each run on the core or the emulator first takes a
 token from make's jobserver, and gives it back after, so that make and
 the threads of every script together run at most as many jobs as -j
-says. Make 4.3 gives the jobserver as two descriptors of a pipe,
-"--jobserver-auth=R,W" in MAKEFLAGS, and only to a recipe that it takes
-for a recursive make, one with a "+" in front; make 4.4 gives a named
-pipe, "fifo:PATH". The script holds one token already, the one make ran
-it with, so one run at a time needs none from the pipe. Without a
+says. Make gives the jobserver as two descriptors of a pipe,
+"--jobserver-auth=R,W" in MAKEFLAGS, which make before 4.2 calls
+"--jobserver-fds=R,W", and only to a recipe that it takes for a
+recursive make, one with a "+" in front; make 4.4 gives a named pipe,
+"fifo:PATH". The script holds one token already, the one make ran it
+with, so one run at a time needs none from the pipe. Without a
 jobserver, the threads of the pool are the bound.
 """
 
@@ -44,7 +45,8 @@ class Jobserver:
         self.fds: tuple[int, int] | None = None
         self.free = True  # the token that make ran the script with
         self.lock = threading.Lock()
-        auth = [w.split("=", 1)[1] for w in makeflags.split() if w.startswith("--jobserver-auth=")]
+        names = ("--jobserver-auth=", "--jobserver-fds=")
+        auth = [w.split("=", 1)[1] for w in makeflags.split() if w.startswith(names)]
         if not auth:
             return
         if auth[-1].startswith("fifo:"):
@@ -202,9 +204,10 @@ def difference(expected: str, got: str) -> str | None:
     )
 
 
-def self_test() -> None:
+def self_test(make: str) -> None:
     """The jobserver client against pipes with tokens in them, a named
-    pipe, descriptors that are not pipes, and make itself."""
+    pipe, descriptors that are not pipes, and make itself, the program
+    that make names."""
     import sys
     import tempfile
     import time
@@ -244,6 +247,10 @@ def self_test() -> None:
     with tempfile.TemporaryFile() as f:
         assert Jobserver(f"--jobserver-auth={f.fileno()},{f.fileno()}").fds is None, "not a pipe"
     assert Jobserver(" -j4").fds is None
+    r, w = os.pipe()
+    assert Jobserver(f" -j3 --jobserver-fds={r},{w}").fds == (r, w), "the name before make 4.2"
+    os.close(r)
+    os.close(w)
     assert most_at_once(Jobserver(""), 4) == 4, "without a jobserver, the threads are the bound"
     with tempfile.TemporaryDirectory() as d:
         fifo = os.path.join(d, "fifo")
@@ -259,10 +266,12 @@ def self_test() -> None:
                 'import core_runs; print(core_runs.JOBSERVER.fds is not None)"'
         with open(mk, "w") as m:
             m.write(f"a:\n\t+@{probe}\n")
-        out = subprocess.run(["make", "-s", "-j3", "-f", mk], capture_output=True, text=True).stdout
-        assert out == "True\n", out
+        run = subprocess.run([make, "-s", "-j3", "-f", mk], capture_output=True, text=True)
+        assert run.stdout == "True\n", run.stdout + run.stderr
     print("PASS core_runs.py --test")
 
 
 if __name__ == "__main__":
-    self_test()
+    parser = argparse.ArgumentParser(description="Tests the client of make's jobserver.")
+    parser.add_argument("--make", default="make", help="the make to test with (default make)")
+    self_test(parser.parse_args().make)

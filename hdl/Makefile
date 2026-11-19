@@ -631,9 +631,12 @@ seqcheck:
 run/split:
 	@$(PYTHON) test/programs.py --test
 
-# The check of test/core_runs.py's client of make's jobserver.
+# The check of test/core_runs.py's client of make's jobserver, with this
+# make. THIS_MAKE is its name without the "$(MAKE)" in the recipe that
+# would have make take the line for a recursive make.
+THIS_MAKE := $(MAKE)
 run/jobserver:
-	@$(PYTHON) test/core_runs.py
+	@$(PYTHON) test/core_runs.py --make '$(THIS_MAKE)'
 
 # The check of the timing budget against made-up reports.
 run/budget:

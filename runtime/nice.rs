@@ -209,7 +209,7 @@ pub const BG_NAVY: u32 = 0x00A0_0000;
 pub const BG_DARK_BLUE: u32 = 0x0360_0000;
 
 /// Writes c, the character in bits 7..0 and its color above, to a column,
-/// 0 to 79, of a row, 0 to 24.
+/// 0 to 79, of a row, 0 to 27.
 pub fn screen_put(col: u32, row: u32, c: u32) {
     unsafe { nice_screen_put(col as i32, row as i32, c as i32) }
 }

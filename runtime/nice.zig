@@ -151,7 +151,7 @@ pub const bg_navy: u32 = 0x00A00000;
 pub const bg_dark_blue: u32 = 0x03600000;
 
 /// Writes c, the character in bits 7..0 and its colors above (doc/DEVICES.md
-/// §1), to a column, 0 to 79, of a row, 0 to 24.
+/// §1), to a column, 0 to 79, of a row, 0 to 27.
 pub fn screenPut(col: u32, row: u32, c: u32) void {
     nice_screen_put(@bitCast(col), @bitCast(row), @bitCast(c));
 }

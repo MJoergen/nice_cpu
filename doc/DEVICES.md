@@ -105,7 +105,7 @@ The window draws a cursor from three words, numbered as the screen registers of 
 |---|---|
 | `0xFFFFFF80` | State. Bit 6 shows the cursor, bit 5 makes it blink, about twice a second, and bit 4 makes it small, the bottom 4 lines of the character. The other bits are ignored. |
 | `0xFFFFFF81` | The cursor's column, 0 to 79. |
-| `0xFFFFFF82` | The cursor's row, 0 to 24. |
+| `0xFFFFFF82` | The cursor's row, 0 to 27, or 0 to 24 with `-2004`. |
 
 The cursor swaps the foreground and background colors of its character. With a column or row out of range, or in the chunky mode (§1.10), no cursor is shown. The words are 0 at the start of a run, so the cursor is off.
 

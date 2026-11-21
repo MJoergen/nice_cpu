@@ -87,6 +87,8 @@ RELEASE_NOTES.md, the table at its top. NiceMonMEGA65 has a tag `V2.4`, of 2026-
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`, as a change after the stamp makes the stamp stale. **Fix:** `2.5.0`.
 
+**Resolved.** `build.zig.zon` says `2.5.0`. The notes of `V2.5` say so under the emulator (§1.2).
+
 ### 1.5 The rest of the checklist
 
 - The milestone `V2.5` has two closed issues, #202 and #203, and none open.

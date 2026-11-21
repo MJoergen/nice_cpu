@@ -189,9 +189,11 @@ window:
 
 # The window's tests: the unit tests of window.zig, in ReleaseSafe, which
 # shares the SDL of the window build, and test/window.py on SDL's dummy
-# video driver, so with no display.
+# video driver, so with no display. The unit tests run with DISPLAY and
+# WAYLAND_DISPLAY unset, so that one that needs a display fails here as
+# it does in CI, where there is none.
 window-test: window
-	$(ZIG) build test -Doptimize=ReleaseSafe -Dwindow --summary all
+	env -u DISPLAY -u WAYLAND_DISPLAY $(ZIG) build test -Doptimize=ReleaseSafe -Dwindow --summary all
 	@$(PYTHON) test/window.py
 
 # The release files of README.md, Download: niceemu for x86_64 Linux,

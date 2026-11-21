@@ -225,8 +225,6 @@ fn colorAt(surface: *c.SDL_Surface, x: c_int, y: c_int) !u32 {
 }
 
 test "the window is as high as its rows, and shows no word after them (DEVICES §1.1, §1.3)" {
-    // SDL's dummy video driver needs no display.
-    _ = c.SDL_SetHintWithPriority(c.SDL_HINT_VIDEO_DRIVER, "dummy", c.SDL_HINT_OVERRIDE);
     // The window is 1280×896, and 1280×800 with -2004, whose screen is at
     // 0x400.
     const cases = [_]struct { size: frame.Size, base: u32, lines: c_int }{
@@ -234,6 +232,9 @@ test "the window is as high as its rows, and shows no word after them (DEVICES �
         .{ .size = frame.size_2004, .base = 0x400, .lines = 800 },
     };
     for (cases) |case| {
+        // SDL's dummy video driver needs no display. SDL_Quit, in close,
+        // forgets the hint, so each window sets it.
+        _ = c.SDL_SetHintWithPriority(c.SDL_HINT_VIDEO_DRIVER, "dummy", c.SDL_HINT_OVERRIDE);
         var cpu = Cpu.init(testing.allocator);
         defer cpu.deinit();
         // White on white in all the words of the full screen, in either

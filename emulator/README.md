@@ -262,6 +262,9 @@ there opens a window on the dummy driver with all the rows, and one with
 those of `-2004`, and checks the size of each, 1280×896 and 1280×800,
 that the words after its rows do not show, in the text and in the chunky
 mode, and that its last row is at the bottom edge.
+`make window-test` runs these unit tests with `DISPLAY` and
+`WAYLAND_DISPLAY` unset, so that a test that needs a display fails there
+as it does in CI.
 
 ## Program files
 

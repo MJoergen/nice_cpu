@@ -59,6 +59,8 @@ Three texts say what the fix makes true. emulator/README.md, Window: "Another th
 
 with the two lines before the loop removed. `make -C emulator window-test` with `DISPLAY` unset then shows the failure before a push does.
 
+**Resolved.** The test sets the hint for each window, and passes with no display: 119 and 1 skipped. `make -C emulator window-test` now runs the unit tests with `DISPLAY` and `WAYLAND_DISPLAY` unset, so that a test that needs a display fails on a desk machine as it does in CI: with the test as it was, the target fails there with the message of CI, and with the fix it passes, `test/window.py` and its 13 tests included. emulator/README.md says so.
+
 ### 1.2 RELEASE_NOTES.md has no section for `V2.5`
 
 The newest section is `V2.4`. RELEASE.md step 2.8 asks for the section, and for a row `V2.5`, "none yet", in the table of board tags. `release.py notes` drafts it. The upgrade notes must say at least:

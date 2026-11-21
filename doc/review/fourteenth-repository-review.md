@@ -165,6 +165,8 @@ No test reads it: `test/link.py` gives its parser a description of its own, and 
 
 **Fix:** name `nicedbg.DESCRIPTION` in the README's point, and have `test/link.py` check that `main()`'s help has it.
 
+**Resolved.** debugger/README.md names `nicedbg.DESCRIPTION` as the sentence that `nicedbg.py --help` prints, which a front end may take for its parser. `test/errors.py` runs `nicedbg.py --help` and checks that the description is `DESCRIPTION`. It fails when `main()` gives its parser another one.
+
 ### 3.3 Nothing checks a "not yet" against the board's issue
 
 §2.1 went stale when the board closed its issue, and no check here could see it. The documents cite 14 issues of the board. Four of the sentences say "not yet" or "until":

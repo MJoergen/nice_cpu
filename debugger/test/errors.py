@@ -5,7 +5,8 @@ on stderr. The files are checked before the link opens, so their cases
 give a port that nothing serves. Two servers in this script stand in for
 a wrong peer: one that never sends niceemu's b notice, and one that
 serves a link of major 1, which nicedbg.py does not know (DEBUG.md §9).
-No niceemu is needed."""
+One case is no error: --help, which must print DESCRIPTION. No niceemu
+is needed."""
 
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NICEDBG = os.path.join(os.path.dirname(HERE), "nicedbg.py")
 sys.path.insert(0, os.path.dirname(HERE))
 
+from nicedbg import DESCRIPTION  # noqa: E402
 from nicelink import VERSION, packet  # noqa: E402
 
 results: list[bool] = []
@@ -76,6 +78,23 @@ def case(name: str, args: list[str], status: int, want: str) -> None:
         print(f"  wanted {want!r}")
 
 
+def help_case() -> None:
+    """nicedbg.py --help must exit with status 0 and print DESCRIPTION, the
+    sentence that a front end may take for its subcommand, as a paragraph
+    of its own after the usage."""
+    p = subprocess.run([sys.executable, NICEDBG, "--help"],
+                       capture_output=True, text=True, timeout=30,
+                       env=dict(os.environ, COLUMNS="80"))
+    ok = (p.returncode == 0 and p.stdout.startswith("usage: nicedbg.py ")
+          and f"\n\n{DESCRIPTION}\n\n" in p.stdout)
+    results.append(ok)
+    print(f"{'PASS' if ok else 'FAIL'} --help has DESCRIPTION")
+    if not ok:
+        print(f"  status {p.returncode}")
+        print(f"  got    {p.stdout!r}")
+        print(f"  wanted {DESCRIPTION!r}")
+
+
 def main() -> None:
     argparse.ArgumentParser(description=__doc__).parse_args()
     port = str(free_port())
@@ -90,6 +109,7 @@ def main() -> None:
         tcp = ["--tcp", port]
 
         # The options
+        help_case()
         case("no link", [], 2, "nicedbg.py: error: one of the arguments "
              "--tcp --port is required")
         case("--tcp and --port", ["--tcp", "1", "--port", "x"], 2,

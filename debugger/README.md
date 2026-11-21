@@ -134,7 +134,9 @@ these modules and pass hooks of their own:
   takes `add_link_arguments` and adds the options to a parser, and
   `nicedbg.run()`, which takes the other three and runs on the parsed
   options. A front end that runs nicedbg as one of its subcommands calls
-  these two on a parser with its own program name and description.
+  these two on a parser with its own program name, and with a
+  description of its own or `nicedbg.DESCRIPTION`, the sentence that
+  `nicedbg.py --help` prints.
 
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) does this
 for its Ethernet port and its simulation, and checks a program against
@@ -143,7 +145,8 @@ the MEGA65's RAM.
 ## Tests
 
 `make test` runs `test/errors.py`, the error cases of the options and
-the files, with exact messages, and `test/link.py`, which runs the link,
+the files, with exact messages, and the description that `--help`
+prints, and `test/link.py`, which runs the link,
 the loader, the debugger's commands, and `add_options()` and `run()` on
 a parser of a front end's own, on `niceemu --link` with the programs
 `test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`,

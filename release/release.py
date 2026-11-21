@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """The scripted parts of the release procedure of RELEASE.md.
 
-    release.py preflight        step 1: tree, branch, toolchain, tools
+    release.py preflight        step 1: tree, branch, toolchain, tools, and
+                                a warning of a document that waits for a
+                                closed issue of another repository
     release.py check            steps 2.4 and 3 to 5: run the gates, write the stamp
                                 (the timing budget is shown, not a gate)
     release.py figures          step 2.4: the benchmark figures in bench/README.md
@@ -65,6 +67,12 @@ TOOLS = {
     "pdflatex": "make diagrams, make pdf",
     "pdftoppm": "make diagrams",
 }
+
+# A sentence that waits for an issue of another repository, such as a
+# board's: "not yet (OWNER/NAME#12)" or "until OWNER/NAME#12".
+WAITING = re.compile(r"\b(?:yet|until)\s*\(?\s*([\w.-]+/[\w.-]+)#(\d+)", re.I)
+# The documents that say what was true, and so may wait for a closed issue.
+PAST_DOCUMENTS = ("RELEASE_NOTES.md", "doc/HISTORY.md", "doc/review/")
 
 # Where the benchmark figures are quoted, and what make -C bench cycles prints.
 FIGURES_FILE = ROOT / "bench" / "README.md"
@@ -130,6 +138,42 @@ def say(ok: bool, text: str) -> bool:
 # ---------------------------------------------------------------- preflight
 
 
+def waiting_issues(text: str) -> list[tuple[str, int]]:
+    """The issues of other repositories that text waits for: (OWNER/NAME,
+    number) for each "yet (OWNER/NAME#n)" and "until OWNER/NAME#n", in
+    order, each once. The two parts may be on two lines."""
+    found: list[tuple[str, int]] = []
+    for m in WAITING.finditer(text):
+        issue = (m.group(1), int(m.group(2)))
+        if issue not in found:
+            found.append(issue)
+    return found
+
+
+def documents() -> dict[str, str]:
+    """The Markdown files that say what is true now, by name: all but the
+    release notes, HISTORY.md, and the reviews."""
+    names = git("ls-files", "-z", "*.md").split("\0")
+    return {n: (ROOT / n).read_text() for n in names if n and not n.startswith(PAST_DOCUMENTS)}
+
+
+def stale_waits(texts: dict[str, str]) -> list[str]:
+    """A line for each issue that a document of texts waits for and that
+    is not open: the sentence that waits is then stale. gh reads each
+    issue once."""
+    where: dict[tuple[str, int], list[str]] = {}
+    for name, text in texts.items():
+        for issue in waiting_issues(text):
+            where.setdefault(issue, []).append(name)
+    lines = []
+    for (repo, number), names in sorted(where.items()):
+        state = run(["gh", "api", f"repos/{repo}/issues/{number}", "--jq", ".state"], check=False)
+        if state != "open":
+            what = f"is {state}" if state else "gh cannot read"
+            lines.append(f"{', '.join(names)}: waits for {repo}#{number}, which {what}")
+    return lines
+
+
 def check_preflight() -> bool:
     ok = True
     branch = git("rev-parse", "--abbrev-ref", "HEAD")
@@ -157,6 +201,10 @@ def check_preflight() -> bool:
     if shutil.which("gh"):
         p = subprocess.run(["gh", "auth", "status"], cwd=ROOT, capture_output=True, text=True)
         ok &= say(p.returncode == 0, "gh is logged in")
+        if p.returncode == 0:
+            # A warning and no gate: a release never waits for a board.
+            for line in stale_waits(documents()):
+                print(f"  warn {line}")
     p = subprocess.run([sys.executable, "-m", "mypy", "--version"], capture_output=True, text=True)
     ok &= say(p.returncode == 0, "mypy installed, for make typecheck")
     print(f"  next tag: {next_tag()}")

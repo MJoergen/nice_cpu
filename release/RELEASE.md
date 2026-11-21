@@ -60,7 +60,11 @@ tools. Item 2 is by hand.
 1. [doc/ISA.md](../doc/ISA.md) says what the code does. A behavior change
    starts there, and Appendix B lists every departure from the sources.
 2. Each document says only what is true now. What used to be true is in
-   [doc/HISTORY.md](../doc/HISTORY.md).
+   [doc/HISTORY.md](../doc/HISTORY.md). A sentence that waits for an
+   issue of another repository, as "not yet (MJoergen/NiceMonMEGA65#12)"
+   or "until MJoergen/NiceMonMEGA65#12", is stale once that issue is
+   closed, and `release.py preflight` warns of it. That is no gate, as a
+   release never waits for a board.
 3. Every README agrees with the options, formats, and error behavior of its
    tool.
 4. The figures quoted in the documents (the cycle counts of the benchmark,

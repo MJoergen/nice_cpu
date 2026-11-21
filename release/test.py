@@ -86,6 +86,35 @@ def test_next_tag() -> None:
         check(release.next_tag() == "V1.0", "first tag")
 
 
+def test_waiting_issues() -> None:
+    text = ("It does not have it yet (MJoergen/NiceMonMEGA65#104). It shows 25 rows until\n"
+            "MJoergen/NiceMonMEGA65#157, and has the mode (MJoergen/NiceMonMEGA65#144).\n"
+            "Not yet (#12). Until then, see a/b#3. Until a-b/c.d#7 it waits, and\n"
+            "it does not wire it yet (MJoergen/NiceMonMEGA65#104).")
+    board = "MJoergen/NiceMonMEGA65"
+    check(release.waiting_issues(text) == [(board, 104), (board, 157), ("a-b/c.d", 7)],
+          "yet and until before an issue of another repository, each once")
+    check(release.waiting_issues("It has the FPU (MJoergen/NiceMonMEGA65#136).") == [],
+          "an issue cited for what a board has")
+
+
+def test_stale_waits() -> None:
+    texts = {"a.md": "not yet (o/r#1), until o/r#2", "b.md": "until\no/r#2, yet (o/r#3)"}
+    with mock.patch.object(release, "run", side_effect=["open", "closed", ""]) as gh:
+        lines = release.stale_waits(texts)
+    check(lines == ["a.md, b.md: waits for o/r#2, which is closed",
+                    "b.md: waits for o/r#3, which gh cannot read"], f"the stale waits: {lines}")
+    check(gh.call_count == 3, "gh reads each issue once")
+    check(gh.call_args_list[1].args[0] == ["gh", "api", "repos/o/r/issues/2", "--jq", ".state"],
+          "the call of gh")
+    with mock.patch.object(release, "run", side_effect=["open"]):
+        check(release.stale_waits({"a.md": "until o/r#1"}) == [], "an open issue is no line")
+    names = "README.md\0RELEASE_NOTES.md\0doc/HISTORY.md\0doc/review/decisions.md\0release/README.md"
+    with mock.patch.object(release, "git", return_value=names):
+        check(list(release.documents()) == ["README.md", "release/README.md"],
+              "the documents that say what is true now")
+
+
 def test_ci_status() -> None:
     import json
 
@@ -228,6 +257,6 @@ def test_timing_dir() -> None:
         check(made == {release.timing_dir("mega65", unit)}, f"make timing UNIT={unit} writes to {made}")
 
 
-for t in (test_timing_dir, test_timing_budget, test_core_total, test_figure_lines, test_bench_totals, test_next_tag, test_ci_status, test_notes_section, test_version, test_stamp_covers):
+for t in (test_timing_dir, test_timing_budget, test_core_total, test_figure_lines, test_bench_totals, test_next_tag, test_waiting_issues, test_stale_waits, test_ci_status, test_notes_section, test_version, test_stamp_covers):
     t()
 print("release tests passed")

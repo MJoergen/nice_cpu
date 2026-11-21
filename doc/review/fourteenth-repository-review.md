@@ -182,6 +182,8 @@ The other ten are cited for what the board has, and are closed, as they should b
 
 **Fix, optional:** have `release.py preflight`, which already asks `gh` whether it is logged in, list the issues of the board that the documents cite beside a "yet" or an "until", and warn on a closed one. It would be a warning and no gate, as a release here never waits for the board.
 
+**Resolved.** `release.py preflight` warns of a document that waits for an issue of another repository, with "yet (OWNER/NAME#12)" or "until OWNER/NAME#12" right before the issue, when `gh` says that the issue is not open. It reads the Markdown files but for the release notes, HISTORY.md, and the reviews, and a warning fails nothing. On the documents as they are now it prints no warning, with #104, #106, and #157 open, and on DEVICES.md as it was at 6234019 it prints "doc/DEVICES.md: waits for MJoergen/NiceMonMEGA65#144, which is closed". The first sentence of #106 in §8, which has no "yet", is not seen, and the second is. `release/test.py` tests the pattern and the warning, and release/README.md and RELEASE.md step 2.2 describe it.
+
 ## 4. What was checked, and found right
 
 These are recorded so that the next review need not repeat them.

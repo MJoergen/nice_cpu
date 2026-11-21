@@ -107,7 +107,7 @@ goes through these steps on a small program, and a
 | `-s`, `--screen` | After halting, print the 80×28 character screen, or 80×25 with `-2004`, or only the size of the chunky mode (DEVICES.md §1.10). |
 | `--color` | Like `--screen`, with the colors of each word as 24-bit ANSI escapes (see below). |
 | `--invert-fg` | Like `--color`, with the foreground inverted, as in the 2004 IDE. |
-| `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
+| `-2004` | Put the screen at `0x400`, as the 2004 emulator does, with 25 rows, and 100 rows of pixels. The window of `--window` is then 1280×800. |
 | `-d`, `--dump ADDR:N` | After halting, print N memory words from ADDR. May be repeated. |
 | `-n`, `--max-steps N` | Stop after N steps. There is no limit by default, so a program that never halts runs until it is killed. |
 | `-i`, `--input FILE` | Read the console's input from FILE instead of stdin; `-` is stdin. A directory is an error. |

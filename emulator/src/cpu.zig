@@ -52,8 +52,9 @@ pub const font_words: u32 = font.glyphs.len * font.height;
 pub const font_base: u32 = 0xFFFF_FF86;
 
 /// The screen's mode word (doc/DEVICES.md §1.10): 0 for the text of §1.1,
-/// 1 for 160×100 pixels. A write of another value writes 0, so that a
-/// program finds out which modes there are by reading back what it wrote.
+/// 1 for 160×112 pixels, or 160×100 with `-2004`. A write of another value
+/// writes 0, so that a program finds out which modes there are by reading
+/// back what it wrote.
 pub const screen_mode: u32 = 0xFFFF_FF87;
 pub const mode_text: u32 = 0;
 pub const mode_chunky: u32 = 1;

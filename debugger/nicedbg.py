@@ -934,5 +934,6 @@ def main(argv: list[str] | None = None,
     add_options(parser, add_link_arguments)
     run(parser.parse_args(argv), open_link, load, check_file)
 
+
 if __name__ == "__main__":
     main()

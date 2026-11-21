@@ -14,6 +14,8 @@ connects to it as the host. The groups check:
   test/break.nasm with its labels, and its watchpoints on
   test/watch.nasm;
 - nicedbg.py as a program, with its commands on stdin;
+- add_options() on a parser of a front end's own, and run() on what it
+  parses, with hooks of its own;
 - its console on a pseudo-terminal, which passes the Enter key as CR.
 
 The expected values come from the programs and DEBUG.md, not from the
@@ -589,6 +591,53 @@ def test_program(port: str, prog: str) -> None:
           "R6  00000007" in out and "R7  00001234" in out, repr(out))
 
 
+def test_options(port: str, prog: str) -> None:
+    """add_options() on a parser with another program name and
+    description, as a front end's subcommand builds it, and run() on what
+    it parses, with an open_link and a load of its own, and its commands
+    on stdin."""
+    parser = argparse.ArgumentParser(prog="front.py mon",
+                                     description="The front end's monitor.")
+    nicedbg.add_options(parser)
+    text = parser.format_help()
+    check("add_options: the program name and description",
+          text.startswith("usage: front.py mon ")
+          and "The front end's monitor." in text, repr(text))
+    check("add_options: the link's options, --symbols, and the file",
+          all(opt in text for opt in ("--tcp", "--port", "--symbols",
+                                      "file")), repr(text))
+    sym = prog.replace(".bin", ".sym")
+    args = parser.parse_args(["--tcp", port, "--symbols", sym, prog])
+    opened: list[str] = []
+    loaded: list[str] = []
+
+    def open_link(args: argparse.Namespace) -> Link:
+        opened.append(args.tcp)
+        return nicelink.open_link(args)
+
+    def load(link: Link, path: str) -> int:
+        loaded.append(path)
+        return nicedbg.plain_load(link, path)
+
+    # run() writes the console's bytes to the buffer under sys.stdout
+    raw = io.BytesIO()
+    out = io.TextIOWrapper(raw, write_through=True)
+    stdin = sys.stdin
+    sys.stdin = io.StringIO("b DONE\ng\nregs\nq\n")
+    try:
+        with contextlib.redirect_stdout(out):
+            nicedbg.run(args, open_link, load)
+    finally:
+        sys.stdin = stdin
+    out.flush()
+    text = raw.getvalue().decode()
+    check("run: the hooks", opened == [port] and loaded == [prog],
+          f"{opened} {loaded}")
+    check("run: the load, the breakpoint at DONE, and the registers",
+          text.startswith("loaded 23 words") and " DONE  HALT]" in text
+          and "R7  00001234" in text, repr(text))
+
+
 def read_until(fd: int, want: bytes, seen: bytearray, start: int = 0) -> bool:
     """Reads fd into seen until seen[start:] holds want, at most WAIT
     seconds."""
@@ -665,6 +714,7 @@ def main() -> None:
             test_hidden(port, hidden)
             test_watch(port, watch, watch_at)
             test_program(port, prog)
+            test_options(port, prog)
             test_console(port, echo)
     passed = sum(results)
     print(f"{passed}/{len(results)} passed")

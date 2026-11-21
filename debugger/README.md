@@ -130,7 +130,11 @@ these modules and pass hooks of their own:
   processor is held, and stops on a word that does not fit.
 - `nicedbg.main()` takes `add_link_arguments`, `open_link`, `load`, and
   `check_file`, for the options, the link, the loader, and the check of
-  a file before the link opens.
+  a file before the link opens. It is `nicedbg.add_options()`, which
+  takes `add_link_arguments` and adds the options to a parser, and
+  `nicedbg.run()`, which takes the other three and runs on the parsed
+  options. A front end that runs nicedbg as one of its subcommands calls
+  these two on a parser with its own program name and description.
 
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) does this
 for its Ethernet port and its simulation, and checks a program against
@@ -140,7 +144,8 @@ the MEGA65's RAM.
 
 `make test` runs `test/errors.py`, the error cases of the options and
 the files, with exact messages, and `test/link.py`, which runs the link,
-the loader, and the debugger's commands on `niceemu --link` with the
-programs `test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`,
+the loader, the debugger's commands, and `add_options()` and `run()` on
+a parser of a front end's own, on `niceemu --link` with the programs
+`test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`,
 `test/hidden.nasm`, and `test/watch.nasm`. It builds niceemu
 first if needed. `make typecheck` runs `mypy --strict`.

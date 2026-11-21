@@ -23,7 +23,8 @@ Usage: nicedbg.py (--tcp [HOST:]PORT | --port DEVICE [--baud 230400])
 --tcp talks to niceemu --link, and --port to a system on its UART. A
 FILE is read before the link opens, and loaded with the processor held.
 A board adds its own transports and the checks of its memory by calling
-main() with hooks of its own. Only the Python standard library is used,
+main() with hooks of its own, or add_options() and run(), which take
+them too, on a parser of its own. Only the Python standard library is used,
 so this runs on Linux and macOS.
 """
 
@@ -105,6 +106,9 @@ MASK = 0xFFFFFFFF
 # Loads the .bin file at a path into the memory, with the processor held,
 # and returns the number of words. A board's checks its memory too.
 Loader = Callable[[Link, str], int]
+
+# The description of nicedbg's options
+DESCRIPTION = "An interactive debugger on the debug link of doc/DEBUG.md."
 
 
 def number(text: str) -> int:
@@ -877,18 +881,13 @@ class Debugger(cmd.Cmd):
         return True
 
 
-def main(argv: list[str] | None = None,
-         add_link_arguments: Callable[[argparse.ArgumentParser], object]
-         = add_arguments,
-         open_link: Callable[[argparse.Namespace], Link] = open_link,
-         load: Loader = plain_load,
-         check_file: Callable[[str], object] = read_bin) -> None:
-    """Runs the debugger. A board passes its own add_link_arguments and
-    open_link, for its transports, load, for the checks of its memory,
-    and check_file, which stops on a file that it cannot load before the
-    link opens."""
-    parser = argparse.ArgumentParser(description=(__doc__ or "").split(
-        "\n")[0])
+def add_options(parser: argparse.ArgumentParser,
+                add_link_arguments: Callable[[argparse.ArgumentParser],
+                                             object] = add_arguments) -> None:
+    """Adds the link's options, by add_link_arguments, --symbols, and the
+    optional .bin file to parser. A front end that runs nicedbg as one of
+    its subcommands passes a parser with its own program name and
+    description."""
     add_link_arguments(parser)
     parser.add_argument("--symbols", metavar="FILE",
                         help="read the labels of niceasm.py --symbols or "
@@ -896,8 +895,13 @@ def main(argv: list[str] | None = None,
     parser.add_argument("file", nargs="?",
                         help="a .bin file to load, with the processor held: "
                         "one 'address word' hex pair per line")
-    args = parser.parse_args(argv)
 
+
+def run(args: argparse.Namespace,
+        open_link: Callable[[argparse.Namespace], Link] = open_link,
+        load: Loader = plain_load,
+        check_file: Callable[[str], object] = read_bin) -> None:
+    """Runs the debugger on the options of add_options, until it quits."""
     symbols = Symbols(args.symbols) if args.symbols else None
     if args.file:
         check_file(args.file)
@@ -915,6 +919,20 @@ def main(argv: list[str] | None = None,
     dbg.stop()
     link.close()
 
+
+def main(argv: list[str] | None = None,
+         add_link_arguments: Callable[[argparse.ArgumentParser], object]
+         = add_arguments,
+         open_link: Callable[[argparse.Namespace], Link] = open_link,
+         load: Loader = plain_load,
+         check_file: Callable[[str], object] = read_bin) -> None:
+    """Runs the debugger: add_options and run on a parser of its own. A
+    board passes its own add_link_arguments and open_link, for its
+    transports, load, for the checks of its memory, and check_file, which
+    stops on a file that it cannot load before the link opens."""
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
+    add_options(parser, add_link_arguments)
+    run(parser.parse_args(argv), open_link, load, check_file)
 
 if __name__ == "__main__":
     main()

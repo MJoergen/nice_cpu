@@ -20,7 +20,9 @@ On the unchanged tree I ran the tests of the emulator, the runtime, the demo, an
 
 **Three small gaps** (§3): doc/review/decisions.md has nothing of the three ideas that #203 weighed and dropped, the debugger's README does not name `nicedbg.DESCRIPTION`, which no test reads either, and nothing checks a "not yet" of the documents against the board's issue, which is how §2.1 went stale.
 
-Nothing here is fixed, and no issue is filed.
+**Every finding is closed** on `dev-V2.5`, with a commit for each, or two where a finding has two parts, and a **Resolved** paragraph under each. The window's test sets the hint for each window, and `make window-test` runs the unit tests with no display, so that such a test fails on a desk machine too (§1.1). The release steps are done: the notes of `V2.5` (§1.2), the table of board tags (§1.3), and the version (§1.4). DEVICES.md §8 says what the board has and what it shows, and that no register tells the rows (§2.1, §2.2), and the pixels of `-2004` are no longer those of 2004 (§2.3). decisions.md has the three ideas that #203 dropped (§3.1), the debugger's README and a test have `nicedbg.DESCRIPTION` (§3.2), and `release.py preflight` warns of a sentence that waits for a closed issue of another repository (§3.3). On the result the top-level `make test` passes with 1711 lines of `PASS`, and so do every `make typecheck`, `make -C emulator window-test`, `make -C doc test`, and `release.py figures`. No issue was filed: the board's side is MJoergen/NiceMonMEGA65#157, which was there.
+
+What is left is the release's: the push, a green CI run on the release's commit, as the fixes are not pushed and CI has not run on them, `release.py check`, and the date of the `V2.5` section, which is set at the tag.
 
 ## 1. The release
 
@@ -100,6 +102,8 @@ RELEASE.md step 2.9 asks for the new tag's version there before `release.py chec
 - `release.py figures` passes: `bench.bin` takes 1697007 instructions and 2435862 estimated cycles, as bench/README.md says. `make wasmcheck` passes with 57 files, so the three `.wasm` files of the diff are those that their sources build.
 - `make -C doc/intro pdfcheck` passes, so the slides' PDF is that of the `.tex`. No diagram changes.
 - CI on the head was not complete when this was written (How it was checked). Cut no tag before every job passes on the release's commit (RELEASE.md §6), §1.1 included.
+
+**Resolved.** CI finished on 6234019, and every job passed but `emulator-window` (§1.1): `hdl`, `formal`, and both `programs` jobs among them. Nothing else was owed here, and the fixes of this review keep it so. They change nothing in `hdl/`, so no timing and no sweep is owed, and the debug link stays version 8. `release.py figures` passes on the result, and the milestone `V2.5` has no open issue. The fixes are not pushed, so CI has not run on them: the tag waits for a green run on the release's commit.
 
 ## 2. Stale and unclear statements
 

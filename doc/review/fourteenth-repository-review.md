@@ -111,6 +111,8 @@ The sentence was stale in `V2.4`. It matters more now: 42a3fae rewrote the start
 
 **Fix:** "NiceMonMEGA65 has the mode on the MEGA65 from its `V2.3` (MJoergen/NiceMonMEGA65#144), with 160×100 pixels, which cover its 25 rows, until MJoergen/NiceMonMEGA65#157. The Nexys4DDR, whose screen has 8192 words, has no mode: its `0xFFFFFF87` reads 0 and takes no write."
 
+**Resolved.** DEVICES.md §8 says that NiceMonMEGA65 has the mode on the MEGA65 from its `V2.3`, with 160×100 pixels until MJoergen/NiceMonMEGA65#157, so that a program written for 112 rows of pixels loses its last 12 there, and that the Nexys4DDR has no mode.
+
 ### 2.2 DEVICES.md §8: a program's "kind"
 
 The same point says: "A program knows the rows of its system when it is built, from `NICE_SCREEN_ROWS` and its kind, so no register tells them."

@@ -160,6 +160,18 @@ def test_screen() -> None:
     stop(p)
 
 
+def test_2004() -> None:
+    """With -2004, the window opens with the 25 rows of the screen at
+    0x400, and the report at the halt has them. The dummy driver shows no
+    window, so a unit test of src/window.zig checks its size and what it
+    draws."""
+    with open(os.path.join(HERE, "scrbound2004.expected")) as f:
+        want = f.read().split("\n")[:31]
+    p = start(["-2004", "-s", os.path.join(HERE, "scrbound.bin")])
+    expect("scrbound with -2004", read_lines(p, 31), want)
+    stop(p)
+
+
 def test_poll(tmp: str) -> None:
     """--input, then the keys: none is typed, so the reads after the file
     return 0, not 0x200. Without --input, stdin is not read."""
@@ -429,6 +441,7 @@ def test_link_wait(tmp: str) -> None:
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         test_screen()
+        test_2004()
         test_poll(tmp)
         test_speed(tmp)
         test_signal(tmp)
@@ -440,7 +453,7 @@ def main() -> None:
         test_link_irq(tmp)
         test_link_wait(tmp)
         test_close_link(tmp)
-    print("PASS window (11 tests)")
+    print("PASS window (13 tests)")
 
 
 if __name__ == "__main__":

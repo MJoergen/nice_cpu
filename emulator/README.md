@@ -243,7 +243,8 @@ window ends niceemu with status 0, as a signal does.
 
 `test/window.py` runs niceemu with SDL's dummy video driver
 (`SDL_VIDEODRIVER=dummy`), which needs no display, but can type no key and
-close no window. It checks the report at the halt with `--color`, the
+close no window. It checks the report at the halt with `--color`, and
+with `-2004` and its 25 rows, the
 reads of `--input` and then 0, that stdin is not read, that the default is
 faster than `--speed 1000000`, that a program that polls the console
 sleeps, that a wait that no request can end sleeps until the close, that
@@ -256,7 +257,11 @@ of the input, and that a `WAIT` with the console's receive interrupt
 sleeps until a byte or the end comes. The key table and the drawing of the screen are unit tests
 in `src/keys.zig` and `src/frame.zig`, the keys' way into the link's
 buffer one in `src/link.zig`, and the mapping of SDL's key events to the
-keys one in `src/window.zig`, which `make window-test` runs.
+keys one in `src/window.zig`, which `make window-test` runs. Another
+there opens a window on the dummy driver with all the rows, and one with
+those of `-2004`, and checks the size of each, 1280×896 and 1280×800,
+that the words after its rows do not show, in the text and in the chunky
+mode, and that its last row is at the bottom edge.
 
 ## Program files
 

@@ -1399,8 +1399,8 @@ test {
     _ = @import("link.zig");
     _ = @import("frame.zig");
     _ = @import("keys.zig");
-    // Its tests, of the key mapping, need no display; the window itself
-    // is compiled, not opened.
+    // Its tests need no display: the key mapping opens no window, and
+    // the window's size opens one on SDL's dummy video driver.
     if (@import("build_options").window) {
         _ = @import("window.zig");
     }

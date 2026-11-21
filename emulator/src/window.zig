@@ -204,3 +204,64 @@ test "Ctrl with a letter gives its control code, but not with Alt" {
     try testing.expectEqual(null, control(c.SDLK_RETURN, c.SDL_KMOD_LCTRL));
     try testing.expectEqual(null, control(c.SDLK_F1, c.SDL_KMOD_LCTRL));
 }
+
+/// Whether the lines of the frame above `lines` are all white, and those
+/// from it on all black.
+fn whiteAbove(f: *const frame.Frame, lines: usize) bool {
+    for (f.pixels, 0..) |p, i| {
+        const want: u32 = if (i / frame.width < lines) 0xFFFF_FFFF else 0xFF00_0000;
+        if (p != want) return false;
+    }
+    return true;
+}
+
+/// The color of a pixel of a surface, as 0xRRGGBB.
+fn colorAt(surface: *c.SDL_Surface, x: c_int, y: c_int) !u32 {
+    var r: u8 = undefined;
+    var g: u8 = undefined;
+    var b: u8 = undefined;
+    if (!c.SDL_ReadSurfacePixel(surface, x, y, &r, &g, &b, null)) return sdlError("SDL_ReadSurfacePixel");
+    return @as(u32, r) << 16 | @as(u32, g) << 8 | b;
+}
+
+test "the window is as high as its rows, and shows no word after them (DEVICES §1.1, §1.3)" {
+    // SDL's dummy video driver needs no display.
+    _ = c.SDL_SetHintWithPriority(c.SDL_HINT_VIDEO_DRIVER, "dummy", c.SDL_HINT_OVERRIDE);
+    // The window is 1280×896, and 1280×800 with -2004, whose screen is at
+    // 0x400.
+    const cases = [_]struct { size: frame.Size, base: u32, lines: c_int }{
+        .{ .size = frame.size_full, .base = 0xFFFF_0000, .lines = 896 },
+        .{ .size = frame.size_2004, .base = 0x400, .lines = 800 },
+    };
+    for (cases) |case| {
+        var cpu = Cpu.init(testing.allocator);
+        defer cpu.deinit();
+        // White on white in all the words of the full screen, in either
+        // mode. With -2004, the words after its rows are the program's,
+        // and must not show.
+        for (0..frame.pixels) |i| try cpu.write(case.base + @as(u32, @intCast(i)), 0xFFFF_FF20);
+        var w: Window = undefined;
+        try w.open(testing.allocator, false, case.size, null);
+        defer w.close(testing.allocator);
+        var width: c_int = 0;
+        var height: c_int = 0;
+        try testing.expect(c.SDL_GetWindowSize(w.window, &width, &height));
+        try testing.expectEqual(1280, width);
+        try testing.expectEqual(case.lines, height);
+        for ([_]u32{ 0, cpu_.mode_chunky }) |mode| {
+            try cpu.write(cpu_.screen_mode, mode);
+            w.redraw(&cpu, case.base, true);
+            // The frame is black after the rows of the size.
+            try testing.expect(whiteAbove(&w.frame, @intCast(case.lines)));
+            // And the window shows the lines before that, with its last
+            // row at its bottom edge.
+            const shot: *c.SDL_Surface = c.SDL_RenderReadPixels(w.renderer, null) orelse return sdlError("SDL_RenderReadPixels");
+            defer c.SDL_DestroySurface(shot);
+            try testing.expectEqual(1280, shot.w);
+            try testing.expectEqual(case.lines, shot.h);
+            for ([_]c_int{ 0, 1279 }) |x| {
+                for ([_]c_int{ 0, case.lines - 1 }) |y| try testing.expectEqual(0xFFFFFF, try colorAt(shot, x, y));
+            }
+        }
+    }
+}

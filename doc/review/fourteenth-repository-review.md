@@ -155,6 +155,8 @@ DEVICES.md §1.10 has it right: the 160×100 "cover the 1280×800 of its 25 rows
 
 **Fix:** a paragraph, "A register that tells the size of the screen (#203)", with the reason: a program is built for its system, and the reserved screen words have room if one is wanted later. The other two fit in it, or beside it.
 
+**Resolved.** decisions.md has a paragraph for each of the three: a register that tells the size of the screen, a chunky mode that stays 160×100, and 28 rows with `-2004`.
+
 ### 3.2 `nicedbg.DESCRIPTION` is in no document and no test
 
 #202 adds three names, and debugger/README.md, On a board, names two: `add_options()` and `run()`. The third, `DESCRIPTION`, is nicedbg's sentence without the program's name in front, for a front end that gives each subcommand the description of its tool, as NiceMonMEGA65's `nicemon.py` does with `module.DESCRIPTION`. The README says only that the front end's parser has "its own program name and description".

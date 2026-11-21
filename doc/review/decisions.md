@@ -308,3 +308,16 @@ proposed again. The open items are the
   `MOD` by 0 would set different flags. No integer division gives an
   infinity: x86, wasm, Java, Python, Rust, and Lua trap or raise an
   error, RISC-V gives −1, and ARM 0.
+- **A register that tells the size of the screen** (#203), when the
+  screen grew from 25 rows to 28 and a board may show fewer (DEVICES.md
+  §8). A program is built for its system, with the runtime's
+  `NICE_SCREEN_ROWS` or the system's own number, so it needs no register
+  to tell the systems apart. The reserved words among the screen's
+  registers have room if one is wanted later.
+- **A chunky mode that stays 160×100** (#203), at the top of the taller
+  window, with 96 black lines below it. It would be the only place where
+  the screen does not fill the display. 160×112 keeps the square blocks
+  of 8×8, and its 17920 words fit the 32768 of the MEGA65's screen.
+- **28 rows with `-2004`** (#203). That screen is the one of 2004, 25
+  rows at `0x400`, and three more would reach into the words
+  `0xBD0`–`0xCBF`, which are the program's (DEVICES.md §1.1).

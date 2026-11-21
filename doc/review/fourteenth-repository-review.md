@@ -141,6 +141,8 @@ What the sentence is there to record is the decision of #203: no register for th
 
 DEVICES.md §1.10 has it right: the 160×100 "cover the 1280×800 of its 25 rows". **Fix:** "the 100 rows of pixels that cover them", or the like, in the four places.
 
+**Resolved.** The four places say that the 100 rows of pixels cover the 25 rows of text, and give only the text to 2004.
+
 **"A longer program".** DEVICES.md §1.1: "With `-2004` the screen keeps its 25 rows, which end at `0xBCF`, as 28 would reach into the code of a longer program". The sentence before it says that a screen at `0x400` overlaps the code of every program longer than 1024 words, and that holds with 25 rows as with 28. What 28 rows would add is the words `0xBD0`–`0xCBF`, which come after the screen of 2004 and are the program's. `frame.zig` says it that way: the screen "cannot grow into the code after it". **Fix:** "as 28 would reach into the words after it, `0xBD0`–`0xCBF`, which are the program's".
 
 ## 3. Gaps

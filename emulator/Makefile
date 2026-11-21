@@ -98,7 +98,8 @@ OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
 OPTS_chunky  = --color -d 0xffffff87:1
 # chunky again, with --screen, which prints only the size of the mode.
 OPTS_chunky_screen = -s
-# And with -2004, whose screen keeps the 100 rows of pixels of 2004.
+# And with -2004, whose screen keeps the 100 rows of pixels that cover
+# its 25 rows of text.
 OPTS_chunky_screen2004 = -2004 -s
 OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # fpu again, with the FPU's words ordinary memory: each read returns the

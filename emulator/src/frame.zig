@@ -28,10 +28,10 @@ comptime {
 }
 
 /// The rows of the screen that a run shows, of text and of pixels: all of
-/// them, or with `-2004` the 25 rows of text and 100 of pixels of the 2004
-/// emulator, whose screen at 0x400 cannot grow into the code after it
-/// (doc/DEVICES.md §1.1). The frame and the words of the rows after these
-/// are not shown.
+/// them, or with `-2004` the 25 rows of text of the 2004 emulator, whose
+/// screen at 0x400 cannot grow into the code after it (doc/DEVICES.md
+/// §1.1), and the 100 rows of pixels that cover them. The frame and the
+/// words of the rows after these are not shown.
 pub const Size = struct {
     rows: usize,
     pixel_rows: usize,

@@ -183,7 +183,7 @@ With `--window`, niceemu shows the 80×28 screen in a window of 1280×896
 pixels while the program runs, as DEVICES.md §1 specifies, or the 160×112
 pixels of the chunky mode, when the mode word at `0xFFFFFF87` selects it
 (DEVICES.md §1.10). With `-2004`, the window is 1280×800, for the 25 rows
-of text or the 100 rows of pixels of 2004. A resized window
+of text of 2004, or the 100 rows of pixels that cover them. A resized window
 scales the screen and keeps its aspect. The characters are from the font
 that the font base at `0xFFFFFF86` selects (DEVICES.md §1.8): the
 character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at

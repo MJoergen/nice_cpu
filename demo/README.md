@@ -64,6 +64,12 @@ input file is always there, an ESC shows with the key after it. A function
 key with a demo starts that demo, so its bytes show only for a moment, or
 not at all. Past the last row, the rows scroll up by one.
 
+Both the typewriter and the key codes use the screen down to row 27, so
+a board that shows fewer rows, as NiceMonMEGA65 with its 25 until
+MJoergen/NiceMonMEGA65#157, hides the last 3, and with them the cursor
+once it is past row 24
+([DEVICES.md §8](../doc/DEVICES.md#8-systems-built-on-the-fpga-core)).
+
 The characters and the colors check the font and the video output at a
 glance. On the left are the 256 characters of the font, ISO 8859-1, in 16
 rows of 16. A row's label is the code of its first character, and the

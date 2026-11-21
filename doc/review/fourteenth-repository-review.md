@@ -81,6 +81,8 @@ RELEASE_NOTES.md, the table at its top. NiceMonMEGA65 has a tag `V2.4`, of 2026-
 
 **Fix:** `V2.4` in the row of `V2.4`, and `V2.3.2` added to the row of `V2.3`, with the row of §1.2.
 
+**Resolved.** The row of `V2.4` names the board's `V2.4`, and the row of `V2.3` its `V2.3.2` too. The row of `V2.5` comes with the notes (§1.2).
+
 ### 1.4 `emulator/build.zig.zon` still says `2.4.0`
 
 RELEASE.md step 2.9 asks for the new tag's version there before `release.py check`, as a change after the stamp makes the stamp stale. **Fix:** `2.5.0`.

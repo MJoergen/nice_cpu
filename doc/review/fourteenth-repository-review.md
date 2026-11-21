@@ -126,6 +126,8 @@ What the sentence is there to record is the decision of #203: no register for th
 
 **Fix:** say what holds, such as: "No register tells the rows. The runtime's `NICE_SCREEN_ROWS` is the 28 of §1.1, and a program for a system that shows another number takes it from that system's documents."
 
+**Resolved.** DEVICES.md §8 says that no register tells the rows, that the runtime's `NICE_SCREEN_ROWS` is the 28 of §1.1, and that a program for a system that shows another number takes it from that system's documents.
+
 ### 2.3 Two phrases about `-2004`
 
 **The pixels "of 2004".** The emulator of 2004 has a screen of 80×25 characters and no pixels: the chunky mode is of `V2.3`. Four places say otherwise:

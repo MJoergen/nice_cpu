@@ -14,6 +14,7 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
+| `V2.5` | none yet |
 | `V2.4` | `V2.4` |
 | `V2.3` | `V2.3`, `V2.3.1`, `V2.3.2` |
 | `V2.2` | `V2.2` |
@@ -38,6 +39,101 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V2.5 (2026-11-21)
+
+The emulator's screen has 28 rows of 80 characters, where it had 25, and
+its chunky mode 160×112 pixels, in a window of 1280×896 (#203). On
+NiceMonMEGA65's display of 1280×1024, the 28 rows and the debugger's
+strip of 4 fill the 1024 lines. nicedbg has `add_options()` and `run()`,
+for a front end that runs it as one of its subcommands (#202).
+
+**Upgrade notes.**
+
+- **The screen has 28 rows** (#203): 2240 words,
+  `0xFFFF0000`–`0xFFFF08BF`, and the chunky mode 160×112 pixels, 17920
+  words to `0xFFFF45FF`. It is a change of the address map of
+  DEVICES.md: the words `0xFFFF3E80`–`0xFFFF45FF` were ordinary memory
+  after the screen, and now show. A program written for 25 rows runs
+  unchanged and leaves the last 3 blank, and a picture of 100 rows of
+  pixels leaves the last 12 as they are. No register tells the rows.
+  The board follows in MJoergen/NiceMonMEGA65#157: until then it shows
+  25 rows and 160×100 pixels, and a program written for more loses the
+  rest there.
+- **`nice_screen_clear` writes 2240 words in 6722 steps**, where it
+  wrote 2000 in 6002, so an expected step count of a program that calls
+  it grows by 720. `NICE_SCREEN_ROWS`, `screen_rows`, and `SCREEN_ROWS`
+  are 28, and `NICE_PIXEL_ROWS`, `pixel_rows`, and `PIXEL_ROWS` 112.
+- **`--screen` prints up to 28 rows.** A screen that uses rows 0 to 24
+  prints as before, as the blank rows at the bottom are dropped. In the
+  chunky mode the line is `Screen: 160x112 pixels`, which changes every
+  expected output of the mode, and `--color` prints up to 56 lines of
+  pixels.
+- **`-2004` keeps the 25 rows**, the 160×100 pixels, and the window of
+  1280×800, as 28 rows at `0x400` would reach into the words after the
+  screen of 2004, which are the program's.
+- **The demo's typewriter and key codes reach row 27.** Its image
+  changes, so a board that keeps the demo in its ROM builds the ROM
+  again. A board that shows 25 rows hides the last 3, and the cursor
+  once it is there.
+- `hdl/src` has the same files and the same ports, and nothing in
+  `hdl/` changes, so the timing is that of `V2.4`. The debug link stays
+  version 8, and Zig stays 0.17.0.
+
+**Specification and documents**
+
+- DEVICES.md §1.1, §1.3, §1.4, §1.10, and its address map have the 28
+  rows, the 160×112 pixels, and the window of 1280×896, with the sizes
+  of `-2004` beside them (#203).
+- DEVICES.md §8 says that NiceMonMEGA65 has the chunky mode on the
+  MEGA65 from its `V2.3`, where it said that the board has none, and
+  that the board shows 25 rows and 160×100 pixels until
+  MJoergen/NiceMonMEGA65#157.
+- doc/review/decisions.md: no register tells the size of the screen,
+  the chunky mode does not stay 160×100, and `-2004` does not get 28
+  rows (#203).
+- doc/review/fourteenth-repository-review.md reviews the documents of
+  this release.
+
+**Emulator (`niceemu`)**
+
+- The screen, the chunky mode, and the window are as above (#203).
+  `doc/window.png` is retaken at 1280×896.
+- `make window-test` runs the unit tests of the window with `DISPLAY`
+  and `WAYLAND_DISPLAY` unset. One of them opens a window of each size
+  on SDL's dummy video driver, and checks its size and what it shows.
+- The version is 2.5.0.
+
+**Runtime (`runtime/`)**
+
+- `nice_screen_clear`, `nice_screen_put`, and the constants of `nice.h`,
+  `nice.zig`, and `nice.rs` follow the 28 rows and the 112 rows of
+  pixels (#203).
+
+**Debugger (`nicedbg`)**
+
+- `nicedbg.add_options()` adds nicedbg's options to a parser, and
+  `nicedbg.run()` runs on what it parses (#202). `main()` is the two on
+  a parser of its own, and takes what it took. `nicedbg.DESCRIPTION` is
+  the sentence that `nicedbg.py --help` prints: "An interactive debugger
+  on the debug link of doc/DEBUG.md.", where it printed "nicedbg: an
+  interactive debugger on the debug link of doc/DEBUG.md."
+
+**Demo (`demo/`)**
+
+- The typewriter has 18 rows, where it had 15, and the key codes 20,
+  where they had 17 (#203). The other demos keep their layout.
+
+**Benchmarks**
+
+- The figures are those of `V2.4`: neither the cores, the translator,
+  nor the benchmarks change.
+
+**Release**
+
+- `release.py preflight` warns of a document that waits for an issue of
+  another repository, with "yet" or "until" before it, when that issue
+  is closed. A warning fails nothing.
 
 ## V2.4 (2026-11-19)
 

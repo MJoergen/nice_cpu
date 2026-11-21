@@ -75,6 +75,8 @@ The newest section is `V2.4`. RELEASE.md step 2.8 asks for the section, and for 
 
 **Fix:** write the section, with the line "The version is 2.5.0." under the emulator's heading, and the row of the table.
 
+**Resolved.** RELEASE_NOTES.md has a section for `V2.5`, with the upgrade notes that this finding lists, what the fixes of this review add (DEVICES.md §8 on the board's chunky mode, the unit tests of `make window-test` without a display, and the warning of `release.py preflight`), the line of the version under the emulator, and the row `V2.5`, "none yet", in the table of board tags. Its date is set at the tag.
+
 ### 1.3 The table of board tags says "none yet" for `V2.4`, and lacks `V2.3.2`
 
 RELEASE_NOTES.md, the table at its top. NiceMonMEGA65 has a tag `V2.4`, of 2026-11-20, which pins 292fb41, `V2.4` here. It also has `V2.3.2`, of 2026-11-19, which pins 9b5d948, `V2.3` here, as its `V2.3` and `V2.3.1` do. RELEASE.md step 2.8 keeps a row at "none yet" only until the board follows.

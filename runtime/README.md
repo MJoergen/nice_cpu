@@ -182,8 +182,8 @@ so their labels are their C names with `_` in front.
 | `_nice_print` | `void nice_print(const char *s)` | Writes the string at R1, one character per word, up to its first 0 word, with no newline, through `___putc_vector`. | R1, flags, and what the routine changes |
 | `_nice_cycles` | `unsigned long long nice_cycles(void)` | R1:R2 = the cycle counter. | none |
 | `_nice_instructions` | `unsigned long long nice_instructions(void)` | R1:R2 = the instruction counter. | none |
-| `_nice_screen_put` | `void nice_screen_put(int col, int row, int c)` | Writes R3 to column R1, 0 to 79, of row R2, 0 to 24. | R2, R4 |
-| `_nice_screen_clear` | `void nice_screen_clear(void)` | Writes `0x000FFF20`, a blank in white on black, to each of the screen's 2000 words, so that a cursor shows on it. | R1, flags |
+| `_nice_screen_put` | `void nice_screen_put(int col, int row, int c)` | Writes R3 to column R1, 0 to 79, of row R2, 0 to 27. | R2, R4 |
+| `_nice_screen_clear` | `void nice_screen_clear(void)` | Writes `0x000FFF20`, a blank in white on black, to each of the screen's 2240 words, so that a cursor shows on it. | R1, flags |
 
 From assembly, for example:
 
@@ -206,7 +206,7 @@ has no vector, as the console's input is the line and the keyboard both.
 The counter routines read the low word first, as DEVICES.md §3 describes.
 So an interrupt service routine that reads a counter can spoil the reading
 of the code it interrupted. The screen routines write `0xFFFF0000` to
-`0xFFFF07CF`, so with the emulator's `-2004` they miss the screen. On a
+`0xFFFF08BF`, so with the emulator's `-2004` they miss the screen. On a
 system without a screen, those words are RAM or nothing.
 
 The C library below has the same routines, in `nice.h`.

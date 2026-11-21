@@ -99,20 +99,20 @@ pub fn instructions() u64 {
 
 /// The emulator's character screen.
 pub const screen_cols = 80;
-pub const screen_rows = 25;
+pub const screen_rows = 28;
 /// The blank that screenClear writes: a space in white on black, the
 /// colors a board's monitor writes in, so that a cursor, which swaps the
 /// colors of its cell, shows on it (doc/DEVICES.md §1.4).
 pub const screen_blank: u32 = fg_white | bg_black | ' ';
 
 /// The screen's mode word (doc/DEVICES.md §1.10): poke mode_chunky to it
-/// and peek it back, to find out whether the system has 160x100 pixels,
+/// and peek it back, to find out whether the system has 160x112 pixels,
 /// one word each at 0xFFFF0000 + 160 * y + x, colored as a bg_* color.
 pub const screen_mode: u32 = 0xFFFFFF87;
 pub const mode_text: u32 = 0;
 pub const mode_chunky: u32 = 1;
 pub const pixel_cols = 160;
-pub const pixel_rows = 100;
+pub const pixel_rows = 112;
 
 /// The colors of a screen word (doc/DEVICES.md §1.1): fg_* in bits 19..8, the
 /// foreground, and bg_* in bits 31..20, the background. A color is a

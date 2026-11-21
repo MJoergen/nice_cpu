@@ -98,6 +98,8 @@ OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
 OPTS_chunky  = --color -d 0xffffff87:1
 # chunky again, with --screen, which prints only the size of the mode.
 OPTS_chunky_screen = -s
+# And with -2004, whose screen keeps the 100 rows of pixels of 2004.
+OPTS_chunky_screen2004 = -2004 -s
 OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # fpu again, with the FPU's words ordinary memory: each read returns the
 # last value written there, or 0.
@@ -165,6 +167,7 @@ programs:
 	$(call check,skip_mem,test/skip.bin)
 	$(call check,stack_none,$(ASM)/count.bin)
 	$(call check,chunky_screen,test/chunky.bin)
+	$(call check,chunky_screen2004,test/chunky.bin)
 	@if cmp -s test/eth.frames.out test/eth.frames.expected; then echo "PASS eth frames"; \
 	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi
 	@rm -f test/*.out

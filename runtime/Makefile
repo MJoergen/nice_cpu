@@ -53,7 +53,7 @@ OPTS_clz        = -d 0x24:64
 OPTS_isqrt      = -d 0x43:12
 OPTS_edge       = -d 0xda:124
 OPTS_trapvec    = -d 0x9:1 -d 0x1d:3
-OPTS_device     = -s -d 0x81:8 -d 0xffff0000:3 -d 0xffff0052:1 -d 0xffff07ce:2
+OPTS_device     = -s -d 0x81:8 -d 0xffff0000:3 -d 0xffff0052:1 -d 0xffff08be:2
 INPUT_device    = test/device.input
 
 # With KEEP=DIR, an absolute path, each test also leaves its program in

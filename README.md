@@ -48,7 +48,7 @@ follows a tag.
 `niceemu` runs NICE programs on the host. It implements the whole
 instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
 and the devices of [doc/DEVICES.md](doc/DEVICES.md): the console, the
-80×25 character screen, the math unit, the performance counters, the
+80×28 character screen, the math unit, the performance counters, the
 timer, the SD card controller, the network station's registers, the
 port for Ethernet frames, the clock of the time of day, and the
 floating-point unit. It is the

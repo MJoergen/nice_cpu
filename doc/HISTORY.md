@@ -916,3 +916,13 @@ the wrong way: about 1% of the values had another last digit than C's
 `%.*e`, such as -41610939429.713 for -41610939429.7131 with 15 digits.
 Then D rounded once, from the exact product or from `SCALE10`'s pair
 (#200).
+
+## The rows of the screen
+
+Until 2026-11-21, the emulator's character screen was 25 rows of 80
+words, `0xFFFF0000` to `0xFFFF07CF`, in a window of 1280×800, and its
+chunky mode 160×100 pixels, to `0xFFFF3E7F`. The demo's typewriter
+had 15 rows. Then the screen grew to 28 rows and 160×112 pixels, so
+that on NiceMonMEGA65 the 28 rows and the debugger's strip of 4 fill
+the 1024 lines of its display. With `-2004` it keeps the 25 rows,
+whose screen at `0x400` would grow into the code (#203).

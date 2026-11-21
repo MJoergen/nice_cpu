@@ -42,7 +42,7 @@ BLANKS = {
 # pixels, with their values (DEVICES.md §1.10), and the pattern of a
 # name's line in each file. Zig names them in lower case.
 MODE = {"SCREEN_MODE": 0xFFFFFF87, "MODE_TEXT": 0, "MODE_CHUNKY": 1,
-        "PIXEL_COLS": 160, "PIXEL_ROWS": 100}
+        "PIXEL_COLS": 160, "PIXEL_ROWS": 112}
 MODE_FILES = {
     "libc/include/nice.h": r"^#define NICE_(\w+) (0x[0-9A-F]+|\d+)u?$",
     "nice.zig": r"^pub const (\w+)(?:: u32)? = (0x[0-9A-F_]+|\d+);$",

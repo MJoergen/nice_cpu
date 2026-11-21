@@ -20,28 +20,31 @@ pub const Window = struct {
     renderer: *c.SDL_Renderer,
     texture: *c.SDL_Texture,
     frame: frame.Frame,
+    /// The rows that the window shows.
+    size: frame.Size,
     /// The console's input, which the keys go into.
     queue: keys.Queue,
     /// The SDL time of the last redraw, in ms.
     drawn_at: u64 = 0,
 
-    /// Open the window. `file` is the input of `--input`, if given, which
-    /// the console reads before the keys.
-    pub fn open(self: *Window, gpa: std.mem.Allocator, invert: bool, file: ?*std.Io.Reader) !void {
+    /// Open the window, as high as the rows of `size`. `file` is the input
+    /// of `--input`, if given, which the console reads before the keys.
+    pub fn open(self: *Window, gpa: std.mem.Allocator, invert: bool, size: frame.Size, file: ?*std.Io.Reader) !void {
+        const height: c_int = @intCast(size.height());
         // A signal ends the run as without the window, not as a close.
         _ = c.SDL_SetHint(c.SDL_HINT_NO_SIGNAL_HANDLERS, "1");
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) return sdlError("SDL_Init");
         errdefer c.SDL_Quit();
         var window: ?*c.SDL_Window = null;
         var renderer: ?*c.SDL_Renderer = null;
-        if (!c.SDL_CreateWindowAndRenderer("niceemu", frame.width, frame.height, c.SDL_WINDOW_RESIZABLE, &window, &renderer))
+        if (!c.SDL_CreateWindowAndRenderer("niceemu", frame.width, height, c.SDL_WINDOW_RESIZABLE, &window, &renderer))
             return sdlError("SDL_CreateWindowAndRenderer");
         errdefer c.SDL_DestroyWindow(window);
         errdefer c.SDL_DestroyRenderer(renderer);
         // A resized window scales the frame and keeps its aspect.
-        if (!c.SDL_SetRenderLogicalPresentation(renderer, frame.width, frame.height, c.SDL_LOGICAL_PRESENTATION_LETTERBOX))
+        if (!c.SDL_SetRenderLogicalPresentation(renderer, frame.width, height, c.SDL_LOGICAL_PRESENTATION_LETTERBOX))
             return sdlError("SDL_SetRenderLogicalPresentation");
-        const texture = c.SDL_CreateTexture(renderer, c.SDL_PIXELFORMAT_ARGB8888, c.SDL_TEXTUREACCESS_STREAMING, frame.width, frame.height) orelse
+        const texture = c.SDL_CreateTexture(renderer, c.SDL_PIXELFORMAT_ARGB8888, c.SDL_TEXTUREACCESS_STREAMING, frame.width, height) orelse
             return sdlError("SDL_CreateTexture");
         errdefer c.SDL_DestroyTexture(texture);
         _ = c.SDL_SetTextureScaleMode(texture, c.SDL_SCALEMODE_NEAREST);
@@ -51,6 +54,7 @@ pub const Window = struct {
             .renderer = renderer.?,
             .texture = texture,
             .frame = try frame.Frame.init(gpa, invert),
+            .size = size,
             .queue = .{ .file = file },
         };
     }
@@ -113,16 +117,17 @@ pub const Window = struct {
         _ = c.SDL_RenderPresent(self.renderer);
     }
 
-    /// Draw the frame, and return whether it changed.
+    /// Draw the frame, and return whether it changed. The rows after those
+    /// of the size are drawn black, below the texture.
     fn drawn(self: *Window, cpu: *const Cpu, base: u32, blink_on: bool) bool {
         if (cpu.peek(cpu_.screen_mode) == cpu_.mode_chunky) {
-            var px: [frame.pixels]u32 = undefined;
-            cpu.mem.peekWords(base, &px);
+            var px: [frame.pixels]u32 = @splat(0);
+            cpu.mem.peekWords(base, px[0 .. self.size.pixel_rows * frame.pixel_cols]);
             return self.frame.drawPixels(&px);
         }
         var glyphs: frame.Glyphs = undefined;
-        var words: [frame.cells]u32 = undefined;
-        for (&words, 0..) |*w, i| w.* = cpu.peek(base +% @as(u32, @intCast(i)));
+        var words: [frame.cells]u32 = @splat(0);
+        for (words[0 .. self.size.rows * frame.cols], 0..) |*w, i| w.* = cpu.peek(base +% @as(u32, @intCast(i)));
         const cursor: frame.Cursor = .{
             .state = cpu.peek(frame.cursor_base),
             .col = cpu.peek(frame.cursor_base + 1),

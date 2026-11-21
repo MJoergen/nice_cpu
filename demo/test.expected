@@ -38,6 +38,9 @@ Screen:
 |line 14
 |line 15
 |line 16
+|line 17
+|line 18
+|line 19
 |first   A
 |        B
 Screen:
@@ -77,6 +80,9 @@ Screen:
 |  68                                      h
 |  69                                      i
 |  6A                                      j
+|  6B                                      k
+|  6C                                      l
+|  6D                                      m
 Screen:
 | nice_cpu      V9.9                            the 32-bit NICE CPU of B. Ulmann
 | F1 typewriter   F3 key codes   F5 charset   F7 counters   F9 comet   F11 board
@@ -130,9 +136,9 @@ Screen:
 |  Since reset, while the core runs
 |
 |    Time, h:mm:ss.hh                              0:00:00.08
-|    Microseconds                                       80053
-|    Cycles                                             80055
-|    Instructions                                       80057
+|    Microseconds                                       81493
+|    Cycles                                             81495
+|    Instructions                                       81497
 |    Clock in MHz, cycles per microsecond                   1
 |
 |  A prime sieve to 2048, run before each update

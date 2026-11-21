@@ -53,15 +53,15 @@ unsigned long long nice_clock(unsigned *usec);
 int nice_clock_isset(void);
 void nice_clock_set(unsigned long long sec, unsigned usec);
 
-// The emulator's 80x25 character screen. nice_screen_put writes c, the
+// The emulator's 80x28 character screen. nice_screen_put writes c, the
 // character in bits 7..0 and its color above, to a column, 0 to 79, of a
-// row, 0 to 24. nice_screen_clear writes NICE_SCREEN_BLANK, a blank in
+// row, 0 to 27. nice_screen_clear writes NICE_SCREEN_BLANK, a blank in
 // white on black, to every word.
 void nice_screen_put(int col, int row, int c);
 void nice_screen_clear(void);
 
 #define NICE_SCREEN_COLS 80
-#define NICE_SCREEN_ROWS 25
+#define NICE_SCREEN_ROWS 28
 // The blank that nice_screen_clear writes: a space in white on black, the
 // colors a board's monitor writes in, so that the cursor of DEVICES.md §1.4,
 // which swaps the colors of its cell, shows on it. A blank of color 0 is
@@ -121,13 +121,13 @@ void nice_screen_clear(void);
 #define NICE_CLOCK_STATUS 0xFFFFFF49u
 #define NICE_SCREEN 0xFFFF0000u
 // The screen's mode word (DEVICES.md §1.10): write NICE_MODE_CHUNKY and read
-// it back, to find out whether the system has 160x100 pixels, one word each
+// it back, to find out whether the system has 160x112 pixels, one word each
 // at NICE_SCREEN + 160*y + x, colored as a NICE_BG_* color.
 #define NICE_SCREEN_MODE 0xFFFFFF87u
 #define NICE_MODE_TEXT 0u
 #define NICE_MODE_CHUNKY 1u
 #define NICE_PIXEL_COLS 160
-#define NICE_PIXEL_ROWS 100
+#define NICE_PIXEL_ROWS 112
 
 // Reads the NICE word at a word address.
 __attribute__((import_module("nice"), import_name("peek")))

@@ -6,8 +6,9 @@
 ; upper half blocks, the top pixel in the foreground and the bottom one in
 ; the background. Line 0 has (0, 0) and (1, 0) red over black, then (2, 1)
 ; green under black, whose character, bits 7..0, is not shown. Lines 1 to
-; 48 are black, and so empty. Line 49 has 159 blocks of black, then (159,
-; 99), the last pixel, white under black. --screen prints only the size.
+; 54 are black, and so empty. Line 55 has 159 blocks of black, then (159,
+; 111), the last pixel, white under black. --screen prints only the size,
+; and with -2004 that of the 2004 emulator.
 SCREEN          .EQU    0xFFFF0000
 MODE            .EQU    0xFFFFFF87
                 MOVE    R1, @MODE       ; 0
@@ -20,5 +21,5 @@ MODE            .EQU    0xFFFFFF87
                 MOVE    @SCREEN, 0xF0000000  ; (0, 0) red
                 MOVE    @0xFFFF0001, 0xF0000000  ; (1, 0) red
                 MOVE    @0xFFFF00A2, 0x0F0FFF41  ; (2, 1) = 160 + 2, green
-                MOVE    @0xFFFF3E7F, 0xFFF00000  ; (159, 99) white
+                MOVE    @0xFFFF45FF, 0xFFF00000  ; (159, 111) white
                 HALT

@@ -61,7 +61,7 @@ __nice.cycle_lo .EQU    0xFFFFFF40
 __nice.cycle_hi .EQU    0xFFFFFF41
 __nice.instr_lo .EQU    0xFFFFFF42
 __nice.instr_hi .EQU    0xFFFFFF43
-__nice.screen   .EQU    0xFFFF0000      ; 80 columns, 25 rows
+__nice.screen   .EQU    0xFFFF0000      ; 80 columns, 28 rows
 __nice.blank    .EQU    0x000FFF20      ; a blank in white on black (DEVICES.md §1.4)
 
 ; nice_putc: writes bits 7..0 of R1 through ___putc_vector, the word of the
@@ -146,12 +146,12 @@ _nice_screen_put
                 RET
 
 ; nice_screen_clear: writes a blank in white on black, 0x000FFF20, to the
-; 2000 words of the screen, from the last down to the first. The colors
+; 2240 words of the screen, from the last down to the first. The colors
 ; are a board's monitor's, so that a cursor, which swaps the colors of its
 ; cell, shows on the blank; on one of color 0 it is black on black too
-; (DEVICES.md §1.4). 6002 steps. Uses R1.
+; (DEVICES.md §1.4). 6722 steps. Uses R1.
 _nice_screen_clear
-                MOVE    R1, 2000
+                MOVE    R1, 2240
 :               DEC[M]  R1, R1
                 MOVE    @__nice.screen[R1], __nice.blank
         ?!Z     JMPR    :-

@@ -1,6 +1,6 @@
 //! The frame of the window (doc/DEVICES.md §1): the character screen drawn
 //! with the font that the font base selects, in the colors of its words,
-//! with the cursor, or the 160×100 pixels of the chunky mode (§1.10). It
+//! with the cursor, or the 160×112 pixels of the chunky mode (§1.10). It
 //! needs no SDL, so its tests run in every build.
 
 const std = @import("std");
@@ -10,21 +10,39 @@ const Cpu = cpu_.Cpu;
 
 /// The character screen (doc/DEVICES.md §1), in characters and in pixels.
 pub const cols = 80;
-pub const rows = 25;
+pub const rows = 28;
 pub const cells = cols * rows;
 pub const width = cols * font.width;
 pub const height = rows * font.height;
 
-/// The chunky mode (doc/DEVICES.md §1.10): 160×100 pixels, one word each,
+/// The chunky mode (doc/DEVICES.md §1.10): 160×112 pixels, one word each,
 /// each a block of 8×8 pixels of the frame, which they cover as the text
 /// does.
 pub const pixel_cols = 160;
-pub const pixel_rows = 100;
+pub const pixel_rows = 112;
 pub const pixels = pixel_cols * pixel_rows;
 pub const block = width / pixel_cols;
 comptime {
     std.debug.assert(block * pixel_cols == width and block * pixel_rows == height);
+    std.debug.assert(block * size_2004.pixel_rows == size_2004.height());
 }
+
+/// The rows of the screen that a run shows, of text and of pixels: all of
+/// them, or with `-2004` the 25 rows of text and 100 of pixels of the 2004
+/// emulator, whose screen at 0x400 cannot grow into the code after it
+/// (doc/DEVICES.md §1.1). The frame and the words of the rows after these
+/// are not shown.
+pub const Size = struct {
+    rows: usize,
+    pixel_rows: usize,
+
+    /// The lines of the frame that it shows.
+    pub fn height(self: Size) usize {
+        return self.rows * font.height;
+    }
+};
+pub const size_full: Size = .{ .rows = rows, .pixel_rows = pixel_rows };
+pub const size_2004: Size = .{ .rows = 25, .pixel_rows = 100 };
 
 /// A color as 8-bit R, G, and B.
 pub const Rgb = [3]u8;
@@ -273,14 +291,14 @@ test "the cursor swaps the colors, all lines or the bottom 4" {
 }
 
 test "the cursor is not shown when off, in a blink, or out of range" {
-    const c: Cursor = .{ .state = cursor_show, .col = 79, .row = 24 };
+    const c: Cursor = .{ .state = cursor_show, .col = 79, .row = 27 };
     try testing.expect(c.at(false) != null);
     try testing.expectEqual(cells - 1, c.at(false).?.cell);
     try testing.expect((Cursor{ .state = 0xFFFF_FFBF, .col = 0, .row = 0 }).at(true) == null);
     try testing.expect((Cursor{ .state = cursor_show | cursor_blink }).at(false) == null);
     try testing.expect((Cursor{ .state = cursor_show | cursor_blink }).at(true) != null);
     try testing.expect((Cursor{ .state = cursor_show, .col = 80, .row = 0 }).at(true) == null);
-    try testing.expect((Cursor{ .state = cursor_show, .col = 0, .row = 25 }).at(true) == null);
+    try testing.expect((Cursor{ .state = cursor_show, .col = 0, .row = 28 }).at(true) == null);
 }
 
 test "a draw redraws only the cells that changed" {
@@ -360,7 +378,7 @@ test "the chunky mode draws each word as a block of 8x8 in its background (DEVIC
     var f = try Frame.init(testing.allocator, false);
     defer f.deinit(testing.allocator);
     var px: [pixels]u32 = @splat(0);
-    // Red at (0, 0), and white at (159, 99), the last pixel; bits 19..0 do
+    // Red at (0, 0), and white at (159, 111), the last pixel; bits 19..0 do
     // not count, so the last is white whatever its character.
     px[0] = 0xF000_0000;
     px[pixels - 1] = 0xFFF_FFF41;

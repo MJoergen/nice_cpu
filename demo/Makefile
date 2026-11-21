@@ -89,7 +89,7 @@ $(BUILD)/demo_fail.bin: $(BUILD)/demo_test.bin
 # letter, CR, a control code, DEL, a cursor key, F10, which has no demo, a
 # cursor key with parameters, a byte of ISO 8859-1 and one of 0x80 to
 # 0x9F, an ESC and an x, which are one key, as niceemu has the x at once,
-# a sequence longer than the 12 bytes shown, and nine letters: 20 keys,
+# a sequence longer than the 12 bytes shown, and twelve letters: 23 keys,
 # which scroll by four rows. The fifth goes from the key codes back to the
 # typewriter, which shows no bytes. The sixth starts the characters and
 # colors, F5, where letters and F2 do nothing. niceemu shows neither the
@@ -124,7 +124,7 @@ $(BUILD)/demo_fail.bin: $(BUILD)/demo_test.bin
 TEST1 = Hello, world!\nabc\177\177X\tY\r\n$(shell printf '0123456789%.0s' 1 2 3 4 5 6 7 8)abcde\n\
 \033[A\033[A\033[DQ\033[C\033[BR\n\033x\033[1;5Cy\200\351z\n
 TEST3 = one\033[11~two\n\033OPthree\033OQ\033[19~\033[17;2~ F\n\033\033[Ax\033Q\033[99~
-TEST4 = \033[13~a\r\003\177\033[A\033[21~\033[1;5C\351\200\033x\033[1;2;3;4;5;6;7;8~bcdefghij
+TEST4 = \033[13~a\r\003\177\033[A\033[21~\033[1;5C\351\200\033x\033[1;2;3;4;5;6;7;8~bcdefghijklm
 TEST5 = \033ORab\033OPback
 TEST6 = \033[15~abc\033OQ
 DUMP6 = -d 0xFFFF01BC:36 -d 0xFFFF066C:36
@@ -151,7 +151,7 @@ DUMP14 = -d 0xFFFF0212:22 -d 0xFFFF0322:14
 
 test: $(BUILD)/emu_test.bin $(BUILD)/emu_fail.bin $(EMU)
 	@printf '$(TEST1)' > $(BUILD)/test1.txt
-	@{ printf 'junk\014\177'; for i in $$(seq 16); do printf 'line %d\n' $$i; done; \
+	@{ printf 'junk\014\177'; for i in $$(seq 19); do printf 'line %d\n' $$i; done; \
 	  printf 'first\tA\t\t\t\t\t\t\t\t\t\tB'; } > $(BUILD)/test2.txt
 	@for t in 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
 	  case $$t in \

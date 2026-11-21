@@ -32,12 +32,13 @@ int main(void)
     nice_screen_clear();
     nice_screen_put(0, 0, 'O');
     nice_screen_put(2, 1, 0xC80FF021);
-    nice_screen_put(79, 24, 'Z');
+    nice_screen_put(79, 27, 'Z');
     fails += nice_peek(NICE_SCREEN) != 'O';
     fails += nice_peek(NICE_SCREEN + 1) != NICE_SCREEN_BLANK;
     fails += nice_peek(NICE_SCREEN + 82) != 0xC80FF021;
-    fails += nice_peek(NICE_SCREEN + 1998) != NICE_SCREEN_BLANK;
-    fails += nice_peek(NICE_SCREEN + 1999) != 'Z';
+    fails += nice_peek(NICE_SCREEN + 1999) != NICE_SCREEN_BLANK;
+    fails += nice_peek(NICE_SCREEN + 2238) != NICE_SCREEN_BLANK;
+    fails += nice_peek(NICE_SCREEN + 2239) != 'Z';
 
     // The square root, with the math unit: 99 = 9^2 + 18, the largest
     // radicand, and 10^18 - 1, just below (10^9)^2.

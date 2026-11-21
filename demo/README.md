@@ -34,7 +34,7 @@ MEGA65, clears the screen and returns, to a board's monitor or, in
 
 The typewriter's top ten rows are the welcome: the two bars, what the
 demo is, where to go further, and a third blue bar with the keys and F12.
-The 15 rows below it are a typewriter. What you type on the keyboard, or
+The 18 rows below it are a typewriter. What you type on the keyboard, or
 send to the console, appears at the blinking cursor:
 
 | Key | What it does |

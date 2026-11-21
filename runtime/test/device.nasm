@@ -16,12 +16,12 @@
 ; echoes the two bytes, and a newline ends the output: "Hi", then "ab".
 ;
 ; The screen. nice_screen_clear writes 0x000FFF20, a blank in white on
-; black, to all 2000 words, then nice_screen_put writes "O" and "K" to
+; black, to all 2240 words, then nice_screen_put writes "O" and "K" to
 ; row 0, columns 0 and 1, "!" with a color, 0xC80FF021, to row 1, column
-; 2, at 0xFFFF0000 + 80 + 2 = 0xFFFF0052, and "Z" to row 24, column 79,
-; the last word, 0xFFFF07CF.
-; -s prints the rows with their trailing blanks dropped, so rows 2-23 are
-; just "|". The dumps show the words, with the blank at 0xFFFF07CE that
+; 2, at 0xFFFF0000 + 80 + 2 = 0xFFFF0052, and "Z" to row 27, column 79,
+; the last word, 0xFFFF08BF.
+; -s prints the rows with their trailing blanks dropped, so rows 2-26 are
+; just "|". The dumps show the words, with the blank at 0xFFFF08BE that
 ; the clear wrote.
 ;
 ; Code: start.nasm is words 0-10, with its vectors at 9-10. main is 115
@@ -31,10 +31,10 @@
 ; and the 16 calls 3 (nice_instructions) + 3 (nice_cycles) + 6 + 6 * 2
 ; (nice_print, through ___putc_vector) + 4 + 4 + 8 + 8 (nice_getc,
 ; nice_pollc, nice_pollc, nice_getc) + 4 * 3 (nice_putc, through the
-; vector) + 6002 (nice_screen_clear) + 4 * 6 (nice_screen_put) = 6086
+; vector) + 6722 (nice_screen_clear) + 4 * 6 (nice_screen_put) = 6806
 ; steps. With the 5 of the start-up code and HALT, that is
-; 5 + 58 + 6086 + 1 = 6150 steps. At the end R1 = 79 = 0x4F,
-; R2 = 80 * 24 + 79 = 0x7CF, R3 = 0x5A, and R4 = 64 * 24 = 0x600, from the
+; 5 + 58 + 6806 + 1 = 6870 steps. At the end R1 = 79 = 0x4F,
+; R2 = 80 * 27 + 79 = 0x8BF, R3 = 0x5A, and R4 = 64 * 27 = 0x6C0, from the
 ; last nice_screen_put. R14 = 0x09000000: Z from the last DEC[M] of
 ; nice_screen_clear.
 
@@ -78,7 +78,7 @@ _main           CALL    _nice_instructions
                 MOVE    R3, 0xC80FF021
                 CALL    _nice_screen_put
                 MOVE    R1, 79
-                MOVE    R2, 24
+                MOVE    R2, 27
                 MOVE    R3, 0x5A
                 CALL    _nice_screen_put
                 RET

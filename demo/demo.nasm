@@ -64,7 +64,7 @@
 SP              .EQU    R13
 
 CONSOLE         .EQU    0xFFFFFF00      ; a read: bit 8 and the byte, or bit 9 at the end
-SCREEN          .EQU    0xFFFF0000      ; 80 x 25 words, the character in bits 7..0
+SCREEN          .EQU    0xFFFF0000      ; 80 x 28 words, the character in bits 7..0
 SCR_CTL         .EQU    0xFFFFFF80      ; bit 6 shows the cursor, bit 5 blinks it
 SCR_X           .EQU    0xFFFFFF81      ; the cursor's column
 SCR_Y           .EQU    0xFFFFFF82      ; the cursor's row
@@ -168,7 +168,7 @@ TAIL            .EQU    NICE_FG_GREEN
 RED             .EQU    NICE_FG_RED
 
 TOP             .EQU    10              ; the first row of the typewriter
-LAST            .EQU    24              ; and its last
+LAST            .EQU    27              ; and its last
 SCR_TOP         .EQU    SCREEN+800      ; the address of row TOP, 80 * TOP words in
 KTOP            .EQU    8               ; the first row of the keys of F3
 SCR_KEY         .EQU    SCREEN+640      ; its address, 80 * KTOP words in
@@ -291,7 +291,7 @@ NEWLINE         MOVE    COL, 0
         ?!Z     ADD     ROW, ROW, 1
         ?!Z     JMP     KEY
                 MOVE    R2, SCR_TOP
-                MOVE    R4, 1120        ; the rows TOP+1 to LAST, 14 of 80 words
+                MOVE    R4, 1360        ; the rows TOP+1 to LAST, 17 of 80 words
                 CALL    SCROLL
                 JMP     KEY
 
@@ -313,7 +313,7 @@ TAB             OR      COL, COL, 7
 ; The typewriter's rows cleared, and the cursor at the top
 CLEAR           MOVE    R2, SCR_TOP
                 MOVE    R3, TYPED+0x20
-                MOVE    R4, 1200        ; the rows TOP to LAST, 15 of 80 words
+                MOVE    R4, 1440        ; the rows TOP to LAST, 18 of 80 words
                 CALL    FILL
                 MOVE    COL, 0
                 MOVE    ROW, TOP
@@ -367,7 +367,7 @@ KCODES          MOVE    SP, @D_SP
         ?!Z     ADD     ROW, ROW, 1
         ?!Z     JMP     :-
                 MOVE    R2, SCR_KEY     ; or a scroll after the last
-                MOVE    R4, 1280        ; the rows KTOP+1 to LAST, 16 of 80 words
+                MOVE    R4, 1520        ; the rows KTOP+1 to LAST, 19 of 80 words
                 CALL    SCROLL
                 JMP     :-
 
@@ -1299,7 +1299,7 @@ HEX8            MOVE    R4, 8
 MONITOR         MOVE    SP, @D_SP
                 MOVE    R2, SCREEN
                 MOVE    R3, TEXT+0x20
-                MOVE    R4, 2000
+                MOVE    R4, 2240
                 CALL    FILL
                 MOVE    @SCR_X, 0
                 MOVE    @SCR_Y, 0
@@ -1415,7 +1415,7 @@ FRAME           MOVE    @SCR_CTL, 0
                 MOVE    ECHO, 0
                 MOVE    R2, SCREEN
                 MOVE    R3, TEXT+0x20
-                MOVE    R4, 2000
+                MOVE    R4, 2240
                 CALL    FILL
                 MOVE    R2, SCREEN
                 MOVE    R3, BAR+0x20

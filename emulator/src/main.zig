@@ -31,11 +31,12 @@ const usage =
     \\
     \\Options:
     \\  -t, --trace          Print one line per instruction.
-    \\  -s, --screen         Print the 80x25 character screen at 0xFFFF0000.
+    \\  -s, --screen         Print the 80x28 character screen at 0xFFFF0000.
     \\      --color          Like --screen, with the colors as ANSI escapes,
-    \\                       and the pixels of the 160x100 mode.
+    \\                       and the pixels of the 160x112 mode.
     \\      --invert-fg      With --color, invert the foreground, as the 2004 IDE does.
-    \\  -2004                Put the screen at 0x400, as the 2004 emulator does.
+    \\  -2004                Put the screen at 0x400, as the 2004 emulator does,
+    \\                       with 25 rows, and 100 rows of pixels.
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default: no limit).
     \\  -i, --input FILE     Read the console input from FILE, or stdin for -.
@@ -123,6 +124,7 @@ const Options = struct {
     color: bool = false,
     invert_fg: bool = false,
     screen_base: u32 = screen_base,
+    screen_size: frame.Size = frame.size_full,
     dumps: []const Dump = &.{},
     /// Sorted by step, in command-line order within a step.
     requests: []const Request = &.{},
@@ -430,6 +432,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.invert_fg = true;
         } else if (std.mem.eql(u8, arg, "-2004")) {
             opts.screen_base = screen_base_2004;
+            opts.screen_size = frame.size_2004;
         } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--dump")) {
             const colon = std.mem.indexOfScalar(u8, value, ':') orelse
                 return fail("{s} wants ADDR:N, not '{s}'", .{ arg, value });
@@ -942,7 +945,7 @@ fn windowOpen(win: *Window, cpu: *const Cpu, opts: Options, wait_ms: u32, steps:
 /// before ends the run.
 fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, file: ?*std.Io.Reader, eth_host: *EthHost) !u8 {
     var win: Window = undefined;
-    win.open(arena, opts.invert_fg, file) catch return error.Load;
+    win.open(arena, opts.invert_fg, opts.screen_size, file) catch return error.Load;
     defer win.close(arena);
     cpu.input = win.queue.input();
     var pacer: Pacer = .{ .speed = opts.speed, .start_ns = nowNs(io) };
@@ -1021,7 +1024,7 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
     try printRegisters(out, cpu);
     if (opts.stack) try printStack(out, cpu);
     for (opts.dumps) |d| try printMemory(out, cpu, d);
-    if (opts.screen) try printScreen(out, cpu, opts.screen_base, opts.color, opts.invert_fg);
+    if (opts.screen) try printScreen(out, cpu, opts.screen_base, opts.screen_size, opts.color, opts.invert_fg);
 
     return switch (stop) {
         .closed => 4,
@@ -1074,7 +1077,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     const windowed = build_options.window and opts.window;
     var win: Window = undefined;
     if (windowed) {
-        win.open(arena, opts.invert_fg, null) catch return error.Load;
+        win.open(arena, opts.invert_fg, opts.screen_size, null) catch return error.Load;
         cpu.input = link.pollInput();
     } else {
         cpu.input = .fromReader(&link.reader);
@@ -1228,16 +1231,17 @@ fn printMemory(out: *std.Io.Writer, cpu: *const Cpu, d: Dump) !void {
     }
 }
 
-/// Print the screen, one row per line, without trailing blanks. Characters
-/// outside printable ASCII show as blanks. With `color`, each row has the
-/// colors of its words as 24-bit ANSI escapes, changing only where they
-/// change, and ends with a reset. With `invert`, the foreground is inverted.
-fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, invert: bool) !void {
-    if (cpu.peek(screen_mode) == mode_chunky) return printPixels(out, cpu, base, color);
+/// Print the rows of `size` of the screen, one per line, without trailing
+/// blanks. Characters outside printable ASCII show as blanks. With `color`,
+/// each row has the colors of its words as 24-bit ANSI escapes, changing
+/// only where they change, and ends with a reset. With `invert`, the
+/// foreground is inverted.
+fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, size: frame.Size, color: bool, invert: bool) !void {
+    if (cpu.peek(screen_mode) == mode_chunky) return printPixels(out, cpu, base, size, color);
     var words: [frame.rows][frame.cols]u32 = undefined;
     var rows: [frame.rows][frame.cols]u8 = undefined;
     var last_row: usize = 0;
-    for (&rows, &words, 0..) |*row, *word_row, y| {
+    for (rows[0..size.rows], words[0..size.rows], 0..) |*row, *word_row, y| {
         for (row, word_row, 0..) |*ch, *w, x| {
             w.* = cpu.peek(base + @as(u32, @intCast(y * frame.cols + x)));
             const c: u8 = @truncate(w.*);
@@ -1276,15 +1280,15 @@ fn printScreen(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool, inv
 /// Each line ends with a reset. The black pixels at the end of a line, and
 /// the lines after the last that has a pixel not black, are left out, as
 /// the blanks of the text are.
-fn printPixels(out: *std.Io.Writer, cpu: *const Cpu, base: u32, color: bool) !void {
-    try out.print("Screen: {d}x{d} pixels\n", .{ frame.pixel_cols, frame.pixel_rows });
+fn printPixels(out: *std.Io.Writer, cpu: *const Cpu, base: u32, size: frame.Size, color: bool) !void {
+    try out.print("Screen: {d}x{d} pixels\n", .{ frame.pixel_cols, size.pixel_rows });
     if (!color) return;
-    var px: [frame.pixels]u32 = undefined;
-    cpu.mem.peekWords(base, &px);
     const cols = frame.pixel_cols;
+    var px: [frame.pixels]u32 = undefined;
+    cpu.mem.peekWords(base, px[0 .. size.pixel_rows * cols]);
     var lens: [frame.pixel_rows / 2]usize = @splat(0);
     var last: usize = 0;
-    for (&lens, 0..) |*n, l| {
+    for (lens[0 .. size.pixel_rows / 2], 0..) |*n, l| {
         for (0..cols) |x| {
             if ((px[2 * l * cols + x] | px[(2 * l + 1) * cols + x]) >> 20 != 0) n.* = x + 1;
         }

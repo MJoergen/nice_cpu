@@ -104,7 +104,7 @@ goes through these steps on a small program, and a
 | Option | Effect |
 |---|---|
 | `-t`, `--trace` | Print one line per instruction (see below). |
-| `-s`, `--screen` | After halting, print the 80×25 character screen, or only the size of the chunky mode (DEVICES.md §1.10). |
+| `-s`, `--screen` | After halting, print the 80×28 character screen, or 80×25 with `-2004`, or only the size of the chunky mode (DEVICES.md §1.10). |
 | `--color` | Like `--screen`, with the colors of each word as 24-bit ANSI escapes (see below). |
 | `--invert-fg` | Like `--color`, with the foreground inverted, as in the 2004 IDE. |
 | `-2004` | Put the screen at `0x400`, as the 2004 emulator does. |
@@ -153,7 +153,7 @@ not inverted, as it is in the 2004 IDE, unless `--invert-fg` asks for it. Then
 each foreground component `n` becomes `0xF − n`, and the background stays.
 
 In the chunky mode of DEVICES.md §1.10, `--screen` prints only `Screen:
-160x100 pixels`. `--color` prints that line and then the pixels, two rows
+160x112 pixels`, or `Screen: 160x100 pixels` with `-2004`. `--color` prints that line and then the pixels, two rows
 to a line, starting with `|`: each pair is an upper half block, `▀`, with
 the color of the top pixel, bits 31..20 of its word, in the foreground and
 that of the bottom one in the background, with the escape
@@ -179,10 +179,11 @@ empty argument counts as no program.
 
 ## Window
 
-With `--window`, niceemu shows the 80×25 screen in a window of 1280×800
-pixels while the program runs, as DEVICES.md §1 specifies, or the 160×100
+With `--window`, niceemu shows the 80×28 screen in a window of 1280×896
+pixels while the program runs, as DEVICES.md §1 specifies, or the 160×112
 pixels of the chunky mode, when the mode word at `0xFFFFFF87` selects it
-(DEVICES.md §1.10). A resized window
+(DEVICES.md §1.10). With `-2004`, the window is 1280×800, for the 25 rows
+of text or the 100 rows of pixels of 2004. A resized window
 scales the screen and keeps its aspect. The characters are from the font
 that the font base at `0xFFFFFF86` selects (DEVICES.md §1.8): the
 character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at
@@ -277,8 +278,8 @@ address twice and a file with no words are errors.
 | `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (DEVICES.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
 | `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (DEVICES.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
 | `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
-| `0xFFFF0000`–`0xFFFF3E7F` | 16000 | Screen: the characters of 80×25 in its first 2000 words, or 160×100 pixels in the chunky mode (DEVICES.md §1.10). Ordinary memory. With `-2004` it is at `0x00000400`–`0x0000427F` instead. |
-| `0xFFFF3E80`–`0xFFFFFEFF` | 49280 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
+| `0xFFFF0000`–`0xFFFF45FF` | 17920 | Screen: the characters of 80×28 in its first 2240 words, or 160×112 pixels in the chunky mode (DEVICES.md §1.10). Ordinary memory. With `-2004` it is at `0x00000400`–`0x0000427F` instead, 80×25 or 160×100. |
+| `0xFFFF4600`–`0xFFFFFEFF` | 47360 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02` | 1 | `CONSOLE_IRQ`, the console's receive interrupt (DEVICES.md §1.9): the vector in bits 7..0 and the enable in bit 8. |

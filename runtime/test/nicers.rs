@@ -32,10 +32,11 @@ pub extern "C" fn main() -> i32 {
     nice::screen_put(nice::SCREEN_COLS - 1, nice::SCREEN_ROWS - 1, 'Z' as u32);
     const SCREEN: u32 = 0xFFFF0000;
     println!(
-        "{:x} {:x} {:x}",
+        "{:x} {:x} {:x} {:x}",
         nice::peek(SCREEN),
         nice::peek(SCREEN + 82),
-        nice::peek(SCREEN + 1999)
+        nice::peek(SCREEN + 1999),
+        nice::peek(SCREEN + 2239)
     );
     n
 }

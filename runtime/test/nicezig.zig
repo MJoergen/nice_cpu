@@ -21,6 +21,6 @@ export fn main() i32 {
     nice.screenPut(2, 1, 0xC80FF021);
     nice.screenPut(nice.screen_cols - 1, nice.screen_rows - 1, 'Z');
     const screen: u32 = 0xFFFF0000;
-    nice.print("{x} {x} {x}\n", .{ nice.peek(screen), nice.peek(screen + 82), nice.peek(screen + 1999) });
+    nice.print("{x} {x} {x} {x}\n", .{ nice.peek(screen), nice.peek(screen + 82), nice.peek(screen + 1999), nice.peek(screen + 2239) });
     return n;
 }

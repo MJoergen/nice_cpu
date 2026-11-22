@@ -147,20 +147,16 @@ That is, for each core, `bench make core` (the benchmark's two programs,
 each a run of its own), `bench make core-dhry` (Dhrystone), `bench make
 core-coremark` (one iteration of CoreMark), `bench make core
 CORE_PROGRAMS="float float_inline"` (the float benchmark, with the FPU's
-accesses called and inline, one run for both), and `hdl make strides`
-(the interrupt sweeps with strides 17, 31, and 64), and once beside
-them `emulator make fpu-long` (the FPU's vectors with a million random
+accesses called and inline, one run for both), and once beside them
+`emulator make fpu-long` (the FPU's vectors with a million random
 accesses) and `runtime/libc make fuzz` (the random tests of `printf`,
 `strtod`, and `math.h`, which need clang). Each benchmark run, Dhrystone, CoreMark, the float run,
-`fpu-long`, and the fuzz takes one CPU, and the sweeps share the rest. `release.py figures` then checks that `bench/README.md`
+`fpu-long`, and the fuzz takes one CPU. `release.py figures` then checks that `bench/README.md`
 quotes the cycles of `float` and `float_inline` on the pipelined core.
-On 20 CPUs, `make slow` took 5 minutes on 2026-11-11. `SIM=ghdl` runs
-them in GHDL instead, which took 33 minutes on 2026-10-27, bound by the
-benchmark on the multi-cycle core.
+`SIM=ghdl` runs them in GHDL instead, which takes about half an hour,
+bound by the benchmark on the multi-cycle core.
 Every line must say `PASS`, and both cores must agree with
-`niceemu`. `hdl make sweep`, with one interrupt per run, takes hours and is
-not part of the release; it is run after a change to the interrupt path
-(CONTRIBUTING.md, Rules).
+`niceemu`.
 
 `hdl make programs`, the runtime and translator programs on the core, is
 not part of `make slow`: CI runs it on both cores, in nvc,
@@ -249,8 +245,8 @@ record it in the release notes:
 
 - the ports of either core, or of `wb_dmux` and the devices;
 - the I/O address map of [doc/DEVICES.md](../doc/DEVICES.md);
-- `regs_o`, `retire_o`, `stats_o`, or the reset and interrupt behavior;
-- the clock assumptions of the timer and the performance counters;
+- `regs_o`, `retire_o`, `stats_o`, or the reset behavior;
+- the clock assumptions of the performance counters;
 - the version and the rules of the debug link (DEBUG.md §9), and the
   ports of `hdl/src/debug_link.vhd`.
 

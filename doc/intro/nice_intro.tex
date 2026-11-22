@@ -90,14 +90,14 @@
 %
    \begin{frame}
     \frametitle{The status register \code{R14}}
-    The upper 8 bits hold the flags. The lower 24 bits (\code{VBASE})
-    say where the interrupt vector table is:
+    The upper 8 bits hold the flags. The lower 24 bits (\code{U}) are
+    free for software:
     \begin{center}
      \begin{tabular}{|c|c|c|c|c|c|c|c||c|}
       \hline
        31&30&29&28&27&26&25&24&23\dots 0\\
       \hline
-       \code{I}&\code{E}&\code{V}&\code{N}&\code{Z}&\code{C}&\code{X}&\code{1}&\code{VBASE}\\
+       \code{F1}&\code{F0}&\code{V}&\code{N}&\code{Z}&\code{C}&\code{X}&\code{1}&\code{U}\\
       \hline
      \end{tabular}
     \end{center}
@@ -108,8 +108,8 @@
      \item [\code{Z}:] 1 if the last result was \code{0x00000000}
      \item [\code{N}:] 1 if the last result was negative (bit 31 set)
      \item [\code{V}:] 1 if the last operation caused a signed overflow
-     \item [\code{E}:] If 1, maskable interrupts are enabled
-     \item [\code{I}:] Set to 1 when an interrupt is taken
+     \item [\code{F0}, \code{F1}:] Flags for software. The hardware
+      never writes them, but a condition tests them.
     \end{description}
    \end{frame}
 %
@@ -216,8 +216,8 @@
          \code{011}&\code{Z}&\code{?Z}&\code{?!Z}\\
          \code{100}&\code{N}&\code{?N}&\code{?!N}\\
          \code{101}&\code{V}&\code{?V}&\code{?!V}\\
-         \code{110}&\code{E}&\code{?E}&\code{?!E}\\
-         \code{111}&\code{I}&\code{?I}&\code{?!I}\\
+         \code{110}&\code{F0}&\code{?F0}&\code{?!F0}\\
+         \code{111}&\code{F1}&\code{?F1}&\code{?!F1}\\
         \hline
        \end{tabular}
       \end{center}
@@ -351,7 +351,7 @@
 %
    \begin{frame}
     \frametitle{Control instructions}
-    The control class has three commands, chosen by bits 25..21:
+    The control class has one command, chosen by bits 25..21:
     \begin{center}
      \begin{tabular}{|l|l|l|l|}
       \hline
@@ -359,9 +359,6 @@
       \hline
       \hline
        \code{00000}&\code{HALT}&\code{0x0C000000}&Halt the processor\\
-       \code{00001}&\code{RTI}&\code{0x0C200000}&Return from interrupt\\
-       \code{00010}&\code{INT n}&\code{0x0C400000} + n&Software interrupt\\
-        &&&with vector n (0--255)\\
       \hline
      \end{tabular}
     \end{center}
@@ -369,9 +366,7 @@
      \item All other commands are reserved. They halt the processor.
      \item Control instructions are conditional too:
       \code{?Z HALT} halts only if \code{Z} is set.
-     \item They never change the flags \code{X}, \code{C}, \code{Z},
-      \code{N}, or \code{V}, except that \code{RTI} restores all of
-      \code{SR}.
+     \item They never change the flags.
     \end{itemize}
    \end{frame}
 %
@@ -390,8 +385,7 @@
        \code{MOVE}, \code{ONE}, and the logic operations&0&W&W&0&W\\
        Shifts that send a bit to \code{C}&0&W&W&W&W\\
        Other shifts&0&W&W&0&W\\
-       \code{HALT}, \code{INT}&&&&&\\
-       \code{RTI}&\multicolumn{5}{c|}{all restored}\\
+       \code{HALT}&&&&&\\
       \hline
      \end{tabular}
     \end{center}
@@ -736,76 +730,52 @@ TEXT            .ASCII_L 'Hello, NICE!'
   \end{frame}
 %
   \begin{frame}
-   \frametitle{Interrupts}
-   NICE has a simple interrupt scheme, the same as QNICE's:
+   \frametitle{No interrupts}
+   NICE has no interrupts: no interrupt request, no software interrupt,
+   and no return from one. A program learns of an event by
+   \emph{polling}: it reads the device's status in a loop.
    \begin{itemize}
-    \item There are three kinds of interrupt: a maskable request
-     (\emph{IRQ}), a non-maskable request (\emph{NMI}), and the software
-     interrupt \code{INT n}.
-    \item IRQs are accepted only while the flag \code{E} is 1. After
-     reset it is 0.
-    \item When an interrupt is taken, the processor saves \code{PC} and
-     \code{SR} in two hidden registers, sets \code{I}, and jumps through
-     the vector table.
-    \item The interrupt service routine (\emph{ISR}) ends with \code{RTI},
-     which restores \code{PC} and \code{SR}. So the flags are safe, but
-     the ISR must save any other register it uses.
-    \item Interrupts cannot be nested. A request that arrives during an
-     ISR waits until the \code{RTI}.
+    \item \textbf{Buffers in hardware} keep input that comes while the
+     program is busy: the keyboard and the UART share a FIFO, and
+     Ethernet frames wait in a queue.
+    \item \textbf{Work given to hardware} needs no program at all: on the
+     MEGA65, the TCP engine runs in the FPGA beside the processor.
+    \item \textbf{The debugger} pauses the processor through the debug
+     link, in hardware, so it breaks into any program, even one stuck in
+     a loop.
+    \item \textbf{Polling} is what is left. A program that waits spins in
+     a loop of reads, and work that must run on time fits into the main
+     loop, which reads a counter to know the time.
    \end{itemize}
-  \end{frame}
-%
-  \begin{frame}
-   \frametitle{The vector table}
-   \begin{itemize}
-    \item The vector table has 256 words. Word $v$ holds the address of the
-     ISR for vector $v$.
-    \item The device that requests an interrupt supplies the vector number.
-     \code{INT n} uses \code{n}.
-    \item The table starts at address $\code{VBASE} \cdot 256$, where
-     \code{VBASE} is bits 23..0 of \code{SR}.
-    \item So to put the table at \code{0x100} and then allow IRQs, with
-     \mbox{\code{SR .EQU R14}}:
-     \begin{center}
-      \begin{tabular}{ll}
-       \code{OR SR, SR, 1}&\code{VBASE} = 1\\
-       \code{OR SR, SR, 0x40000000}&\code{E} = 1\\
-      \end{tabular}
-     \end{center}
-    \item After reset, \code{PC} = 0 and \code{VBASE} = 0, so word 0 is
-     both the first instruction and vector table entry 0. Set \code{VBASE}
-     before you allow interrupts.
-   \end{itemize}
+   Other processors did the same: the CDC 6600 left its I/O to
+   peripheral processors that polled, and the Parallax Propeller has no
+   interrupts at all.
   \end{frame}
 %
   \begin{frame}[fragile]
-   \frametitle{Code example: an interrupt routine}
+   \frametitle{Code example: polling a counter}
    {\fontsize{7}{8}\selectfont
    \begin{verbatim}
-SP              .EQU    R13
-SR              .EQU    R14
 CONSOLE         .EQU    0xFFFFFF00
+CYCLE_LO        .EQU    0xFFFFFF40      ; the cycles since reset
 
                 .ORG    0
-                MOVE    SP, 0x1000
-                OR      SR, SR, 1       ; VBASE = 1: the table is at 0x100
-                OR      SR, SR, 0x40000000  ; E = 1: accept IRQs
-                MOVE    R1, 20
-COUNT           DEC[M]  R1, R1          ; count down from 20 ...
-        ?!Z     JMP     COUNT           ; ... while the IRQs come in
+                MOVE    R1, 3           ; R1: the stars still to print
+                MOVE    R2, 10          ; R2: the cycle of the next star
+LOOP            ADD     R3, R3, 1       ; the work of the main loop
+                SUB[M]  R0, @CYCLE_LO, R2  ; C = 1 while the star is not due
+        ?C      JMP     LOOP
+                MOVE    @CONSOLE, 0x2A  ; print '*'
+                ADD     R2, R2, 10      ; the next one 10 cycles later
+                DEC[M]  R1, R1
+        ?!Z     JMP     LOOP
                 MOVE    @CONSOLE, 10    ; a newline
                 HALT
-
-ISR             MOVE    @CONSOLE, 0x2A  ; print '*'
-                RTI                     ; restore PC and SR, and return
-
-                .ORG    0x105           ; vector 5 of the table at 0x100
-                .DAT    ISR
    \end{verbatim}
    }
-   \code{niceemu --irq 5:5 --irq 12:5 irq.bin} raises an IRQ with vector 5
-   before steps 5 and 12 (\code{--irq STEP:VECTOR}; a step is one
-   instruction), and prints \code{**}.
+   The emulator counts one cycle for each instruction, so
+   \code{niceemu poll.bin} prints \code{***} after 40 steps, with
+   \code{R3} = 8: the main loop ran 8 times while it waited.
   \end{frame}
 %
   \begin{frame}

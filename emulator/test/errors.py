@@ -38,14 +38,10 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["--dump", "10", "BIN"], "00000000 0c000000", "niceemu: --dump wants ADDR:N, not '10'"),
     (["-d", ":5", "BIN"], "00000000 0c000000", "niceemu: -d: bad number ''"),
     (["-d", "0:0x100000000", "BIN"], "00000000 0c000000", "niceemu: -d: '0x100000000' is larger than 4294967295"),
-    (["BIN", "--irq"], "00000000 0c000000", "niceemu: --irq needs a value"),
-    (["--irq", "5", "BIN"], "00000000 0c000000", "niceemu: --irq wants STEP:VEC, not '5'"),
-    (["--nmi", "5", "BIN"], "00000000 0c000000", "niceemu: --nmi wants STEP:VEC, not '5'"),
-    (["--irq", "x:1", "BIN"], "00000000 0c000000", "niceemu: --irq: bad number 'x'"),
-    (["--nmi", "-1:1", "BIN"], "00000000 0c000000", "niceemu: --nmi: bad number '-1'"),
-    (["--irq", "0:256", "BIN"], "00000000 0c000000", "niceemu: --irq: '256' is larger than 255"),
-    (["--nmi", "0:", "BIN"], "00000000 0c000000", "niceemu: --nmi: bad number ''"),
-    (["--irq", "0:+5", "BIN"], "00000000 0c000000", "niceemu: --irq: bad number '+5'"),
+    # NICE has no interrupts, so niceemu has no options to raise them.
+    (["--irq", "5:1", "BIN"], "00000000 0c000000", "niceemu: unknown option '--irq'"),
+    (["--nmi", "5:1", "BIN"], "00000000 0c000000", "niceemu: unknown option '--nmi'"),
+    (["--no-timer-irq", "BIN"], "00000000 0c000000", "niceemu: unknown option '--no-timer-irq'"),
     (["--link", "x"], None, "niceemu: --link: bad number 'x'"),
     (["--link", "1.2.3:0"], None, "niceemu: --link: bad address '1.2.3'"),
     (["--link", "[::1:0"], None, "niceemu: --link: bad address '[::1'"),
@@ -55,7 +51,7 @@ CASES: List[Tuple[List[str], Optional[str], str]] = [
     (["--link", "127.0.0.1:65536"], None, "niceemu: --link: '65536' is larger than 65535"),
     # 192.0.2.1 is for documentation (RFC 5737), and no address of this computer.
     (["--link", "192.0.2.1:0"], None, "niceemu: cannot serve the link on 192.0.2.1:0: AddressUnavailable"),
-    (["--irq", "0:1_0", "BIN"], "00000000 0c000000", "niceemu: --irq: bad number '1_0'"),
+    (["-d", "0:1_0", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '1_0'"),
     (["-n", "0b11", "BIN"], "00000000 0c000000", "niceemu: -n: bad number '0b11'"),
     (["-d", "0x:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0x'"),
     (["-d", "0xg:1", "BIN"], "00000000 0c000000", "niceemu: -d: bad number '0xg'"),
@@ -135,16 +131,14 @@ ETH_FILES = {
 
 # Runs that succeed: (contents of the .bin file, arguments before it, exit
 # status, lines that stdout must have, or must not have if they start with
-# "!"). 0c000000 is HALT, 0c200000 RTI, 0c400001 INT 1, and 0c800000 a
-# reserved control word.
+# "!"). 0c000000 is HALT, and 0c200000, 0c400001, and 0c800000 are
+# reserved control words, commands 1, 2, and 4.
 RUNS: List[Tuple[str, List[str], int, List[str]]] = [
     ("00000000 0c000000", [], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
-    # RTI outside an interrupt routine, a reserved word, and INT inside the
-    # routine of INT 1, which starts at word 2.
-    ("00000000 0c200000", [], 2, ["Halted (RTI outside an interrupt routine) after 1 steps, PC=00000001"]),
+    ("00000000 0c200000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
     ("00000000 0c800000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
-    ("00000000 0c400001\n00000001 00000002\n00000002 0c400001", [], 2,
-     ["Halted (INT inside an interrupt routine) after 2 steps, PC=00000003"]),
+    ("00000000 0c400001\n00000001 00000002", [], 2,
+     ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
     ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3,
      ["Stopped at the step limit after 5 steps, PC=00000005"]),
     ("00000000 00000000", ["-n", "5", "--no-font"], 3,
@@ -156,35 +150,16 @@ RUNS: List[Tuple[str, List[str], int, List[str]]] = [
     # The lines of a .bin file and of an --eth-in file may end with CR LF.
     ("00000000 00000000\r\n00000001 0c000000\r", [], 0, ["Halted (HALT) after 2 steps, PC=00000002"]),
     ("00000000 0c000000", ["--eth-in", "crlf.eth"], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
-    # A WAIT that no request can end stops the run, also under a step limit
-    # (DEVICES.md §1.6). A timer that raises requests can end it, so the step
-    # limit stops that one: MOVE @TIMER_PERIOD, 100 and WAIT are steps 0 and
-    # 1, and the run counts 48 wait steps at once, to the limit of 50.
-    ("00000000 0c600000", [], 2, ["Stopped: waiting with no request to come, after 1 steps, PC=00000001"]),
-    ("00000000 0c600000", ["-n", "5"], 2, ["Stopped: waiting with no request to come, after 1 steps, PC=00000001"]),
-    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000064\n00000003 0c600000", ["-n", "50"], 3,
-     ["Stopped at the step limit after 50 steps, PC=00000004"]),
+    # The word of the old WAIT is control command 3, reserved, which halts
+    # (ISA.md §5.3).
+    ("00000000 0c600000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
+    # MOVE @0xFFFFFF10, 100; HALT: 0xFFFFFF10 is a reserved word of the I/O
+    # range, which is memory in the emulator (DEVICES.md §4).
+    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000064\n00000003 0c000000",
+     ["-d", "0xffffff10:1"], 0, ["Halted (HALT) after 2 steps, PC=00000004", "ffffff10: 00000064"]),
     # -n 0 runs nothing. A HALT at the step limit still counts as a halt.
     ("00000000 0c000000", ["-n", "0"], 3, ["Stopped at the step limit after 0 steps, PC=00000000"]),
     ("00000000 0c000000", ["-n", "1"], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
-    # An interrupt entry is a step: -n 1 stops right after the NMI's entry,
-    # at the routine at 0x10, with I set.
-    ("00000000 0c000000\n00000003 00000010", ["-n", "1", "--nmi", "0:3"], 3,
-     ["Stopped at the step limit after 1 steps, PC=00000010",
-      "R12 00000000 R13 00000000 R14 81000000 R15 00000010", "!Pending"]),
-    # A request still pending at the step limit, with E = 0, and one for a
-    # step after the halt, which is never raised.
-    ("00000000 00000000", ["-n", "2", "--irq", "1:5"], 3,
-     ["Stopped at the step limit after 2 steps, PC=00000002", "Pending: IRQ 05"]),
-    ("00000000 0c000000", ["--nmi", "1:5", "--irq", "1:6"], 0, ["!Pending"]),
-    # MOVE @TIMER_PERIOD, P; HALT. With P = 1 the timer raises a request at
-    # the end of step 0, which is pending, with E = 0, at the end. With
-    # P = 2 the only request comes at the end of the HALT's step, the last
-    # one, and it is not listed (README.md, Memory map).
-    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000001\n00000003 0c000000", [], 0,
-     ["Halted (HALT) after 2 steps, PC=00000004", "Pending: IRQ 00"]),
-    ("00000000 000c1800\n00000001 ffffff10\n00000002 00000002\n00000003 0c000000", [], 0,
-     ["Halted (HALT) after 2 steps, PC=00000004", "!Pending"]),
     # A dump that wraps from 0xFFFFFFFF to 0 stays on one line, and a dump
     # of no words prints nothing.
     ("00000000 0c000000", ["-d", "0xfffffffe:3", "-d", "5:0"], 0,

@@ -1,4 +1,4 @@
-; A self-checking test of the instruction set (ISA.md §2-§7).
+; A self-checking test of the instruction set (ISA.md §1.3-§6, §8).
 ;
 ; Each check sets R12 to its number, runs an instruction, and compares the
 ; result, and often SR, with the value ISA.md gives. On a mismatch it halts
@@ -9,14 +9,11 @@
 ; relies on, so a core that skipped it would end with R11 = 0.
 ;
 ; The program uses no I/O and no memory above 0x1000, so it can run on the
-; FPGA core as well as on the emulator. External interrupts are tested by
-; irq.nasm and merge.nasm instead, because they need the emulator's options.
-; No IRQ may be raised while the test runs: some checks set E with the
-; vector table not in place.
+; FPGA core as well as on the emulator.
 ;
 ; SR values in the comments: 0x01000000 is bit 24 alone, and the flags are
 ; V = 0x20000000, N = 0x10000000, Z = 0x08000000, C = 0x04000000, and
-; X = 0x02000000. E, I, and VBASE are 0, except where a check sets them.
+; X = 0x02000000. F1, F0, and U are 0, except where a check sets them.
 ;
 ; Lines whose comment starts with "never runs" are not executed, not even
 ; as a skipped instruction. Every other line up to the ?!Z HALT at pass is
@@ -363,8 +360,8 @@ ok2
                 CMP     R10, 0x3F000000
         ?!Z     HALT
 
-                MOVE    R12, 39         ; M leaves I, E, and VBASE alone
-                MOVE    R14, 0xC0FFFFFF  ; I, E, and every VBASE bit
+                MOVE    R12, 39         ; M leaves F1, F0, and U alone
+                MOVE    R14, 0xC0FFFFFF  ; F1, F0, and every U bit
                 ADD[M]  R1, 1, 1
                 MOVE    R10, R14
                 CMP     R10, 0xC1FFFFFF
@@ -969,16 +966,16 @@ pcA             HALT                    ; never runs: jumped over
         ?Z      OR      R1, R1, 0x08
         ?N      OR      R1, R1, 0x10
         ?V      OR      R1, R1, 0x20
-        ?E      OR      R1, R1, 0x40
-        ?I      OR      R1, R1, 0x80
+        ?F0     OR      R1, R1, 0x40
+        ?F1     OR      R1, R1, 0x80
         ?!1     OR      R2, R2, 0x01
         ?!X     OR      R2, R2, 0x02
         ?!C     OR      R2, R2, 0x04
         ?!Z     OR      R2, R2, 0x08
         ?!N     OR      R2, R2, 0x10
         ?!V     OR      R2, R2, 0x20
-        ?!E     OR      R2, R2, 0x40
-        ?!I     OR      R2, R2, 0x80
+        ?!F0    OR      R2, R2, 0x40
+        ?!F1    OR      R2, R2, 0x80
                 MOVE    R14, 0          ; every flag clear
         ?1      OR      R3, R3, 0x01
         ?X      OR      R3, R3, 0x02
@@ -986,16 +983,16 @@ pcA             HALT                    ; never runs: jumped over
         ?Z      OR      R3, R3, 0x08
         ?N      OR      R3, R3, 0x10
         ?V      OR      R3, R3, 0x20
-        ?E      OR      R3, R3, 0x40
-        ?I      OR      R3, R3, 0x80
+        ?F0     OR      R3, R3, 0x40
+        ?F1     OR      R3, R3, 0x80
         ?!1     OR      R4, R4, 0x01
         ?!X     OR      R4, R4, 0x02
         ?!C     OR      R4, R4, 0x04
         ?!Z     OR      R4, R4, 0x08
         ?!N     OR      R4, R4, 0x10
         ?!V     OR      R4, R4, 0x20
-        ?!E     OR      R4, R4, 0x40
-        ?!I     OR      R4, R4, 0x80
+        ?!F0    OR      R4, R4, 0x40
+        ?!F1    OR      R4, R4, 0x80
                 CMP     R1, 0xFF
         ?!Z     HALT
                 CMP     R2, 0
@@ -1034,52 +1031,54 @@ pcA             HALT                    ; never runs: jumped over
                 MOVE    R12, 110        ; skipped control words do nothing
                 MOVE    R4, 0
         ?!1     HALT
-        ?!1     RTI
-        ?!1     INT     3               ; would set R4 in isr
+                .DAT    0x8C200000      ; ?!1 command 1, RTI before #162
+                .DAT    0x8C400003      ; ?!1 command 2, INT 3 before #162
                 .DAT    0x8C800000      ; ?!1 reserved command 00100
                 .DAT    0x8C000100      ; ?!1 HALT with bit 8 set: reserved
                 CMP     R4, 0
         ?!Z     HALT
 
-; ---- 6. Interrupts (§7) -------------------------------------------------
-; The vector table is at 0xF00, so VBASE = 0x0F. isr records SR in R4,
-; changes the flags, and returns.
-                MOVE    R12, 111        ; INT saves SR and sets I
-                MOVE    R14, 0x3E00000F  ; every flag, VBASE = 0x0F
-                INT     3
-                CMP     R4, 0xBF00000F
-        ?!Z     HALT
-
-                MOVE    R12, 112        ; RTI restores SR, flags included
-                MOVE    R14, 0x3E00000F
-                INT     3
+; ---- 6. F1, F0, and U (§1.3) -------------------------------------------
+; SR bits 31, 30, and 23..0 are storage: software writes and reads them,
+; and the processor never changes them.
+                MOVE    R12, 111        ; R14 keeps what is written
+                MOVE    R14, 0xC0FFFFFF  ; F1, F0, and every U bit
                 MOVE    R10, R14
-                CMP     R10, 0x3F00000F
+                CMP     R10, 0xC1FFFFFF
         ?!Z     HALT
 
-                MOVE    R12, 113        ; RTI returns to the instruction after INT
-                MOVE    R5, 0
-                INT     3
-                ADD     R5, R5, 1       ; runs once, after the return
-                CMP     R5, 1
+                MOVE    R12, 112        ; a SHIFT with M leaves them alone
+                MOVE    R14, 0xC0ABCDEF
+                SHL[M]  R1, 1, 31       ; r = 0x80000000: N
+                MOVE    R10, R14
+                CMP     R10, 0xD1ABCDEF
         ?!Z     HALT
 
-                MOVE    R12, 114        ; a conditional INT
-                MOVE    R4, 0
-                MOVE    R14, 0x0800000F  ; Z, VBASE = 0x0F
-        ?!Z     INT     3               ; skipped
-                CMP     R4, 0
+                MOVE    R12, 113        ; ?F1 tests bit 31 after a CMP
+                MOVE    R1, 0
+                MOVE    R14, 0x80000000  ; F1
+                CMP     1, 1            ; Z, and F1 stays
+                MOVE    R10, R14
+        ?F1     MOVE    R1, 5
+                CMP     R10, 0x89000000  ; F1 and Z
         ?!Z     HALT
-                MOVE    R14, 0x0800000F
-        ?Z      INT     3
-                CMP     R4, 0x8900000F
+                CMP     R1, 5
         ?!Z     HALT
 
-                MOVE    R12, 115        ; all eight bits of the vector: entry 0xFFF
-                MOVE    R4, 0
-                MOVE    R14, 0x0000000F
-                INT     255
-                CMP     R4, 0x8100000F
+                MOVE    R12, 114        ; with F0 set, ?!F0 skips and ?F0 runs
+                MOVE    R1, 0
+                MOVE    R14, 0x40000000  ; F0
+        ?!F0    HALT
+        ?F0     MOVE    R1, 7
+                CMP     R1, 7
+        ?!Z     HALT
+
+                MOVE    R12, 115        ; skipped control words keep them
+                MOVE    R14, 0xC0123456
+        ?!1     HALT
+                .DAT    0x8C600000      ; ?!1 command 3, WAIT before #162
+                MOVE    R10, R14
+                CMP     R10, 0xC1123456
         ?!Z     HALT
                 MOVE    R14, 0
 
@@ -1116,16 +1115,7 @@ pass            MOVE    R1, 0
 subr            MOVE    R1, 0x5B        ; called by check 103
                 RET
 
-isr             MOVE    R4, R14         ; vectors 3 and 255, for checks 111-115
-                MOVE[M] R6, 0           ; Z
-                RTI
-
 rdata           .DAT    0x11, 0x22, 0x33, 0x44
 wdata           .BLK    9
                 .BLK    4
 stack
-
-                .ORG    0xF03
-                .DAT    isr
-                .ORG    0xFFF
-                .DAT    isr

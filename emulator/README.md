@@ -72,16 +72,11 @@ halts. A program that loads no word at 0 is refused with status 1, unless
 `--link` is given: a program of `nicebuild.py --monitor`, at `0x8000`,
 runs behind a monitor, such as the stand-in `runtime/test/monitor.nasm`
 (runtime/ABI.md, "Programs under a monitor"). Then the emulator prints why it stopped, the number of steps, and the
-registers. A step is one instruction, the entry into an interrupt, or a
-wait step of `WAIT` (Interrupts below), so an
-NMI followed by `RTI` and `HALT` is 3 steps. The PC printed after a halt is
-the address after the halting instruction. If the step limit stops the
-program first, the first line is `Stopped at the step limit after N steps,
-PC=...` instead. If the program waits for an interrupt that no request can
-end, the first line is `Stopped: waiting with no request to come, after N
-steps, PC=...`, with PC the address after the `WAIT`. If an interrupt request is still pending at the end, a
-line such as `Pending: IRQ 05` follows the first line. With requests of both
-sources of IRQ pending, it lists the timer's first, as in `Pending: IRQ 41 IRQ 42`.
+registers. A step is one instruction, or a wait step of a skip of
+`TIME_SKIP` with `--step-time` (Skipping time below). The PC printed after
+a halt is the address after the halting instruction. If the step limit
+stops the program first, the first line is `Stopped at the step limit
+after N steps, PC=...` instead.
 
     $ zig-out/bin/niceemu ../assembler/test/count.bin
     Halted (HALT) after 12292 steps, PC=00000009
@@ -119,22 +114,19 @@ goes through these steps on a small program, and a
 | `--eth-peer [ADDR:]PORT` | Send the frames sent to this address, one UDP datagram each, padded to 60 bytes. It needs `--eth-udp`. |
 | `--symbols FILE` | Read the labels of `niceasm.py --symbols` from FILE, and name the location of a halt other than `HALT`, of the step limit, and of a wasm trap (see Symbols file below). |
 | `--stack` | After the halt or the step limit, print the first value of R13, the lowest since, and the words between them (see Stack below). |
-| `--irq STEP:VEC` | Raise IRQ with vector VEC just before step STEP. May be repeated. |
-| `--nmi STEP:VEC` | Raise NMI with vector VEC just before step STEP. May be repeated. |
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
 | `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
 | `--no-screen-mode` | Make the screen's mode word, `0xFFFFFF87`, ordinary memory, so that a program that reaches it runs as on an FPGA core with none (DEVICES.md §1.10). The window shows the chunky mode while the word is 1. |
-| `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time, and make a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skip N wait steps (see Performance counters and Waiting below). |
-| `--no-timer-irq` | The timer counts, but raises no requests, so that `--irq` can raise them instead (see Timer below). |
+| `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time, and make a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skip N wait steps (see Performance counters and Skipping time below). |
 | `--window` | Show the screen in a window while the program runs, and keep it after the halt until it is closed (see Window below). Needs a build with `-Dwindow`. |
-| `--speed N` | With `--window`, run N steps a second, for a program that keeps time by the timer or by counting steps; 1000000 is one step per microsecond. 0, the default, runs as fast as the host can, and sleeps while the program waits for a key or a time (see Window below). |
+| `--speed N` | With `--window`, run N steps a second, for a program that keeps time by counting steps; 1000000 is one step per microsecond. 0, the default, runs as fast as the host can, and sleeps while the program waits for a key or a time (see Window below). |
 | `--link [ADDR:]PORT` | Serve the debug link on PORT of ADDR, `127.0.0.1` if no ADDR is given, instead of running the program once (see Debug link below). ADDR is an IPv4 address, or an IPv6 one in brackets, such as `[::1]`. With PORT 0, pick a free port and print `link: port N` on stderr. The program file is optional. `--input` is an error with it. |
 | `-h`, `--help` | Print the usage on stdout. |
 
-**Symbols file.** `niceasm.py --symbols` and `nicebuild.py --symbols` write one: one line per label, with an 8-digit hex address, a space, and the label. Only the labels of instructions and data are in it, not `.EQU` names. With `--symbols FILE`, niceemu prints `At label+0x1f`, the location of the halt, after a halt other than `HALT`, at the step limit, or at the `WAIT` of a wait that no request can end. The label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. After a halt at the default wasm trap handler, `___wasm_trap`, it also prints `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). `nicedis` reads the same file.
+**Symbols file.** `niceasm.py --symbols` and `nicebuild.py --symbols` write one: one line per label, with an 8-digit hex address, a space, and the label. Only the labels of instructions and data are in it, not `.EQU` names. With `--symbols FILE`, niceemu prints `At label+0x1f`, the location of the halt, after a halt other than `HALT`, or at the step limit. The label is the nearest one at or before the address, the first in the file if several are at one address, so a second label at the same address is never named. After a halt at the default wasm trap handler, `___wasm_trap`, it also prints `Trap CODE (cause) at label+0x1f`, from R1 and R2 ([WASM.md](../translator/WASM.md)). `nicedis` reads the same file.
 
-**Stack.** niceemu tracks R13, the stack pointer of software (ISA.md §9.1), on every run: its value after the first step that changes it, as it is 0 after reset, and the lowest since. A push, a `SUB`, and the push of a `CALL` count alike, and an interrupt entry changes no R13. With `--stack`, niceemu prints them after the registers, as `Stack: first SP=ffffff00, lowest SP=fffffef9, 7 words below`, or `Stack: R13 never changed`. The words below are how much stack the run needed. Only the printing is an option, as R13 is SP only by convention. niceemu stops on no overflow: its memory has all 2³² words, so a stack from `0xFFFFFF00` runs into the screen, and then into the character ROM, which drops its writes, long before it could reach a program at 0. On a board whose RAM repeats through the address space, it reaches the program much sooner, and a watchpoint of the debugger can guard it ([debugger/README.md](../debugger/README.md)). `test/stack.nasm` is the probe.
+**Stack.** niceemu tracks R13, the stack pointer of software (ISA.md §9.1), on every run: its value after the first step that changes it, as it is 0 after reset, and the lowest since. A push, a `SUB`, and the push of a `CALL` count alike. With `--stack`, niceemu prints them after the registers, as `Stack: first SP=ffffff00, lowest SP=fffffef9, 7 words below`, or `Stack: R13 never changed`. The words below are how much stack the run needed. Only the printing is an option, as R13 is SP only by convention. niceemu stops on no overflow: its memory has all 2³² words, so a stack from `0xFFFFFF00` runs into the screen, and then into the character ROM, which drops its writes, long before it could reach a program at 0. On a board whose RAM repeats through the address space, it reaches the program much sooner, and a watchpoint of the debugger can guard it ([debugger/README.md](../debugger/README.md)). `test/stack.nasm` is the probe.
 
 Numbers in options are decimal, or hex after `0x` or `0X`, with no sign or
 `_`.
@@ -168,7 +160,7 @@ The exit status says how the run ended:
 |---|---|
 | 0 | `HALT`; or, with `--link`, a signal (see Debug link below). |
 | 1 | A usage, file, or memory error, an out-of-memory condition, or an output that cannot be written. |
-| 2 | Any other halt: a reserved control word, a nested `INT`, or `RTI` outside an interrupt routine; or a wait that no request can end. |
+| 2 | The other halt: a reserved control word (ISA.md §5.3). |
 | 3 | The step limit. |
 | 4 | The window of `--window` was closed before the halt or the step limit. |
 | 141 | stdout is a pipe that closed early, as in `niceemu -t x.bin \| head`. niceemu stops quietly, as a filter killed by SIGPIPE would. |
@@ -215,14 +207,13 @@ within the last 1000 steps and up to 10 ms when it waits for a key alone.
 A key still reaches the program at once, a wait on `TIME_LO` may end up to
 1 ms late, and a program that polls less often than once in 1000 steps
 never sleeps. `--speed N` runs N steps a second instead, for a program
-that keeps time by the timer or by counting steps: at `--speed 1000000`,
-one step per microsecond, a timer period of P lasts P microseconds, where
-on a board of 100 MHz it lasts P/100. A run that falls more than 100 ms
-behind its rate goes on from there, rather than catch up in a burst. A
-`WAIT` takes no host time, as niceemu counts its wait steps at once, and
-`--speed` runs them at its rate as any steps. A wait that no request can
-end does not stop a run in the window: niceemu sleeps until the window is
-closed.
+that keeps time by counting steps: at `--speed 1000000`, one step per
+microsecond, a loop of P steps lasts P microseconds, where on a board of
+100 MHz it lasts some P/100. A run that falls more than 100 ms behind its
+rate goes on from there, rather than catch up in a burst. A skip of
+`TIME_SKIP` with `--step-time` takes no host time, as niceemu counts its
+wait steps at once, but `--speed` runs them at its rate as any steps, a
+chunk at a time.
 
 At the halt, or at the step limit, niceemu prints the report as without
 the window, and the window stays, with the last screen, until it is
@@ -248,14 +239,13 @@ close no window. It checks the report at the halt with `--color`, and
 with `-2004` and its 25 rows, the
 reads of `--input` and then 0, that stdin is not read, that the default is
 faster than `--speed 1000000`, that a program that polls the console
-sleeps, that a wait that no request can end sleeps until the close, that
+sleeps, that a long skip with `--speed` goes a chunk at a time, that
 each of the three signals ends a run with no report, and what happens
 without a display. The close of the window, before the halt, after it, and
 with `--link`, it checks through a hook of niceemu for the test, as the
 dummy driver cannot close one. With `--link`, as a host, it checks that a
 read returns 0 until a byte comes, the sleep in the wait loop, and the end
-of the input, and that a `WAIT` with the console's receive interrupt
-sleeps until a byte or the end comes. The key table and the drawing of the screen are unit tests
+of the input, and that the link is served in a long skip. The key table and the drawing of the screen are unit tests
 in `src/keys.zig` and `src/frame.zig`, the keys' way into the link's
 buffer one in `src/link.zig`, and the mapping of SDL's key events to the
 keys one in `src/window.zig`, which `make window-test` runs. Another
@@ -291,19 +281,17 @@ address twice and a file with no words are errors.
 | `0xFFFF4600`–`0xFFFFFEFF` | 47360 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02` | 1 | `CONSOLE_IRQ`, the console's receive interrupt (DEVICES.md §1.9): the vector in bits 7..0 and the enable in bit 8. |
-| `0xFFFFFF03`–`0xFFFFFF0F` | 13 | Reserved for I/O (ISA.md §8.3). Ordinary memory for data accesses. Instruction fetches read 0. |
-| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (DEVICES.md §4). Raises IRQ once every P steps. |
+| `0xFFFFFF02`–`0xFFFFFF1F` | 30 | Reserved for I/O (ISA.md §8.3, DEVICES.md §1.9 and §4). Ordinary memory for data accesses. Instruction fetches read 0. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
-| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, jumps, and interrupts, 64 bits each. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF86` | 7 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
+| `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, and jumps, 64 bits each, and `0xFFFFFF52`–`0xFFFFFF5E`, which read 0. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
+| `0xFFFFFF80`–`0xFFFFFF86` | 7 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
 | `0xFFFFFF87` | 1 | The screen's mode word (DEVICES.md §1.10): 0 for the text, 1 for the chunky mode. A write of another value writes 0. With `--no-screen-mode`, ordinary memory. |
 | `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (DEVICES.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
-| `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
+| `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (DEVICES.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (DEVICES.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
 | `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (DEVICES.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
-| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF03`–`0xFFFFFF0F`. |
+| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. |
 
 ### Screen
 
@@ -356,8 +344,8 @@ the square root.
 
 The performance counters count the instructions, the steps, and the
 microseconds since reset. The emulator has no clock, so its cycle counter
-counts one cycle per step, that is, per instruction and per interrupt entry,
-and differs from the FPGA core's, which counts clock cycles.
+counts one cycle per step, that is, per instruction and per wait step of a
+skip, and differs from the FPGA core's, which counts clock cycles.
 
 The microsecond counter counts the host's monotonic time, without the time
 the host sleeps, less the time the processor was held, paused, or halted
@@ -376,10 +364,11 @@ its counter, and a read of the high word returns the snapshot's high word.
 Writes are ignored, but for `TIME_SKIP` with `--step-time` (below). `test/perf.nasm` checks the instruction counter, and
 `test/time.nasm` the microsecond counter, both with `--step-time`.
 
-The event counters, at `0xFFFFFF4A`–`0xFFFFFF53`, count the data reads,
-the stores, the skipped instructions, the jumps, and the interrupt entries
-and `INT`s, as every FPGA core counts them. `test/events.nasm` checks
-each, with an NMI, and the FPGA cores run it too.
+The event counters, at `0xFFFFFF4A`–`0xFFFFFF51`, count the data reads,
+the stores, the skipped instructions, and the jumps, as every FPGA core
+counts them. The words `0xFFFFFF52`–`0xFFFFFF5E` read 0 and ignore
+writes. `test/events.nasm` checks each, and that `0xFFFFFF52` reads 0,
+and the FPGA cores run it too.
 The emulator has none of the FPGA core's fetch statistics, at
 `0xFFFFFF60`–`0xFFFFFF7F`: their words read 0 and ignore writes.
 
@@ -451,27 +440,6 @@ included, from 0 with "set" 0. `test/clock.nasm` checks its reads, its
 writes, and its wrap with `--step-time`, and again with
 `--no-cycle-counter`, where its words are memory. `test/clockhost.nasm`
 checks it on the host's clock.
-
-### Timer
-
-The timer counts steps as well, so its requests come every P steps. A
-request raised by the last step of a run is not listed as pending at the
-end, as on the FPGA core, where it only reaches the core after that step.
-The timer's requests are IRQs, like those of `--irq`, which raises
-requests of the timer's source (DEVICES.md §4). A request merges
-with one of its source that is pending, and the pending one keeps its vector. So when `--irq` and the timer raise a request before the same step, the vector
-of `--irq` is kept: it is pending before the step begins, and the timer's
-request merges with it (`test/irqtimer.nasm`). `test/timer.nasm` checks the counting, the stop, the
-merging, and that a request keeps the vector it was raised with when
-the vector is written while it is pending.
-
-With `--no-timer-irq`, the timer counts, reloads, and answers reads as
-before, but raises no requests. A test of an FPGA core that may take a
-timer request later than the emulator does (doc/MICROARCH.md §6) then
-raises each one with `--irq` at the step where the core took it, as it
-does for its own requests ([hdl/README.md](../hdl/README.md)). `make test`
-runs `timer.nasm` so, with its ten requests given by `--irq`, and the
-output must equal that of the plain run.
 
 ### SD card
 
@@ -621,14 +589,13 @@ from the connection meanwhile, so that TCP holds the host back
 A pause takes effect between two steps. A pause while a
 console read waits undoes the step of the read, and pauses before it
 (DEBUG.md §7). The bytes that the step took go back to the input buffer. A step of a paused processor (bit 5, DEBUG.md §6) runs one
-step of `--max-steps` and `--trace`, an instruction or an interrupt entry,
-and then pauses again. A step at a console read that would wait does not
+step of `--max-steps` and `--trace`, an instruction, and then pauses
+again. A step at a console read that would wait does not
 run, and pauses again at once.
-It has four breakpoints (DEBUG.md §6). Before each step, after the
-`--irq` and `--nmi` requests of that step are raised, it stops at a
-breakpoint at R15, unless the step is an interrupt entry or the first after
-a go on or a step. A stop does not count as a step, so the requests and
-`--max-steps` count as without breakpoints. A write to their registers
+It has four breakpoints (DEBUG.md §6). Before each step, it stops at a
+breakpoint at R15, unless the step is a wait step of a skip or the first
+after a go on or a step. A stop does not count as a step, so
+`--max-steps` counts as without breakpoints. A write to their registers
 takes effect before the next step, and a host's connection clears them.
 It has four watchpoints too. It checks each data access of a step against
 them, and after a step that hit one, it stops before anything else,
@@ -636,76 +603,29 @@ unless the step halted or reached `--max-steps`. A step that a pause
 undoes, at a console read, hit nothing. A write to their registers takes
 effect at the next step, and a host's connection clears them.
 While the processor is paused, a write of R1 to R15 sets the register as
-a register-direct write of an instruction does (ISA.md §4.3), and leaves
-the hidden state alone. A write of R0 to R15 while it is not paused gets
-`e04` (DEBUG.md §6). The link reads the hidden state of the core as it is:
-`saved_pc` and `saved_sr` at `0xFFFFFFD0` and `0xFFFFFFD1`, and
-`in_service` and `after_rti` in bits 7 and 8 of the control register.
-Bits 9 and 10 read the pending NMI and IRQ, the timer's included, while
-the processor is neither held nor halted.
-A write of `0xFFFFFFD7` with bit 8 set raises an NMI with the vector of
-bits 7 to 0, unless the processor is held or halted (DEBUG.md §6). The
-link is a source of its own, after `--nmi`: its request merges only with
-its own, and reads back at `0xFFFFFFD7` until the processor takes it. A
-hold, and a host's connection, drop it.
+a register-direct write of an instruction does (ISA.md §4.3). A write of
+R0 to R15 while it is not paused gets `e04` (DEBUG.md §6). The reserved
+registers `0xFFFFFFD0`–`0xFFFFFFD3` and `0xFFFFFFD7`, and bits 6 to 10 of
+the control register, read 0 and take no write.
 A `W` writes its words when its checksum has been checked, so a `W`
 with a bad checksum writes nothing. One with a bad payload writes the whole
 words before the bad byte, at most N.
 
-## Interrupts
-
-The core (`src/cpu.zig`) implements IRQ, NMI, `INT`, and `RTI` (ISA.md §7).
-The timer and the console's receive interrupt (Memory map) raise IRQ, and
-no device raises NMI; the debug link can (Debug link). `--irq` and
-`--nmi` raise a request at a chosen step,
-that of `--irq` of the timer's source. A request for step N is raised after N steps have run, so
-with `--trace` it comes before line N + 1, and `--nmi 0:5` raises an NMI
-before the first instruction. A request is raised whether or not it can be
-taken. If it cannot, it stays pending, as ISA.md §7.1 says, and a request
-still pending at a halt is never taken. A request of a kind and a source that is already
-pending merges with it, so the vector given first wins, whether the two were
-given for the same step or for different steps. The requests of the timer
-and of the console do not merge: each stays pending, and the timer's is
-taken first (DEVICES.md §4). Requests for steps that are
-never reached, because the processor halts or `-n` stops it, are never
-raised. The probes `test/irq.nasm`, `test/merge.nasm`, `test/after.nasm`, and
-`test/start.nasm` show these rules.
-
-`WAIT` (ISA.md §7.5) waits for a request. Each step of the wait is a wait
-step: the cycle counter and the timer count it, and with `--step-time` the
-microsecond counter, but the instruction counter does not, and `-n`,
-`--irq`, and `--nmi` count it as a step. niceemu counts the wait steps at
-once, up to the timer's next request, the next `--irq` or `--nmi`, or the
-step limit, with the same result as one by one (DEVICES.md §3). So a wait
-takes no host time, and without `--step-time` the microsecond counter moves
-on little during it. `--trace` prints no line for a wait step. A wait that
-no request can end, with no timer request and no `--irq` or `--nmi` to
-come, stops the run with exit status 2, also under `-n`, but not with
-the window or the link. There a key or a byte from the host can raise the
-console's request, and the run sleeps until one comes (DEVICES.md §1.6). The probes `test/wait.nasm` and
-`test/waitnone.nasm` show these rules.
+## Skipping time
 
 With `--step-time`, a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skips N
-wait steps after the step of the write, without a `WAIT` (DEVICES.md §3).
-niceemu counts them at once, as those of a wait, and a request ends a
-skip early, as it ends a wait: the timer's, the next `--irq` or `--nmi`,
-or the console's. A skip counts nothing while a request is pending, even
-with E = 0, and `-n` cuts it short. Its steps count toward `-n` and the
-steps of the last line. Without `--step-time` the write is ignored, as
-on an FPGA core. Under the link, a single step runs the rest of a skip
-with the next step (DEBUG.md §6). The probe `test/skip.nasm` shows these
-rules, with the timer and `--irq`, and `test/skipreq.nasm` with `--nmi`
-and the console. `make test` runs `skip.nasm` three more times:
-`skip_off` without `--step-time`, `skip_limit` with a step limit that
-cuts its first skip short, and `skip_mem` with `--no-cycle-counter`.
-
-The console raises its request on an edge (DEVICES.md §1.9). Where a read
-waits for its byte, from stdin, a file, or the link without the window,
-each read that takes a byte raises one, for the byte or the end that
-enters after it, and so does the enable set from 0 to 1. With the window,
-niceemu looks at the input before each step, and before it counts wait
-steps at once: a byte that has entered the empty input, or the end, raises
-one. `test/conirq.nasm` shows these rules, and the order of the two sources.
+wait steps after the step of the write (DEVICES.md §3). Each is a step:
+the cycle counter counts it, and so do the microsecond counter and the
+clock, but the instruction counter and the event counters do not, and
+`-n` counts it as a step. niceemu counts the wait steps at once, up to
+the step limit, with the same result as one by one, so a skip takes no
+host time. `--trace` prints no line for a wait step. A write of 0 skips
+nothing, and `-n` cuts a skip short. Without `--step-time` the write is
+ignored, as on an FPGA core. Under the link, a single step runs the rest
+of a skip with the next step (DEBUG.md §6). The probe `test/skip.nasm`
+shows these rules, and `make test` runs it three more times: `skip_off`
+without `--step-time`, `skip_limit` with a step limit that cuts its first
+skip short, and `skip_mem` with `--no-cycle-counter`.
 
 ## Trace format
 
@@ -726,11 +646,6 @@ word, and then what it changed. These are the last lines for `count.bin`:
 - The reason for a halt, at the end of the halting instruction's line: `HALT`,
   or the same text as the `Halted (...)` line for the other halts, such as
   `reserved control instruction`.
-- An interrupt taken between instructions prints `IRQ vv` or `NMI vv` and the
-  registers it changed, lined up with the instruction lines:
-
-      NMI 06            R14=81000000 R15=00000040
-
 The format is meant for comparing the FPGA core with the emulator line by
 line.
 
@@ -753,8 +668,9 @@ and has a hand-checked `test/X.expected`. The output and exit status of
 each run must be those of its `.expected` file.
 Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader, and the exit status and some output lines of
-runs that stop in each way: `HALT`, the other halts, the step limit,
-`-n 0` included, and a wait that no request can end. It checks the name
+runs that stop in each way: `HALT`, a reserved control word, and the
+step limit, `-n 0` included, and that the options of the old interrupts
+are unknown. It checks the name
 of each trap code with a symbol file, input files with CR LF lines, the
 screen's mode word with and without `--no-screen-mode`, and the pixels
 with `-2004`. The probes are
@@ -764,32 +680,28 @@ over TCP (Debug link above). It checks the packets of DEBUG.md §8 byte for
 byte, the errors and drops, a program loaded, run, halted, and restarted,
 the overflow notice, floods of console bytes: to a program that reads,
 with none lost, to one that never reads, with one `o` and a request
-behind them answered after 50 ms, and to a paused one, the step limit, the halt reasons 2 to 4, and a clear
-of a running program. It checks that the microsecond counter counts the
+behind them answered after 50 ms, and to a paused one, the step limit, halt reason 2 for reserved control
+words, and a clear of a running program. It checks that the microsecond counter counts the
 time while the processor runs, stops while it is paused or held, starts
 from 0 at a start, and counts the steps with `--step-time`. It checks the single step: its example of DEBUG.md
 §8, the cases where bit 5 does nothing, a step into `HALT` and to the step
-limit, a step at a console read, and R13–R15 after each step across
-interrupt entries, compared with `--trace`. And it checks the breakpoints:
+limit, and a step at a console read. And it checks the breakpoints:
 their example of DEBUG.md §8, the stop register, a step and a start that
 end at one, two at one address, a skipped instruction and a `HALT` at one,
-what keeps and clears them, and an interrupt entry that goes first. It
+and what keeps and clears them. It
 checks the watchpoints: their example of DEBUG.md §8, a write, a read,
-two reads in one step, a skipped read, the vector reads of `INT` and of
-an IRQ entry, two at one address, a stop before a breakpoint, a step and
+two reads in one step, a skipped read, two at one address, a stop before a breakpoint, a step and
 the step limit, what keeps and clears them, and their registers. It
 checks the writes of R0 to R15: their example of DEBUG.md §8, R0, R14,
 a step and a go on from a written R15, also at a breakpoint, and `e04`
 while halted, held, and running. And it checks the network station's
 `NET_STATUS`, with the port and a host connected, and that a start, a
-clear, and a new connection keep `NET_IP`. And it checks a wait: bit 6 of
-the control register, a pause and a step in it, a breakpoint at R15 that
-fires only at its end, and a wait that no request can end, which does not
-stop the run. And it checks the hidden state: bits 7 to 10, `saved_pc`,
-and `saved_sr`, step by step through an `INT`, its `RTI`, and an NMI
-that waits for the `RTI`, at a halt and a hold, and that the read-only
-words of `0xFFFFFFD0`–`0xFFFFFFDF` take no write, and that the range
-answers while the program runs. And it checks the screen's mode word over
+clear, and a new connection keep `NET_IP`. And it checks a skip of
+`TIME_SKIP`: a single step through it, and a breakpoint at R15 that
+fires only at its end. And it checks that the reserved registers
+`0xFFFFFFD0`–`0xFFFFFFD3` and `0xFFFFFFD7`, and bits 6 to 10 of the
+control register, read 0 and take no write, and that the range answers
+while the program runs. And it checks the screen's mode word over
 the link, and that `--no-screen-mode` holds after a clear.
 Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
@@ -848,12 +760,12 @@ of the cores. `make fpu-long` writes and replays a random sequence of a
 million accesses, from `SEED`, 1 by default.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
-every opcode, shift, addressing mode, and condition, the flags, R0, R14, and
-R15, skipped instructions, `INT`, and `RTI`. It halts at the first check
-that fails, with the check's number in R12 and R11 = 0. If every check
-passes, it halts with R11 = `0x600D`. It needs no emulator options or I/O, so
-the FPGA core can run it too. No IRQ may be raised while it runs, because
-some checks set E with no vector table in place.
+every opcode, shift, addressing mode, and condition, the flags, F0, F1,
+and the U bits of R14, R0, R14, and R15, skipped instructions, and
+skipped reserved control words. It halts at the first check that fails,
+with the check's number in R12 and R11 = 0. If every check passes, it
+halts with R11 = `0x600D`. It needs no emulator options or I/O, so the
+FPGA core can run it too.
 
 Some probes check corners that cputest leaves out: `r0dest` and
 `r15modes` the remaining addressing modes of R0 and R15, `r14mem` R14 as

@@ -14,13 +14,10 @@
 ;   MOVE R8, @R4          R8 = 100 = 0x64, count 101
 ;   MOVE R10, @R11++      R10 = 0x65, R11 = 0xFFFFFF02, count 102
 ;   MOVE R12, @--R11      R11 = 0xFFFFFF01, R12 = 0x66, count 103
-;   OR R14, R14, ...      VBASE = 0xFFFFFF, so vector 1 is the counter
-;   INT 1                 the vector read: PC = 103 = 0x67, count 104
-;   MOVE R13, @R4         at 0x67: R13 = 0x68, count 105
+;   MOVE R13, @R4         R13 = 0x67, count 104
 ;
-; Steps: 14 before INT, INT, and 2 in the routine: 17. PC = 0x69 after the
-; HALT. R14 = 0x01FFFFFF with I set by INT: 0x81FFFFFF. The dump reads the
-; counter without counting: 105 = 0x69.
+; Steps: 15. PC = 0x13 after the HALT at 0x12. The dump reads the counter
+; without counting: 104 = 0x68.
 COUNT           .EQU    0xFFFFFF01
                 MOVE    R4, COUNT
                 MOVE    R3, 0x33
@@ -35,8 +32,5 @@ COUNT           .EQU    0xFFFFFF01
                 MOVE    R11, R4
                 MOVE    R10, @R11++
                 MOVE    R12, @--R11
-                OR      R14, R14, 0xFFFFFF
-                INT     1
-                .ORG    0x67
                 MOVE    R13, @R4
                 HALT

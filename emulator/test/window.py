@@ -52,37 +52,10 @@ loop            MOVE    R1, @CONSOLE
                 HALT
 """
 
-# Waits for a byte or the end with WAIT and the console's receive
-# interrupt (DEVICES.md §1.9), whose routine is only RTI, and counts the
-# waits in R2.
-WAIT_IRQ = """
-CONSOLE         .EQU    0xFFFFFF00
-CONSOLE_IRQ     .EQU    0xFFFFFF02
-                MOVE    @CONSOLE_IRQ, 0x142
-:               AND     R14, R14, 0xBFFFFFFF
-                MOVE    R1, @CONSOLE
-                AND[M]  R0, R1, 0x300
-        ?!Z     MOVE    R15, :+
-                ADD     R2, R2, 1
-                WAIT
-                OR      R14, R14, 0x40000000
-                MOVE    R15, :-
-:               HALT
-                .ORG    0x42
-                .DAT    on_irq
-on_irq          RTI
-"""
-
-# A WAIT that no request can end (DEVICES.md §1.6).
-WAITS = """
-                WAIT
-                HALT
-"""
-
-# A WAIT for the timer's first request, 10^9 steps from its write.
-WAITS_LONG = """
-                MOVE    @0xFFFFFF10, 1000000000
-                WAIT
+# A skip of 10^9 wait steps with --step-time (DEVICES.md §3). The MOVE
+# is three words, so PC is 3 in the skip.
+SKIP_LONG = """
+                MOVE    @0xFFFFFF5F, 1000000000
                 HALT
 """
 
@@ -271,33 +244,19 @@ def test_idle(tmp: str) -> None:
             fail(f"{name} loop: {elapsed:.3f} s for a second of waits, {used:.3f} s of it host CPU")
 
 
-def test_wait(tmp: str) -> None:
-    """A WAIT that no request can end does not stop a run in the window,
-    which sleeps until it is closed, after the one step of the WAIT, and
-    uses little of a host core meanwhile."""
-    prog = assemble(tmp, "waits", WAITS)
-    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+def test_skip(tmp: str) -> None:
+    """With --speed, a long skip of TIME_SKIP goes no further than a chunk
+    at once, 1000 steps at 1000000 a second, so the pace sleeps a
+    millisecond for each and the window is pumped. The steps are the MOVE
+    and wait steps to the close after 5000."""
+    prog = assemble(tmp, "skip_long", SKIP_LONG)
     t = time.monotonic()
-    p = start([prog], close_after=1)
-    expect("closed in the wait", read_lines(p, 1)[0], "Stopped when the window was closed after 1 steps, PC=00000001")
-    expect("exit status when closed in the wait", p.wait(timeout=10), 4)
-    elapsed = time.monotonic() - t
-    after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    used = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
-    if used > max(elapsed, 0.2) * 0.75:
-        fail(f"wait: {elapsed:.3f} s, {used:.3f} s of it host CPU")
-    # With --speed, a long wait goes no further than a chunk at once, 1000
-    # steps at 1000000 a second, so the pace sleeps a millisecond for each
-    # and the window is pumped. The steps are the MOVE, the WAIT at word 3,
-    # and wait steps to the close after 5000.
-    prog = assemble(tmp, "waits_long", WAITS_LONG)
-    t = time.monotonic()
-    p = start(["--speed", "1000000", prog], close_after=5000)
-    expect("closed in a long wait", read_lines(p, 1)[0],
-           "Stopped when the window was closed after 5000 steps, PC=00000004")
-    expect("exit status when closed in a long wait", p.wait(timeout=10), 4)
+    p = start(["--step-time", "--speed", "1000000", prog], close_after=5000)
+    expect("closed in a long skip", read_lines(p, 1)[0],
+           "Stopped when the window was closed after 5000 steps, PC=00000003")
+    expect("exit status when closed in a long skip", p.wait(timeout=10), 4)
     if time.monotonic() - t > 5.0:
-        fail(f"long wait: {time.monotonic() - t:.3f} s for 5000 steps at 1 MHz")
+        fail(f"long skip: {time.monotonic() - t:.3f} s for 5000 steps at 1 MHz")
 
 
 def test_no_display(tmp: str) -> None:
@@ -375,65 +334,25 @@ def test_link(tmp: str) -> None:
         fail("; ".join(link.failures))
 
 
-def test_link_irq(tmp: str) -> None:
-    """With --link, a WAIT with the console's enable set sleeps until a
-    byte comes from the host, whose request ends it (DEVICES.md §1.6,
-    §1.9): the program waits once, and reads the byte after it. The end of
-    the input ends a wait too."""
-    words = link.assemble(tmp, "wait_irq", WAIT_IRQ)
-    halt = b"\xffh01#C9"
-    e = link.Emu(["--window"])
-    e.expect("hello", link.HELLO)
-    e.send(link.write(0, words))
-    e.expect("load", link.ok(0, len(words)))
-    e.send(link.write(link.CONTROL, [0x8]))
-    e.expect("start", link.ok(link.CONTROL, 1))
-    time.sleep(0.5)
-    # Bit 6: the processor waits (DEBUG.md §6).
-    expect("control in the wait", link.word(e, link.CONTROL), 0x48)
-    e.send(b"A")
-    e.expect("halt at a byte", halt)
-    expect("R1 at a byte", link.word(e, 0xFFFFFFE1), 0x141)
-    expect("waits for a byte", link.word(e, 0xFFFFFFE2), 1)
-    # Hold, start again, and end the input with a half-close.
-    e.send(link.write(link.CONTROL, [0x9]))
-    e.expect("hold", link.ok(link.CONTROL, 1))
-    e.send(link.write(link.CONTROL, [0x8]))
-    e.expect("start again", link.ok(link.CONTROL, 1))
-    time.sleep(0.2)
-    e.sock.shutdown(socket.SHUT_WR)
-    e.expect("halt at the end", halt)
-    e.sock.close()
-    e.sock = e.connect()
-    e.buf = b""
-    e.expect("hello again", link.HELLO)
-    expect("R1 at the end", link.word(e, 0xFFFFFFE1), 0x200)
-    expect("waits for the end", link.word(e, 0xFFFFFFE2), 1)
-    status, _, _ = e.stop()
-    expect("exit status", status, 0)
-    if link.failures:
-        fail("; ".join(link.failures))
-
-
-def test_link_wait(tmp: str) -> None:
-    """With --link and --speed, a long wait goes a chunk at a time, 1000
+def test_link_skip(tmp: str) -> None:
+    """With --link and --speed, a long skip goes a chunk at a time, 1000
     steps at 1000000 a second, and the link is served between chunks: a
-    request in the wait is answered within the 100 ms of DEBUG.md §5, not
+    request in the skip is answered within the 100 ms of DEBUG.md §5, not
     after the pace of all the wait steps jumped over at once."""
-    words = link.assemble(tmp, "waits_long", WAITS_LONG)
-    e = link.Emu(["--window", "--speed", "1000000"])
+    words = link.assemble(tmp, "skip_long", SKIP_LONG)
+    e = link.Emu(["--window", "--step-time", "--speed", "1000000"])
     e.expect("hello", link.HELLO)
     e.send(link.write(0, words) + link.write(link.CONTROL, [0x8]))
-    e.expect("start the long wait", link.ok(0, len(words)) + link.ok(link.CONTROL, 1))
+    e.expect("start the long skip", link.ok(0, len(words)) + link.ok(link.CONTROL, 1))
     for i in range(3):
         time.sleep(0.05)
         t = time.monotonic()
-        expect(f"control in the long wait, read {i}", link.word(e, link.CONTROL), 0x48)
+        expect(f"control in the long skip, read {i}", link.word(e, link.CONTROL), 0x8)
         took = time.monotonic() - t
         if took > 0.1:
-            fail(f"read {i} in the long wait was answered after {took:.3f} s")
+            fail(f"read {i} in the long skip was answered after {took:.3f} s")
     status, _, _ = e.stop()
-    expect("exit status after the long wait", status, 0)
+    expect("exit status after the long skip", status, 0)
     if link.failures:
         fail("; ".join(link.failures))
 
@@ -447,13 +366,12 @@ def main() -> None:
         test_signal(tmp)
         test_close(tmp)
         test_idle(tmp)
-        test_wait(tmp)
+        test_skip(tmp)
         test_no_display(tmp)
         test_link(tmp)
-        test_link_irq(tmp)
-        test_link_wait(tmp)
+        test_link_skip(tmp)
         test_close_link(tmp)
-    print("PASS window (13 tests)")
+    print("PASS window (12 tests)")
 
 
 if __name__ == "__main__":

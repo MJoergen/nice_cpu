@@ -21,18 +21,13 @@ OPTS_wrap      = -d 0xffffffff:1
 
 # Probes of single rules of doc/ISA.md, in test/X.nasm. The expected values
 # are in the comments of each program. Run make bins after changing one.
-PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge irqtimer after start cputest console screen screencolor screeninvert iofetch \
-  reads reserved mpu mpu64 mpubits perf events timer input r15modes r0dest r14mem skipconst carryin shiftc \
-  wrapmem smcown scrbound time trapsym sd font net eth bytewin wait waitnone skip skipreq clock clockhost stack \
-  conirq fpu fpustack fpudec fpufunc chunky
+PROBES = logic dest carry r15 cond rotate selfmod addr cputest console screen screencolor screeninvert iofetch \
+  reads reserved mpu mpu64 mpubits perf events input r15modes r0dest r14mem skipconst carryin shiftc \
+  wrapmem smcown scrbound time trapsym sd font net eth bytewin skip clock clockhost stack \
+  fpu fpustack fpudec fpufunc chunky
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
-OPTS_irq     = -t --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2 -d 0x200:12
-OPTS_merge   = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
-OPTS_irqtimer = --irq 5:0x42
-OPTS_after   = --nmi 3:1 --nmi 10:1 -d 0x200:6
-OPTS_start   = -t --nmi 0:3
 OPTS_screen  = -s
 OPTS_screencolor = --color
 OPTS_screeninvert = --invert-fg
@@ -41,44 +36,26 @@ OPTS_reads   = -d 0xffffff01:1
 OPTS_mpu     = -d 0x200:72 -d 0xffffff20:16
 OPTS_mpu64   = -d 0x200:72 -d 0xffffff20:32
 OPTS_mpubits = -d 0x200:64
-OPTS_perf    = --step-time --nmi 3:0x41 -d 0xffffff40:6
-OPTS_events  = --nmi 12:0x41 -d 0xffffff4a:10
-OPTS_timer   = -d 0xffffff10:4
+OPTS_perf    = --step-time -d 0xffffff40:6
+OPTS_events  = -d 0xffffff4a:10
 OPTS_time    = --step-time -d 0xffffff44:2
 OPTS_clock   = --step-time -d 0x100:17 -d 0xffffff46:4
 # clock again, with its words ordinary memory: each read returns the last
 # value written there, or 0.
 OPTS_clock_mem = --step-time --no-cycle-counter -d 0x100:17 -d 0xffffff46:4
-OPTS_wait    = --step-time --irq 25:0x42 --nmi 40:0x43 -d 0x200:7
-# wait again, stopped by the step limit in its first wait, after 11 steps,
-# and at the end of the wait, after 12, when the timer has raised its
-# request: the report then says "At wait1+0x1", the word after the WAIT,
-# and not "At wait1" (DEBUG.md §6, bit 6).
-OPTS_wait_in  = --step-time --max-steps 11 --symbols test/wait.sym
-OPTS_wait_end = --step-time --max-steps 12 --symbols test/wait.sym
-OPTS_waitnone = --no-timer-irq
-OPTS_skip     = --step-time --irq 140:0x42 --irq 146:0x42 -d 0x200:9 -d 0x210:2
+OPTS_skip     = --step-time -d 0x200:6 -d 0x210:2
 # skip again: without --step-time, where the write is ignored; cut short
 # by the step limit in its first skip; and with the counters' words
 # memory, where TIME_SKIP stays a device.
 OPTS_skip_off   = --max-steps 4 -d 0x200:3
 OPTS_skip_limit = --step-time --max-steps 50 -d 0x200:3
-OPTS_skip_mem   = --step-time --no-cycle-counter --irq 140:0x42 --irq 146:0x42
-OPTS_skipreq    = --step-time --nmi 20:0x80 --input test/input.txt -d 0x200:7
+OPTS_skip_mem   = --step-time --no-cycle-counter
 OPTS_trapsym = --symbols test/trapsym.sym
-OPTS_stack   = --stack --nmi 5:1
+OPTS_stack   = --stack
 # The count example with --stack: it never changes R13, and its output is
 # count.expected with the line that says so.
 OPTS_stack_none = --stack
-# timer again, with the timer's requests raised by --irq instead, before
-# the steps after those that raise them in timer.nasm's table: 6, 16, 19,
-# 22, 25, 28, 31, 34, 41, and 49, the last with vector 0x42. The output
-# must equal timer.expected.
-OPTS_timer_noirq = --no-timer-irq --irq 7:0x41 --irq 17:0x41 --irq 20:0x41 --irq 23:0x41 \
-  --irq 26:0x41 --irq 29:0x41 --irq 32:0x41 --irq 35:0x41 --irq 42:0x41 --irq 50:0x42 \
-  -d 0xffffff10:4
 OPTS_input   = --input test/input.txt
-OPTS_conirq  = --input test/input.txt --irq 4:0x41 -d 0x200:8
 OPTS_r15modes = -d 6:1 -d 0xa:1
 OPTS_r0dest  = -d 0:2
 OPTS_r14mem  = -d 0x01000010:2 -d 0x01ffffff:1
@@ -158,12 +135,9 @@ programs:
 	$(foreach t,$(EXAMPLES),$(call check,$(t),$(ASM)/$(t).bin))
 	@$(PYTHON) -c 'import sys; sys.stdout.buffer.write(bytes(o % 251 for o in range(1024)))' > test/sd.img.out
 	$(foreach t,$(PROBES),$(call check,$(t),test/$(t).bin))
-	$(call check,timer_noirq,test/timer.bin,timer)
 	$(call check,scrbound2004,test/scrbound.bin)
 	$(call check,clock_mem,test/clock.bin)
 	$(call check,fpu_mem,test/fpu.bin)
-	$(call check,wait_in,test/wait.bin)
-	$(call check,wait_end,test/wait.bin)
 	$(call check,skip_off,test/skip.bin)
 	$(call check,skip_limit,test/skip.bin)
 	$(call check,skip_mem,test/skip.bin)

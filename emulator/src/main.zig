@@ -20,10 +20,8 @@ const usage =
     \\Runs the program from address 0 until it halts, then prints the
     \\registers. A write to 0xFFFFFF00 prints its low byte on stdout. A read
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
-    \\the end of the input. The read counter is at 0xFFFFFF01, and the
-    \\console's receive interrupt at 0xFFFFFF02.
-    \\The timer is at 0xFFFFFF10-0xFFFFFF1F, the math unit at 0xFFFFFF20-
-    \\0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the
+    \\the end of the input. The read counter is at 0xFFFFFF01, the math
+    \\unit at 0xFFFFFF20-0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the
     \\floating-point unit at 0xFFFFFF88-0xFFFFFF8F, the SD card controller
     \\at 0xFFFFFFA0-0xFFFFFFAF, the network station's registers at
     \\0xFFFFFFB0-0xFFFFFFBF, and the port for Ethernet frames at
@@ -40,9 +38,6 @@ const usage =
     \\  -d, --dump ADDR:N    Print N memory words from ADDR. May be repeated.
     \\  -n, --max-steps N    Stop after N steps (default: no limit).
     \\  -i, --input FILE     Read the console input from FILE, or stdin for -.
-    \\      --irq STEP:VEC   Raise IRQ with vector VEC before step STEP.
-    \\      --nmi STEP:VEC   Raise NMI with vector VEC before step STEP.
-    \\                       Both may be repeated. Steps count from 0.
     \\      --sd0 FILE       Put a card into SD slot 0, with FILE as its image of
     \\                       512-byte sectors. Write-protected if FILE cannot be written.
     \\      --sd1 FILE       The same for slot 1.
@@ -74,8 +69,6 @@ const usage =
     \\                       0xFFFFFF49 from 0, rather than the host's time,
     \\                       and skip N wait steps at a write of N to
     \\                       0xFFFFFF5F, TIME_SKIP.
-    \\      --no-timer-irq   The timer counts, but raises no requests, so that
-    \\                       --irq can raise them where an FPGA core took them.
     \\      --link [ADDR:]PORT  Serve the debug link of doc/DEBUG.md on PORT of
     \\                       ADDR (default 127.0.0.1), or on a free port for 0,
     \\                       until a signal. ADDR is an IPv4 address, or an IPv6
@@ -106,17 +99,6 @@ const screen_base_2004 = 0x400;
 
 const Dump = struct { addr: u32, len: u32 };
 
-/// An interrupt request raised from the command line, before step `step`.
-const Request = struct {
-    step: u64,
-    kind: enum { irq, nmi },
-    vector: u8,
-
-    fn before(_: void, a: Request, b: Request) bool {
-        return a.step < b.step;
-    }
-};
-
 const Options = struct {
     path: []const u8,
     trace: bool = false,
@@ -126,8 +108,6 @@ const Options = struct {
     screen_base: u32 = screen_base,
     screen_size: frame.Size = frame.size_full,
     dumps: []const Dump = &.{},
-    /// Sorted by step, in command-line order within a step.
-    requests: []const Request = &.{},
     max_steps: u64 = std.math.maxInt(u64),
     cycle_counter: bool = true,
     fpu: bool = true,
@@ -135,7 +115,6 @@ const Options = struct {
     screen_mode_word: bool = true,
     /// Count one microsecond per step rather than the host's time.
     step_time: bool = false,
-    timer_irq: bool = true,
     /// The console input file, or "-" for stdin.
     input: []const u8 = "-",
     /// Whether --input was given, as the window reads stdin only then.
@@ -245,11 +224,9 @@ fn trapName(code: u32) []const u8 {
 /// was, and for a halt at the default trap handler, `___wasm_trap`, where
 /// the wasm instruction trapped, from R2.
 fn printWhere(out: *std.Io.Writer, cpu: *const Cpu, syms: []const Symbol) !void {
-    // After a halt, PC is the address after the halting instruction, and
-    // in a wait the address after the WAIT, a word of its own. A wait that
-    // a pending request ends at the next step is over (DEBUG.md §6, bit
-    // 6): the program is at the address after the WAIT then.
-    const pc = if (cpu.halted() or cpu.waitStepDue()) cpu.getReg(15) -% 1 else cpu.getReg(15);
+    // After a halt, PC is the address after the halting instruction, a
+    // control word of one word.
+    const pc = if (cpu.halted()) cpu.getReg(15) -% 1 else cpu.getReg(15);
     try out.writeAll("At ");
     try printLocation(out, syms, pc);
     try out.writeByte('\n');
@@ -403,11 +380,10 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var opts: Options = .{ .path = "" };
     var speed_given = false;
     var dumps: std.ArrayList(Dump) = .empty;
-    var requests: std.ArrayList(Request) = .empty;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--irq", "--nmi", "--sd0", "--sd1", "--eth-in", "--eth-out", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--sd0", "--sd1", "--eth-in", "--eth-out", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -445,14 +421,6 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
         } else if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--input")) {
             opts.input = value;
             opts.input_given = true;
-        } else if (std.mem.eql(u8, arg, "--irq") or std.mem.eql(u8, arg, "--nmi")) {
-            const colon = std.mem.indexOfScalar(u8, value, ':') orelse
-                return fail("{s} wants STEP:VEC, not '{s}'", .{ arg, value });
-            try requests.append(arena, .{
-                .step = try parseNumber(u64, arg, value[0..colon]),
-                .kind = if (std.mem.eql(u8, arg, "--irq")) .irq else .nmi,
-                .vector = try parseNumber(u8, arg, value[colon + 1 ..]),
-            });
         } else if (std.mem.eql(u8, arg, "--sd0") or std.mem.eql(u8, arg, "--sd1")) {
             opts.sd[arg[4] - '0'] = value;
         } else if (std.mem.eql(u8, arg, "--eth-in")) {
@@ -484,8 +452,6 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.screen_mode_word = false;
         } else if (std.mem.eql(u8, arg, "--step-time")) {
             opts.step_time = true;
-        } else if (std.mem.eql(u8, arg, "--no-timer-irq")) {
-            opts.timer_irq = false;
         } else if (arg.len > 1 and arg[0] == '-') {
             return fail("unknown option '{s}'\n\n{s}", .{ arg, usage });
         } else if (opts.path.len != 0) {
@@ -500,10 +466,6 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     if (opts.window and !build_options.window) return fail("--window needs a build with -Dwindow (emulator/README.md)", .{});
     if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
     opts.dumps = dumps.items;
-    // Insertion sort is stable, so of two requests of one kind at one step
-    // the earlier one wins (they merge, ISA.md §7.1).
-    std.sort.insertion(Request, requests.items, {}, Request.before);
-    opts.requests = requests.items;
     return opts;
 }
 
@@ -738,7 +700,6 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
         clock.start();
         cpu.tod.useHost(io); // the host's time of day (doc/DEVICES.md §10)
     }
-    cpu.timer_irq = opts.timer_irq;
     var in_buf: [4096]u8 = undefined;
     var in_r: InterruptibleReader = undefined;
     const in_file = if (std.mem.eql(u8, opts.input, "-")) std.Io.File.stdin() else std.Io.Dir.cwd().openFile(io, opts.input, .{}) catch |err| {
@@ -765,10 +726,9 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
         if (opts.window) return runWindow(arena, io, out, opts, syms, &cpu, if (opts.input_given) &in_r.interface else null, eth_host);
     }
     cpu.input = .fromReader(&in_r.interface);
-    // A step is one instruction, the entry into an interrupt, or a wait
-    // step (doc/DEVICES.md §3).
+    // A step is one instruction, or a wait step of a skip of `TIME_SKIP`
+    // (doc/DEVICES.md §3).
     var steps: u64 = 0;
-    var next: usize = 0;
     // The turns of the loop, each a step or a jump over wait steps.
     var turns: u64 = 0;
     const stop: Stop = while (!cpu.halted() and steps < opts.max_steps) : (turns += 1) {
@@ -777,8 +737,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
             const sig = stop_signal.load(.acquire);
             if (sig != 0) dieOfSignal(out, sig);
         }
-        raiseRequests(&cpu, opts, steps, &next);
-        const k = skipWaits(&cpu, opts, steps, next, std.math.maxInt(u64)) orelse break .waited;
+        const k = skipWaits(&cpu, opts, steps, std.math.maxInt(u64));
         if (k != 0) {
             steps += k;
             continue;
@@ -793,51 +752,21 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     return report(out, opts, syms, &cpu, steps, stop);
 }
 
-/// Raise the requests of --irq and --nmi for step `steps`, and the
-/// console's of a byte that has come (doc/DEVICES.md §1.9). `next` is the
-/// first request of --irq and --nmi not raised yet.
-fn raiseRequests(cpu: *Cpu, opts: Options, steps: u64, next: *usize) void {
-    cpu.pollConsole();
-    while (next.* < opts.requests.len and opts.requests[next.*].step == steps) : (next.* += 1) {
-        const r = opts.requests[next.*];
-        switch (r.kind) {
-            .irq => cpu.requestIrq(r.vector),
-            .nmi => cpu.requestNmi(r.vector),
-        }
-    }
-}
-
-/// The wait steps (doc/DEVICES.md §3) that a run counts at once at step
-/// `steps`, after the requests of the step: those of a wait, or the rest of
-/// a skip of `TIME_SKIP`, up to the step at which the timer or the next of
-/// --irq and --nmi raises a request, or up to the step limit. 0 when the
-/// next step is not a wait step, and null when no request can end a wait,
-/// which stops a run without the link or the window (doc/DEVICES.md §1.6).
-/// `next` is the first request not raised yet.
-fn waitJump(cpu: *const Cpu, opts: Options, steps: u64, next: usize) ?u64 {
-    const skip: ?u64 = if (cpu.skipStepDue()) cpu.time_skip else if (cpu.waitStepDue()) null else return 0;
-    const timer = cpu.timerWaitSteps();
-    const request: ?u64 = if (next < opts.requests.len) opts.requests[next].step - steps else null;
-    if (skip == null and timer == null and request == null) return null;
-    return @min(skip orelse std.math.maxInt(u64), timer orelse std.math.maxInt(u64), request orelse std.math.maxInt(u64), opts.max_steps - steps);
-}
-
-/// Jump over the wait steps that `waitJump` counts at step `steps`, but no
+/// The wait steps of the rest of a skip of `TIME_SKIP` (doc/DEVICES.md §3)
+/// that a run counts at once at step `steps`, up to the step limit, and no
 /// more than `budget` of them, so that a loop paced by --speed looks at the
-/// window and serves the link as often in a long wait as otherwise.
-/// Returns the steps jumped over, 0 when the next step is not a wait step,
-/// or null when no request can end the wait.
-fn skipWaits(cpu: *Cpu, opts: Options, steps: u64, next: usize, budget: u64) ?u64 {
-    const k = waitJump(cpu, opts, steps, next) orelse return null;
-    const m = @min(k, budget);
+/// window and serves the link as often in a long skip as otherwise.
+/// Returns the steps jumped over, 0 when the next step is not a wait step.
+fn skipWaits(cpu: *Cpu, opts: Options, steps: u64, budget: u64) u64 {
+    if (!cpu.skipStepDue()) return 0;
+    const m = @min(cpu.time_skip, opts.max_steps - steps, budget);
     if (m != 0) cpu.skipWait(m);
     return m;
 }
 
 /// Why a run without the link stopped: the processor halted, or the step
-/// limit stopped it, or the window was closed, or the processor waits for a
-/// request that cannot come.
-const Stop = enum { ran, closed, waited };
+/// limit stopped it, or the window was closed.
+const Stop = enum { ran, closed };
 
 /// Keeps the speed of --speed: how long to wait after a number of steps,
 /// so that they take as long as they would at `speed` steps a second.
@@ -952,24 +881,18 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
     const chunk = chunkSteps(opts.speed);
     var idle: Idle = .{ .on = opts.speed == 0 };
     var steps: u64 = 0;
-    var next: usize = 0;
     var closed = false;
     while (!cpu.halted() and steps < opts.max_steps) {
         const sig = stop_signal.load(.acquire);
         if (sig != 0) dieOfSignal(out, sig);
         eth_host.poll(cpu);
-        // A chunk of steps, which a wait loop cuts short. A wait that no
-        // request can end sleeps until the window closes.
+        // A chunk of steps, which a wait loop cuts short.
         const end = @min(opts.max_steps, steps +| chunk);
         var wait_ms: u32 = 0;
         while (!cpu.halted() and steps < end) {
-            raiseRequests(cpu, opts, steps, &next);
             // With the pace of --speed, no further than the chunk's end.
             const budget = if (opts.speed != 0) end - steps else std.math.maxInt(u64);
-            const k = skipWaits(cpu, opts, steps, next, budget) orelse {
-                wait_ms = 10;
-                break;
-            };
+            const k = skipWaits(cpu, opts, steps, budget);
             if (k != 0) {
                 steps += k;
                 continue;
@@ -1004,23 +927,12 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
     // After a halt, PC is the address after the halting instruction.
     if (stop == .closed) {
         try out.print("Stopped when the window was closed after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
-    } else if (stop == .waited) {
-        try out.print("Stopped: waiting with no request to come, after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
     } else if (cpu.halted()) {
         try out.print("Halted ({s}) after {d} steps, PC={x:0>8}\n", .{ cpu.halt_reason.describe(), steps, cpu.regs[15] });
     } else {
         try out.print("Stopped at the step limit after {d} steps, PC={x:0>8}\n", .{ steps, cpu.regs[15] });
     }
     if (syms.len != 0 and !(cpu.halted() and cpu.halt_reason == .halt)) try printWhere(out, cpu, syms);
-    // A request still pending now was never taken (ISA.md §7.1).
-    if (cpu.nmiPending() or cpu.irq_pending != null or cpu.console_pending != null) {
-        try out.writeAll("Pending:");
-        if (cpu.nmi_pending) |v| try out.print(" NMI {x:0>2}", .{v});
-        if (cpu.link_nmi_pending) |v| try out.print(" NMI {x:0>2}", .{v});
-        if (cpu.irq_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
-        if (cpu.console_pending) |v| try out.print(" IRQ {x:0>2}", .{v});
-        try out.writeByte('\n');
-    }
     try printRegisters(out, cpu);
     if (opts.stack) try printStack(out, cpu);
     for (opts.dumps) |d| try printMemory(out, cpu, d);
@@ -1028,7 +940,6 @@ fn report(out: *std.Io.Writer, opts: Options, syms: []const Symbol, cpu: *Cpu, s
 
     return switch (stop) {
         .closed => 4,
-        .waited => 2,
         .ran => if (!cpu.halted()) 3 else if (cpu.halt_reason == .halt) 0 else 2,
     };
 }
@@ -1071,7 +982,6 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     if (!opts.step_time) cpu.clock = &clock;
     // The clock of the time of day runs on through a start (doc/DEVICES.md §10).
     if (!opts.step_time) cpu.tod.useHost(io);
-    cpu.timer_irq = opts.timer_irq;
     // With the window, the console reads do not wait, and the run is paced
     // (doc/DEVICES.md §1).
     const windowed = build_options.window and opts.window;
@@ -1087,7 +997,6 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     var idle: Idle = .{ .on = windowed and opts.speed == 0 };
 
     var steps: u64 = 0;
-    var next: usize = 0;
     var reported = false;
     while (true) {
         exitOnSignal();
@@ -1096,7 +1005,6 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             link.started = false;
             cpu.reset();
             steps = 0;
-            next = 0;
             reported = false;
             pacer.restart(0, nowNs(io));
             idle.restart();
@@ -1125,28 +1033,21 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
         clock.start();
         var n: u64 = 0; // the steps of the chunk so far
         var wait_ms: u32 = 0;
-        // A wait that no request can end: the link and the window wait.
-        var waits = false;
         while (n < chunk and link.running() and !link.started and !link.pauseDue(steps == opts.max_steps)) {
             if (steps == opts.max_steps) {
                 link.limit_hit = true;
                 break;
             }
-            raiseRequests(cpu, opts, steps, &next);
-            // After the requests of this step, as an entry goes first.
             if (link.breakDue()) {
                 link.pause();
                 break;
             }
-            // The wait steps at once, but a single step of the link is one
-            // of a wait. It runs the rest of a skip, and the step after it.
-            if (!link.step_due or cpu.skipStepDue()) {
+            // The wait steps of a skip at once. A single step of the link
+            // runs the rest of a skip, and the step after it.
+            {
                 // With the pace of --speed, no further than the chunk's end.
                 const budget = if (pacer.speed != 0) chunk - n else std.math.maxInt(u64);
-                const k = skipWaits(cpu, opts, steps, next, budget) orelse {
-                    waits = true;
-                    break;
-                };
+                const k = skipWaits(cpu, opts, steps, budget);
                 if (k != 0) {
                     steps += k;
                     n +|= k;
@@ -1183,9 +1084,8 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
             if (wait_ms != 0) break;
         }
         link.console_w.flush() catch {};
-        try link.service(if (waits and !windowed) 100 else 0);
+        try link.service(0);
         if (windowed) {
-            if (waits) wait_ms = 10;
             if (wait_ms == 0) wait_ms = pacer.wait(steps, nowNs(io));
             lookAtWindow(arena, &win, &link, cpu, opts, wait_ms, steps);
         }

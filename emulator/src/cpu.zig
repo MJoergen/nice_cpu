@@ -6,9 +6,10 @@ const font = @import("font.zig");
 const eth_zig = @import("eth.zig");
 const fpu_zig = @import("fpu.zig");
 
-/// SR bit numbers (§1.3).
-pub const sr_i: u5 = 31;
-pub const sr_e: u5 = 30;
+/// SR bit numbers (§1.3). F1 and F0, bits 31 and 30, are storage that
+/// software reads and writes, with no meaning to the processor.
+pub const sr_f1: u5 = 31;
+pub const sr_f0: u5 = 30;
 pub const sr_v: u5 = 29;
 pub const sr_n: u5 = 28;
 pub const sr_z: u5 = 27;
@@ -27,18 +28,12 @@ pub const HaltReason = enum {
     halt,
     /// A reserved control word (§5.3).
     reserved,
-    /// `INT` while `in_service` = 1 (§7.2).
-    nested_int,
-    /// `RTI` while `in_service` = 0 (§7.4).
-    rti_outside_isr,
 
     pub fn describe(self: HaltReason) []const u8 {
         return switch (self) {
             .none => "running",
             .halt => "HALT",
             .reserved => "reserved control instruction",
-            .nested_int => "INT inside an interrupt routine",
-            .rti_outside_isr => "RTI outside an interrupt routine",
         };
     }
 };
@@ -214,13 +209,8 @@ pub const console_end: u32 = 0x200;
 pub const Input = struct {
     ctx: *anyopaque,
     next_fn: *const fn (ctx: *anyopaque) Next,
-    /// What the input holds now, without taking it, for an input that can
-    /// have no byte. Null for one whose read waits for its byte: there a
-    /// byte enters when the read before has taken one (DEVICES §1.9).
-    peek_fn: ?*const fn (ctx: *anyopaque) State = null,
 
     pub const Next = union(enum) { byte: u8, none, end };
-    pub const State = enum { byte, none, end };
 
     pub fn next(self: Input) Next {
         return self.next_fn(self.ctx);
@@ -242,22 +232,6 @@ pub const Input = struct {
 /// data reads of it since the last write, and then counts itself. A write
 /// sets the count. It lets tests see the data reads of §8.2.
 pub const counter_addr: u32 = io_base + 1;
-
-/// The console's receive interrupt (DEVICES §1.9).
-pub const console_irq_addr: u32 = io_base + 2;
-
-/// The register of the console's receive interrupt (DEVICES §1.9).
-pub const ConsoleIrq = struct {
-    vector: u8 = 0,
-    enable: bool = false,
-    /// What an input that can have no byte held at the last look, so that
-    /// a change to a waiting byte or to the end raises a request.
-    last: Input.State = .none,
-
-    pub fn read(self: ConsoleIrq) u32 {
-        return @as(u32, self.vector) | @as(u32, @intFromBool(self.enable)) << 8;
-    }
-};
 
 /// The first of the 32 words of the math unit (DEVICES §2).
 pub const mpu_base: u32 = io_base + 0x20;
@@ -369,8 +343,9 @@ pub const perf_base: u32 = io_base + 0x40;
 /// every FPGA core counts it. The fetch statistics of the pipelined FPGA
 /// core, at words 0x20-0x3F, read 0 here.
 pub const Perf = struct {
-    /// One per step: per instruction and per interrupt entry. The emulator
-    /// has no clock, so this stands in for the clock cycles.
+    /// One per step: per instruction, and per wait step of a skip of
+    /// `TIME_SKIP`. The emulator has no clock, so this stands in for the
+    /// clock cycles.
     cycles: u64 = 0,
     cycles_snap: u64 = 0,
     /// One microsecond per step, when the Cpu has no `clock`. With one,
@@ -379,9 +354,9 @@ pub const Perf = struct {
     micros_snap: u64 = 0,
     instrs: u64 = 0,
     instrs_snap: u64 = 0,
-    /// The events: data reads, stores, skipped instructions, jumps, and
-    /// interrupt entries and INT. A data read counts once it returns, so a
-    /// read of READ_LO counts the reads before it.
+    /// The events: data reads, stores, skipped instructions, and jumps. A
+    /// data read counts once it returns, so a read of READ_LO counts the
+    /// reads before it.
     reads: u64 = 0,
     reads_snap: u64 = 0,
     stores: u64 = 0,
@@ -390,8 +365,6 @@ pub const Perf = struct {
     skips_snap: u64 = 0,
     jumps: u64 = 0,
     jumps_snap: u64 = 0,
-    intrs: u64 = 0,
-    intrs_snap: u64 = 0,
 
     /// The value a data read of word `i` returns, with its side effect.
     pub fn read(self: *Perf, i: u6) u32 {
@@ -403,7 +376,6 @@ pub const Perf = struct {
             0x0C => self.stores_snap = self.stores,
             0x0E => self.skips_snap = self.skips,
             0x10 => self.jumps_snap = self.jumps,
-            0x12 => self.intrs_snap = self.intrs,
             else => {},
         }
         return self.peek(i);
@@ -426,19 +398,17 @@ pub const Perf = struct {
             0x0F => @truncate(self.skips_snap >> 32),
             0x10 => @truncate(self.jumps),
             0x11 => @truncate(self.jumps_snap >> 32),
-            0x12 => @truncate(self.intrs),
-            0x13 => @truncate(self.intrs_snap >> 32),
             else => 0,
         };
     }
 };
 
 /// Whether the instruction `iw` writes R15 when it runs (DEVICES §3, the jump
-/// counter): RTI, or a field of register 15 whose mode writes the register,
-/// the destination in mode 000, 001, 010, 101, or 110, a source in mode
-/// 001, 010, 101, or 110 (ISA §4).
+/// counter): a field of register 15 whose mode writes the register, the
+/// destination in mode 000, 001, 010, 101, or 110, a source in mode 001,
+/// 010, 101, or 110 (ISA §4). No control instruction writes it.
 pub fn writesR15(iw: u32) bool {
-    if ((iw >> 26) & 0b11 == 0b11) return (iw >> 21) & 0x1F == 0b00001;
+    if ((iw >> 26) & 0b11 == 0b11) return false;
     for ([3]u5{ 14, 7, 0 }, 0..) |shift_by, i| {
         const f = (iw >> shift_by) & 0x7F;
         if (f & 0xF != 15) continue;
@@ -590,70 +560,6 @@ const time_skip_word: u6 = 0x1F;
 /// the time of day, which `--no-cycle-counter` turns into memory.
 fn clockWord(i: u6) bool {
     return i < 2 or (i >= 4 and i <= 9);
-}
-
-/// The first of the 16 words of the timer (DEVICES §4).
-pub const timer_base: u32 = io_base + 0x10;
-
-/// The timer (DEVICES §4). It counts steps, as the cycle counter does.
-pub const Timer = struct {
-    period: u32 = 0,
-    count: u32 = 0,
-    vector: u8 = 0,
-    /// The request raised at the end of the last step, with its vector. The
-    /// next step passes it to the processor before it checks for
-    /// interrupts. So, as on the FPGA core, a request raised by the last
-    /// step of a run is not pending at the end of the run.
-    raised: ?u8 = null,
-
-    /// The value a data read of word `i` returns. Reads have no side effect.
-    pub fn read(self: Timer, i: u4) u32 {
-        return switch (i) {
-            0 => self.period,
-            1 => self.count,
-            2 => self.vector,
-            else => 0,
-        };
-    }
-
-    /// A write of `value` to word `i`.
-    pub fn write(self: *Timer, i: u4, value: u32) void {
-        switch (i) {
-            0 => {
-                self.period = value;
-                self.count = value;
-            },
-            2 => self.vector = @truncate(value),
-            else => {},
-        }
-    }
-
-    /// The end of a cycle: count down, and raise a request at 0.
-    pub fn tick(self: *Timer) void {
-        if (self.period == 0) return;
-        self.count -= 1;
-        if (self.count == 0) {
-            self.raised = self.vector;
-            self.count = self.period;
-        }
-    }
-
-    /// The end of `n` cycles at once, the same as `n` ticks: the requests
-    /// they raise merge into one.
-    pub fn tickMany(self: *Timer, n: u64) void {
-        if (self.period == 0 or n == 0) return;
-        if (n < self.count) {
-            self.count -= @intCast(n);
-            return;
-        }
-        self.raised = self.vector;
-        self.count = self.period - @as(u32, @intCast((n - self.count) % self.period));
-    }
-};
-
-/// The word of the timer that `addr` names, if it names one.
-fn timerWord(addr: u32) ?u4 {
-    return if (addr -% timer_base < 16) @truncate(addr -% timer_base) else null;
 }
 
 /// The first of the 16 words of the SD card controller (DEVICES §5).
@@ -876,7 +782,7 @@ pub const Watch = struct {
     /// The watchpoints that the current step hit, a bit each.
     hits: u4 = 0,
     /// R15 at the start of the current step: the address of its
-    /// instruction, or, for an interrupt entry, of the one it goes before.
+    /// instruction.
     pc: u32 = 0,
 
     fn check(self: *Watch, addr: u32, write: bool) void {
@@ -900,31 +806,14 @@ pub const Cpu = struct {
     regs: [16]u32,
     mem: Memory,
 
-    // Hidden state (§1.4).
-    in_service: bool,
-    after_rti: bool,
-    /// Set by `WAIT`, and cleared by a pending request (§7.5).
-    waiting: bool,
-    saved_pc: u32,
-    saved_sr: u32,
+    /// The hidden state of §1.4: `halted`, with the reason.
     halt_reason: HaltReason,
     /// The wait steps that a write of `TIME_SKIP` left to count, without a
-    /// clock (`--step-time`). A pending request drops them (DEVICES §3).
-    /// Not hidden state of §1.4: a board has no such write.
+    /// clock (`--step-time`, DEVICES §3). Not hidden state of §1.4: a
+    /// board has no such write.
     time_skip: u32,
 
-    // Pending interrupt requests, holding the vector the device supplies
-    // (§7.1). An IRQ is pending for each of its sources, which merge only
-    // with their own: the timer's, which `--irq` raises too, and the
-    // console's, which is taken after it (DEVICES §4). So is an NMI: the
-    // one of `--nmi`, and the debug link's, which is taken after it
-    // (DEVICES §8, DEBUG.md §6).
-    nmi_pending: ?u8,
-    link_nmi_pending: ?u8,
-    irq_pending: ?u8,
-    console_pending: ?u8,
-
-    /// When set, `step` writes one line per instruction or interrupt here.
+    /// When set, `step` writes one line per instruction here.
     trace: ?*std.Io.Writer,
     /// The last memory write, for the trace.
     last_write: ?struct { addr: u32, value: u32 },
@@ -943,8 +832,6 @@ pub const Cpu = struct {
     /// in most unit tests, the read falls through to memory, like any other
     /// word.
     input: ?Input,
-    /// The console's receive interrupt at `console_irq_addr`.
-    console_irq: ConsoleIrq,
     /// The math unit at `mpu_base`.
     mpu: Mpu,
     /// The floating-point unit at `fpu_base`.
@@ -956,8 +843,6 @@ pub const Cpu = struct {
     perf: Perf,
     /// The clock of the time of day, inside them, which `reset` leaves alone.
     tod: Tod,
-    /// The timer at `timer_base`.
-    timer: Timer,
     /// The SD card controller at `sd_base`.
     sd: Sd,
     /// The network station at `net_base`, which `reset` leaves alone.
@@ -972,10 +857,6 @@ pub const Cpu = struct {
     /// counts clock cycles, so a comparison of their traces must leave the
     /// cycle counter out. The instruction counter stays.
     cycle_counter: bool,
-    /// When false, the timer counts but raises no requests (`--no-timer-irq`).
-    /// A test then raises them with `--irq` at the steps where an FPGA core
-    /// took them, as it does for the requests it raises itself.
-    timer_irq: bool,
     /// Set by the debug link when a hold, a start, or a pause request ends
     /// a console read that waits (DEBUG.md §6, §7). The rest of the step
     /// then writes no memory and no trace line. The run loop clears it
@@ -1005,36 +886,24 @@ pub const Cpu = struct {
         var cpu: Cpu = .{
             .regs = undefined,
             .mem = .init(gpa),
-            .in_service = false,
-            .after_rti = false,
-            .waiting = false,
-            .saved_pc = 0,
-            .saved_sr = 0,
             .halt_reason = .none,
             .time_skip = 0,
-            .nmi_pending = null,
-            .link_nmi_pending = null,
-            .irq_pending = null,
-            .console_pending = null,
             .trace = null,
             .last_write = null,
             .read_count = 0,
             .console = null,
             .console_flush = false,
             .input = null,
-            .console_irq = .{},
             .mpu = .{},
             .fpu = .{},
             .fpu_enabled = true,
             .perf = .{},
             .tod = .{},
-            .timer = .{},
             .sd = .{},
             .net = .{},
             .eth = .{},
             .clock = null,
             .cycle_counter = true,
-            .timer_irq = true,
             .stopped = false,
             .watch = .{},
             .idle_reads = 0,
@@ -1068,20 +937,11 @@ pub const Cpu = struct {
     pub fn reset(self: *Cpu) void {
         self.regs = @splat(0);
         self.regs[14] = one_bit;
-        self.in_service = false;
-        self.after_rti = false;
-        self.waiting = false;
         self.halt_reason = .none;
         self.time_skip = 0;
-        self.nmi_pending = null;
-        self.link_nmi_pending = null;
-        self.irq_pending = null;
-        self.console_pending = null;
-        self.console_irq = .{};
         self.mpu = .{};
         self.fpu = .{};
         self.perf = .{};
-        self.timer = .{};
         self.sp_first = null;
         self.sp_low = 0;
         self.sd.reset();
@@ -1091,48 +951,6 @@ pub const Cpu = struct {
 
     pub fn halted(self: *const Cpu) bool {
         return self.halt_reason != .none;
-    }
-
-    /// Raise the maskable interrupt request with vector `v`. Requests that
-    /// arrive while one is pending merge into it, which keeps its vector (§7.1).
-    pub fn requestIrq(self: *Cpu, v: u8) void {
-        if (self.irq_pending == null) self.irq_pending = v;
-    }
-
-    /// Raise the console's request, if its enable is set. It merges with
-    /// a request of the console that is pending (DEVICES §1.9).
-    fn raiseConsole(self: *Cpu) void {
-        if (self.console_irq.enable and self.console_pending == null) self.console_pending = self.console_irq.vector;
-    }
-
-    /// Look at an input that can have no byte: a byte that has entered
-    /// while none waited, or the end, raises the console's request
-    /// (DEVICES §1.9). The run loops look before each step, and before
-    /// they jump over wait steps.
-    pub fn pollConsole(self: *Cpu) void {
-        const in = self.input orelse return;
-        const look = in.peek_fn orelse return;
-        const s = look(in.ctx);
-        const last = self.console_irq.last;
-        self.console_irq.last = s;
-        if (s != .none and s != last) self.raiseConsole();
-    }
-
-    /// Raise the non-maskable interrupt request with vector `v`. Requests
-    /// that arrive while one is pending merge into it, which keeps its vector (§7.1).
-    pub fn requestNmi(self: *Cpu, v: u8) void {
-        if (self.nmi_pending == null) self.nmi_pending = v;
-    }
-
-    /// Raise the debug link's NMI request with vector `v`, a source of its
-    /// own, which merges only with its own requests (DEBUG.md §6).
-    pub fn requestLinkNmi(self: *Cpu, v: u8) void {
-        if (self.link_nmi_pending == null) self.link_nmi_pending = v;
-    }
-
-    /// Whether an NMI is pending (§7.1), of either source.
-    pub fn nmiPending(self: *const Cpu) bool {
-        return self.nmi_pending != null or self.link_nmi_pending != null;
     }
 
     pub fn getReg(self: *const Cpu, r: u4) u32 {
@@ -1157,15 +975,7 @@ pub const Cpu = struct {
             if (self.input) |in| {
                 // Show a prompt before waiting for the input that answers it.
                 if (self.console) |w| w.flush() catch {};
-                const n = in.next();
-                // The next byte, or the end, enters: at once where a read
-                // waits for its byte, and else when the host has sent it.
-                if (in.peek_fn == null) {
-                    if (n == .byte) self.raiseConsole();
-                } else {
-                    self.pollConsole();
-                }
-                switch (n) {
+                switch (in.next()) {
                     .byte => |b| return console_byte | b,
                     .none => {
                         self.idle_reads +%= 1;
@@ -1180,7 +990,6 @@ pub const Cpu = struct {
             self.read_count +%= 1;
             return n;
         }
-        if (addr == console_irq_addr) return self.console_irq.read();
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         if (self.fpuDevice(addr)) |i| return self.fpu.read(i);
         if (self.todDevice(addr)) |i| return self.tod.read(i);
@@ -1192,7 +1001,6 @@ pub const Cpu = struct {
             }
             return self.perf.read(i);
         }
-        if (timerWord(addr)) |i| return self.timer.read(i);
         if (sdWord(addr)) |i| return self.sd.read(i);
         if (netWord(addr)) |i| return self.net.read(i);
         if (ethWord(addr)) |i| return self.eth.read(i);
@@ -1225,7 +1033,6 @@ pub const Cpu = struct {
     /// devices are mapped it must not trigger their side effects.
     pub fn peek(self: *const Cpu, addr: u32) u32 {
         if (addr == counter_addr) return self.read_count;
-        if (addr == console_irq_addr) return self.console_irq.read();
         if (mpuWord(addr)) |i| return self.mpu.read(i);
         // A read of the FPU has no side effect, so it is its own peek.
         if (self.fpuDevice(addr)) |i| return self.fpu.read(i);
@@ -1235,7 +1042,6 @@ pub const Cpu = struct {
             if (self.clock) |c| p.micros = c.micros();
             return p.peek(i);
         }
-        if (timerWord(addr)) |i| return self.timer.read(i);
         if (sdWord(addr)) |i| return self.sd.read(i);
         if (netWord(addr)) |i| return self.net.read(i);
         if (ethWord(addr)) |i| return self.eth.read(i);
@@ -1254,8 +1060,6 @@ pub const Cpu = struct {
         }
         if (addr == counter_addr) {
             self.read_count = value;
-        } else if (addr == console_irq_addr) {
-            self.writeConsoleIrq(value);
         } else if (mpuWord(addr)) |i| {
             self.mpu.write(i, value);
         } else if (self.fpuDevice(addr)) |i| {
@@ -1266,8 +1070,6 @@ pub const Cpu = struct {
             // The counters cannot be written. Without a clock, a write of
             // `TIME_SKIP` skips wait steps (DEVICES §3).
             if (i == time_skip_word and self.clock == null) self.time_skip = value;
-        } else if (timerWord(addr)) |i| {
-            self.timer.write(i, value);
         } else if (sdWord(addr)) |i| {
             self.sd.write(i, value);
         } else if (netWord(addr)) |i| {
@@ -1283,32 +1085,14 @@ pub const Cpu = struct {
         self.last_write = .{ .addr = addr, .value = value };
     }
 
-    /// A write of `CONSOLE_IRQ`. Setting the enable from 0 to 1 while a
-    /// byte waits or the input has ended raises a request; clearing it
-    /// withdraws none (DEVICES §1.9). Where a read waits for its byte, one
-    /// always waits, or the input has ended.
-    fn writeConsoleIrq(self: *Cpu, value: u32) void {
-        const was = self.console_irq.enable;
-        self.console_irq.vector = @truncate(value);
-        self.console_irq.enable = value & 0x100 != 0;
-        if (was or !self.console_irq.enable) return;
-        const in = self.input orelse return;
-        if (in.peek_fn) |look| {
-            const s = look(in.ctx);
-            self.console_irq.last = s;
-            if (s == .none) return;
-        }
-        self.raiseConsole();
-    }
-
     fn flag(self: *const Cpu, bit: u5) u1 {
         return @truncate(self.getReg(14) >> bit);
     }
 
-    /// Take a pending interrupt if one may be taken, or else run one
-    /// instruction. Does nothing once the processor has halted. Each step
-    /// counts as one cycle, and as one microsecond without a clock (DEVICES
-    /// §3, §4). A halt stops the clock.
+    /// Run one instruction, or one wait step of a skip of `TIME_SKIP`. Does
+    /// nothing once the processor has halted. Each step counts as one cycle,
+    /// and as one microsecond without a clock (DEVICES §3). A halt stops
+    /// the clock.
     pub fn step(self: *Cpu) Error!void {
         if (self.halted()) return;
         defer {
@@ -1319,62 +1103,18 @@ pub const Cpu = struct {
                 self.perf.micros +%= 1;
             }
             self.tod.tick(1);
-            self.timer.tick();
         }
         const before = self.regs;
         self.last_write = null;
         self.watch.hits = 0;
         self.watch.pc = self.regs[15];
 
-        // The timer's request merges with one that is pending, and keeps
-        // the vector of that one (DEVICES §4).
-        if (self.timer.raised) |v| {
-            if (self.timer_irq) self.requestIrq(v);
-            self.timer.raised = null;
-        }
-        self.pollConsole();
-
-        // §7.5: a pending request ends a wait. Without one, the step is a
-        // wait step, a cycle in which nothing else happens (DEVICES §3).
-        if (self.waiting) {
-            if (!self.nmiPending() and self.irq_pending == null and self.console_pending == null) return;
-            self.waiting = false;
-        }
-        // DEVICES §3: the rest of a skip of `TIME_SKIP`, a wait step each,
-        // which a pending request drops.
+        // DEVICES §3: the rest of a skip of `TIME_SKIP`, a wait step each.
         if (self.time_skip != 0) {
-            if (!self.nmiPending() and self.irq_pending == null and self.console_pending == null) {
-                self.time_skip -= 1;
-                return;
-            }
-            self.time_skip = 0;
+            self.time_skip -= 1;
+            return;
         }
 
-        // §7.1: interrupts are checked before each instruction.
-        if (!self.after_rti and !self.in_service) {
-            // The NMI of `--nmi` goes before the link's (DEVICES §8).
-            const nmi_slot = if (self.nmi_pending != null) &self.nmi_pending else &self.link_nmi_pending;
-            if (nmi_slot.*) |v| {
-                nmi_slot.* = null;
-                self.enterInterrupt(v);
-                self.perf.intrs +%= 1;
-                return self.traceInterrupt("NMI", v, before);
-            }
-            // The timer's request goes before the console's (DEVICES §4).
-            if (self.flag(sr_e) == 1) {
-                const slot = if (self.irq_pending != null) &self.irq_pending else &self.console_pending;
-                if (slot.*) |v| {
-                    slot.* = null;
-                    self.enterInterrupt(v);
-                    self.perf.intrs +%= 1;
-                    return self.traceInterrupt("IRQ", v, before);
-                }
-            }
-        }
-
-        // The instruction about to run clears after_rti when it completes,
-        // unless it is itself an RTI, which sets it again.
-        self.after_rti = false;
         const pc = self.regs[15];
         const ex = try self.execute();
         if (self.stopped) return;
@@ -1399,128 +1139,56 @@ pub const Cpu = struct {
     }
 
     /// What a step may change before a console read that waits, with the
-    /// counters and the timer, which it changes at its end. The debug link
+    /// counters, which it changes at its end. The debug link
     /// saves it before each step, and puts it back when a pause request
     /// undoes the step (DEBUG.md §7), and puts back the console bytes that
     /// the step took. A step writes no memory and no device before its
     /// reads.
     pub const Saved = struct {
         regs: [16]u32,
-        in_service: bool,
-        after_rti: bool,
-        waiting: bool,
         time_skip: u32,
-        saved_pc: u32,
-        saved_sr: u32,
-        nmi_pending: ?u8,
-        link_nmi_pending: ?u8,
-        irq_pending: ?u8,
-        console_pending: ?u8,
-        console_irq: ConsoleIrq,
         read_count: u32,
         perf: Perf,
         tod: Tod,
-        timer: Timer,
     };
 
     pub fn save(self: *const Cpu) Saved {
         return .{
             .regs = self.regs,
-            .in_service = self.in_service,
-            .after_rti = self.after_rti,
-            .waiting = self.waiting,
             .time_skip = self.time_skip,
-            .saved_pc = self.saved_pc,
-            .saved_sr = self.saved_sr,
-            .nmi_pending = self.nmi_pending,
-            .link_nmi_pending = self.link_nmi_pending,
-            .irq_pending = self.irq_pending,
-            .console_pending = self.console_pending,
-            .console_irq = self.console_irq,
             .read_count = self.read_count,
             .perf = self.perf,
             .tod = self.tod,
-            .timer = self.timer,
         };
     }
 
     pub fn putBack(self: *Cpu, s: Saved) void {
         self.regs = s.regs;
-        self.in_service = s.in_service;
-        self.after_rti = s.after_rti;
-        self.waiting = s.waiting;
         self.time_skip = s.time_skip;
-        self.saved_pc = s.saved_pc;
-        self.saved_sr = s.saved_sr;
-        self.nmi_pending = s.nmi_pending;
-        self.link_nmi_pending = s.link_nmi_pending;
-        self.irq_pending = s.irq_pending;
-        self.console_pending = s.console_pending;
-        self.console_irq = s.console_irq;
         self.read_count = s.read_count;
         self.perf = s.perf;
         self.tod = s.tod;
-        self.timer = s.timer;
-    }
-
-    /// Whether the next step is an interrupt entry (§7.1), as `step`
-    /// decides it, the timer's request included.
-    pub fn entryDue(self: *const Cpu) bool {
-        if (self.halted() or self.after_rti or self.in_service) return false;
-        if (self.nmiPending()) return true;
-        return self.irqPending() and self.flag(sr_e) == 1;
-    }
-
-    /// Whether an IRQ is pending (§7.1), of either source, the timer's
-    /// raised at the end of the last step included, whether or not it can
-    /// be taken.
-    pub fn irqPending(self: *const Cpu) bool {
-        return self.irq_pending != null or self.console_pending != null or (self.timer_irq and self.timer.raised != null);
-    }
-
-    /// Whether the next step is a wait step (§7.5, DEVICES §3): the
-    /// processor waits, and no request, the timer's included, ends the wait.
-    pub fn waitStepDue(self: *const Cpu) bool {
-        return !self.halted() and self.waiting and !self.nmiPending() and !self.irqPending();
     }
 
     /// Whether the next step is a wait step of a skip of `TIME_SKIP`
-    /// (DEVICES §3): a skip has steps left, and no request drops them.
+    /// (DEVICES §3): a skip has steps left.
     pub fn skipStepDue(self: *const Cpu) bool {
-        return !self.halted() and self.time_skip != 0 and !self.nmiPending() and !self.irqPending();
-    }
-
-    /// While `waitStepDue` or `skipStepDue`, the wait steps until the timer raises a request,
-    /// or null if it raises none. The timer's request is raised at the end
-    /// of the last of them, and ends the wait in the step after.
-    pub fn timerWaitSteps(self: *const Cpu) ?u64 {
-        if (!self.timer_irq or self.timer.period == 0) return null;
-        return self.timer.count;
+        return !self.halted() and self.time_skip != 0;
     }
 
     /// Run `n` wait steps at once, with the same result as `n` calls of
-    /// `step` while `waitStepDue` or `skipStepDue`, no more than a skip
-    /// has left (DEVICES §3).
+    /// `step` while `skipStepDue`, no more than the skip has left (DEVICES
+    /// §3).
     pub fn skipWait(self: *Cpu, n: u64) void {
-        self.time_skip -= @intCast(@min(n, self.time_skip));
-        self.perf.cycles +%= n;
-        if (self.clock == null) self.perf.micros +%= n;
-        self.tod.tick(n);
-        self.timer.tickMany(n);
+        const k = @min(n, self.time_skip);
+        self.time_skip -= @intCast(k);
+        self.perf.cycles +%= k;
+        if (self.clock == null) self.perf.micros +%= k;
+        self.tod.tick(k);
     }
 
-    /// §7.2: interrupt entry, for IRQ, NMI and INT.
-    fn enterInterrupt(self: *Cpu, v: u8) void {
-        const sr = self.getReg(14);
-        self.saved_pc = self.regs[15];
-        self.saved_sr = sr;
-        self.in_service = true;
-        self.setReg(14, sr | (1 << sr_i));
-        self.setReg(15, self.dataRead(((sr & 0x00FF_FFFF) << 8) +% v));
-    }
-
-    /// A data read of an instruction or an interrupt entry, which the data
-    /// read counter counts once it has returned (DEVICES §3).
+    /// A data read of an instruction, which the data read counter counts
+    /// once it has returned (DEVICES §3).
     fn dataRead(self: *Cpu, addr: u32) u32 {
         const v = self.read(addr);
         self.perf.reads +%= 1;
@@ -1659,45 +1327,10 @@ pub const Cpu = struct {
         }
     }
 
-    /// §5.3: HALT, RTI, INT, WAIT, and the reserved commands.
+    /// §5.3: HALT, and the reserved commands 1 to 31, which halt too.
+    /// Bits 20..0 must be 0.
     fn control(self: *Cpu, iw: u32) void {
-        const cmd: u5 = @truncate(iw >> 21);
-        const vector: u8 = @truncate(iw);
-        if (iw & 0x001F_FF00 != 0 or (cmd != 0b00010 and vector != 0)) {
-            self.halt_reason = .reserved;
-            return;
-        }
-        switch (cmd) {
-            0b00000 => self.halt_reason = .halt,
-            0b00001 => {
-                if (!self.in_service) {
-                    self.halt_reason = .rti_outside_isr;
-                    return;
-                }
-                self.setReg(14, self.saved_sr);
-                self.setReg(15, self.saved_pc);
-                self.in_service = false;
-                self.after_rti = true;
-            },
-            0b00010 => {
-                if (self.in_service) {
-                    self.halt_reason = .nested_int;
-                    return;
-                }
-                self.enterInterrupt(vector);
-                self.perf.intrs +%= 1;
-            },
-            0b00011 => self.waiting = true,
-            else => self.halt_reason = .reserved,
-        }
-    }
-
-    fn traceInterrupt(self: *const Cpu, kind: []const u8, v: u8, before: [16]u32) std.Io.Writer.Error!void {
-        const w = self.trace orelse return;
-        // Padded to the width of "pppppppp iiiiiiii", so that the changes
-        // line up with those of the instruction lines.
-        try w.print("{s} {x:0>2}           ", .{ kind, v });
-        try self.traceChanges(w, before, null);
+        self.halt_reason = if (iw & 0x03FF_FFFF == 0) .halt else .reserved;
     }
 
     fn traceInstruction(self: *const Cpu, w: *std.Io.Writer, pc: u32, iw: u32, executed: bool, before: [16]u32) std.Io.Writer.Error!void {
@@ -1882,9 +1515,10 @@ const AND = 0b1101;
 const ONE = 0b1110;
 const OR = 0b1111;
 const HALT = 0x0C00_0000;
-const RTI = 0x0C20_0000;
-const INT = 0x0C40_0000;
-const WAIT = 0x0C60_0000;
+/// RTI, INT 2, and WAIT of before #162, now reserved control words.
+const OLD_RTI = 0x0C20_0000;
+const OLD_INT2 = 0x0C40_0002;
+const OLD_WAIT = 0x0C60_0000;
 
 /// A processor with `words` loaded at `addr`.
 fn load(cpu: *Cpu, addr: u32, words: []const u32) !void {
@@ -1913,7 +1547,7 @@ fn flags(cpu: *const Cpu) u32 {
     return cpu.getReg(14) & flag_mask;
 }
 
-test "writesR15: the modes that write R15, and RTI (DEVICES §3)" {
+test "writesR15: the modes that write R15, and no control word (DEVICES §3)" {
     // The fields: dest at bits 20..14, s0 at 13..7, s1 at 6..0.
     try testing.expect(writesR15(0x0F << 14 | 0x01 << 7)); // MOVE R15, R1
     try testing.expect(writesR15(0x1F << 14 | 0x01 << 7)); // MOVE R15--, R1
@@ -1924,8 +1558,7 @@ test "writesR15: the modes that write R15, and RTI (DEVICES §3)" {
     try testing.expect(writesR15(0x01 << 14 | 0x01 << 7 | 0x2F)); // s1 R15++, unused by MOVE
     try testing.expect(!writesR15(0x01 << 14 | 0x0F << 7)); // MOVE R1, R15
     try testing.expect(!writesR15(0x01 << 14 | 0x4F << 7)); // MOVE R1, @R15
-    try testing.expect(writesR15(0x0C200000)); // RTI
-    try testing.expect(!writesR15(0x0C400040)); // INT 0x40
+    try testing.expect(!writesR15(OLD_RTI)); // reserved, was RTI
     try testing.expect(!writesR15(0x0C000000)); // HALT
 }
 
@@ -2235,163 +1868,16 @@ test "shifts write C only with M (§5.2)" {
     try testing.expectEqual(1 << sr_c, flags(&cpu));
 }
 
-test "INT and RTI (§7)" {
-    // VBASE = 0, so vector 3 is word 3.
-    // 0: MOVE R15, 0x10
-    // 2: (unused)
-    // 3: .DAT 0x20                ; vector 3
-    // 0x10: INT 3
-    // 0x11: MOVE R2, R1           ; runs after RTI
-    // 0x12: HALT
-    // 0x20: MOVE[M] R1, @R0++     ; sets the flags inside the routine
-    // 0x21: MOVE R3, R14
-    // 0x22: RTI
-    var program: [0x23]u32 = @splat(0);
-    program[0] = alu_iw(.always, MOVE, .none, reg(15), imm(0), reg(0));
-    program[1] = 0x10;
-    program[3] = 0x20;
-    program[0x10] = INT + 3;
-    program[0x11] = alu_iw(.always, MOVE, .none, reg(2), reg(1), reg(0));
-    program[0x12] = HALT;
-    program[0x20] = alu_iw(.always, MOVE, .m, reg(1), ind(0), reg(0));
-    program[0x21] = alu_iw(.always, MOVE, .none, reg(3), reg(14), reg(0));
-    program[0x22] = RTI;
-    var cpu = try run(&program);
-    defer cpu.deinit();
-    try testing.expectEqual(.halt, cpu.halt_reason);
-    try testing.expectEqual(program[0], cpu.getReg(2));
-    // Inside the routine I was set; RTI restored SR.
-    try testing.expectEqual(0x8100_0000, cpu.getReg(3));
-    try testing.expectEqual(0x0100_0000, cpu.getReg(14));
-    try testing.expectEqual(false, cpu.in_service);
-}
-
-/// A processor with NOPs from address 0, vector 5 pointing at an RTI at
-/// 0x40 and vector 6 at an RTI at 0x50.
-fn interruptTestCpu() !Cpu {
+test "a halted processor counts nothing (§5.3)" {
     var cpu = Cpu.init(testing.allocator);
-    errdefer cpu.deinit();
-    try load(&cpu, 5, &.{ 0x40, 0x50 });
-    try load(&cpu, 0x40, &.{RTI});
-    try load(&cpu, 0x50, &.{RTI});
-    return cpu;
-}
-
-test "IRQ needs E, NMI does not (§7.1)" {
-    var cpu = try interruptTestCpu();
-    defer cpu.deinit();
-
-    cpu.requestIrq(5);
-    try cpu.step(); // E = 0: a NOP at address 0 runs instead
-    try testing.expectEqual(1, cpu.regs[15]);
-    try testing.expect(cpu.irq_pending != null);
-
-    cpu.requestNmi(6);
-    try cpu.step(); // NMI entry
-    try testing.expectEqual(0x50, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.saved_pc);
-    try testing.expectEqual(0x8100_0000, cpu.getReg(14));
-}
-
-test "no interrupt right after RTI, and RTI restores E (§7.1, §7.4)" {
-    var cpu = try interruptTestCpu();
-    defer cpu.deinit();
-
-    cpu.setReg(14, 1 << sr_e);
-    cpu.requestNmi(6);
-    try cpu.step(); // NMI entry, saving E = 1
-    cpu.setReg(14, cpu.getReg(14) & ~@as(u32, 1 << sr_e));
-    cpu.requestIrq(5);
-    try cpu.step(); // RTI
-    try testing.expectEqual(0, cpu.regs[15]);
-    try testing.expectEqual(0x4100_0000, cpu.getReg(14));
-    try cpu.step(); // after_rti: the NOP at 0 runs first
-    try testing.expectEqual(1, cpu.regs[15]);
-    try cpu.step(); // now the IRQ
-    try testing.expectEqual(0x40, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.saved_pc);
-    try testing.expectEqual(null, cpu.irq_pending);
-}
-
-test "NMI before IRQ; the IRQ waits through the routine (§7.1)" {
-    var cpu = try interruptTestCpu();
-    defer cpu.deinit();
-
-    cpu.setReg(14, 1 << sr_e);
-    cpu.requestIrq(5);
-    cpu.requestNmi(6);
-    try cpu.step(); // the NMI
-    try testing.expectEqual(0x50, cpu.regs[15]);
-    try testing.expect(cpu.irq_pending != null);
-    try cpu.step(); // RTI, although the IRQ is pending
-    try testing.expectEqual(0, cpu.regs[15]);
-    try cpu.step(); // the NOP at 0
-    try cpu.step(); // the IRQ
-    try testing.expectEqual(0x40, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.saved_pc);
-}
-
-test "the link's NMI: after the one of --nmi, merges only with its own (DEVICES §8)" {
-    var cpu = try interruptTestCpu();
-    defer cpu.deinit();
-
-    cpu.requestLinkNmi(5);
-    cpu.requestLinkNmi(6); // merges, and the pending one keeps vector 5
-    cpu.requestNmi(6);
-    try testing.expect(cpu.nmiPending());
-    try cpu.step(); // the NMI of --nmi goes first
-    try testing.expectEqual(0x50, cpu.regs[15]);
-    try testing.expectEqual(5, cpu.link_nmi_pending);
-    try cpu.step(); // RTI, although the link's NMI is pending
-    try cpu.step(); // the NOP at 0
-    try cpu.step(); // the link's NMI, with its first vector
-    try testing.expectEqual(0x40, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.saved_pc);
-    try testing.expect(!cpu.nmiPending());
-
-    cpu.requestLinkNmi(6);
-    cpu.reset(); // a start drops it
-    try testing.expect(!cpu.nmiPending());
-}
-
-test "HALT inside an interrupt routine, and INT inside one (§7.2)" {
-    // 0: INT 2;  2: .DAT 3 (vector 2);  3: HALT
-    var cpu = try run(&.{ INT + 2, 0, 3, HALT });
-    try testing.expectEqual(.halt, cpu.halt_reason);
-    try testing.expect(cpu.in_service);
-    cpu.deinit();
-    // 0: INT 2;  2: .DAT 3;  3: INT 2
-    cpu = try run(&.{ INT + 2, 0, 3, INT + 2 });
-    defer cpu.deinit();
-    try testing.expectEqual(.nested_int, cpu.halt_reason);
-}
-
-test "a halted processor takes no interrupts, and counts nothing (§7.1)" {
-    var cpu = try interruptTestCpu();
     defer cpu.deinit();
     try load(&cpu, 0, &.{HALT});
     try cpu.step();
     try testing.expectEqual(.halt, cpu.halt_reason);
-    cpu.requestNmi(6);
     try cpu.step();
     try testing.expectEqual(1, cpu.regs[15]);
-    try testing.expect(!cpu.in_service);
-    try testing.expectEqual(6, cpu.nmi_pending);
     try testing.expectEqual(1, cpu.perf.instrs);
     try testing.expectEqual(1, cpu.perf.cycles);
-}
-
-test "VBASE selects the vector table (§7.3)" {
-    // 0: MOVE R14, 1  (VBASE = 1: the table is at 0x100);  2: INT 2;  3: HALT
-    // 0x10: HALT;  0x102: .DAT 0x10
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, reg(14), imm(0), reg(0)), 1, INT + 2, HALT });
-    try load(&cpu, 0x10, &.{HALT});
-    try load(&cpu, 0x102, &.{0x10});
-    try runToHalt(&cpu);
-    try testing.expectEqual(0x11, cpu.regs[15]);
-    try testing.expectEqual(0x8100_0001, cpu.getReg(14));
 }
 
 test "reserved control words halt, unless skipped (§5.3)" {
@@ -2402,151 +1888,24 @@ test "reserved control words halt, unless skipped (§5.3)" {
     try testing.expectEqual(.halt, cpu.halt_reason);
     try testing.expectEqual(2, cpu.regs[15]);
     cpu.deinit();
-    cpu = try run(&.{RTI});
-    defer cpu.deinit();
-    try testing.expectEqual(.rti_outside_isr, cpu.halt_reason);
-}
-
-test "WAIT: wait steps count cycles, and a request with E = 0 ends the wait (§7.5)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{ WAIT, HALT });
-    try cpu.step(); // WAIT completes
-    try testing.expect(cpu.waiting);
-    try testing.expectEqual(1, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.perf.instrs);
-    try testing.expect(cpu.waitStepDue());
-    try testing.expectEqual(null, cpu.timerWaitSteps());
-    for (0..3) |_| try cpu.step(); // three wait steps
-    try testing.expectEqual(4, cpu.perf.cycles);
-    try testing.expectEqual(1, cpu.perf.instrs);
-    try testing.expectEqual(1, cpu.regs[15]);
-    cpu.requestIrq(5); // E = 0: not taken, but it ends the wait
-    try testing.expect(!cpu.waitStepDue());
-    try cpu.step(); // the HALT, in the same step
-    try testing.expectEqual(.halt, cpu.halt_reason);
-    try testing.expect(!cpu.waiting);
-    try testing.expectEqual(5, cpu.perf.cycles);
-    try testing.expectEqual(2, cpu.perf.instrs);
-    try testing.expectEqual(5, cpu.irq_pending.?);
-}
-
-test "WAIT: a request with E = 1 is taken, and returns after the WAIT (§7.5)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    // 0: WAIT;  1: HALT;  5: .DAT 0x10 (vector 5);  0x10: RTI
-    try load(&cpu, 0, &.{ WAIT, HALT, 0, 0, 0, 0x10 });
-    try load(&cpu, 0x10, &.{RTI});
-    cpu.setReg(14, 1 << sr_e);
-    try cpu.step(); // WAIT
-    try cpu.step(); // a wait step
-    cpu.requestIrq(5);
-    try cpu.step(); // the entry ends the wait
-    try testing.expect(!cpu.waiting);
-    try testing.expectEqual(0x10, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.saved_pc);
-    try runToHalt(&cpu);
-    try testing.expectEqual(2, cpu.regs[15]);
-    try testing.expectEqual(1, cpu.perf.intrs);
-}
-
-test "WAIT: a pending request it cannot take ends it at once (§7.5)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{ WAIT, HALT });
-    cpu.requestIrq(5); // E = 0, pending before the WAIT
-    try cpu.step(); // WAIT
-    try testing.expect(cpu.waiting);
-    try testing.expect(!cpu.waitStepDue());
-    try cpu.step(); // HALT, with no wait step
-    try testing.expectEqual(.halt, cpu.halt_reason);
-    try testing.expectEqual(2, cpu.perf.cycles);
-}
-
-test "WAIT: inside an interrupt routine, the request waits for RTI (§7.5)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    // 0: INT 2;  1: HALT;  2: .DAT 0x10 (vector 2);  5: .DAT 0x20 (vector 5)
-    // 0x10: WAIT;  0x11: RTI;  0x20: HALT
-    try load(&cpu, 0, &.{ INT + 2, HALT, 0x10, 0, 0, 0x20 });
-    try load(&cpu, 0x10, &.{ WAIT, RTI });
-    try load(&cpu, 0x20, &.{HALT});
-    cpu.setReg(14, 1 << sr_e);
-    try cpu.step(); // INT 2
-    try cpu.step(); // WAIT
-    try cpu.step(); // a wait step
-    try testing.expect(cpu.waiting);
-    cpu.requestIrq(5);
-    try cpu.step(); // the RTI, as in_service = 1
-    try testing.expect(!cpu.waiting);
-    try testing.expectEqual(1, cpu.regs[15]);
-    try cpu.step(); // the instruction after RTI: HALT at 1
-    try testing.expectEqual(.halt, cpu.halt_reason);
-    try testing.expectEqual(5, cpu.irq_pending.?);
-}
-
-test "WAIT: a false condition skips it, and reset clears the wait (§7.5, §8.1)" {
-    var cpu = try run(&.{ 0x3C60_0000, HALT }); // ?Z WAIT, Z = 0
-    try testing.expect(!cpu.waiting);
-    try testing.expectEqual(2, cpu.regs[15]);
-    try load(&cpu, 0, &.{WAIT});
-    cpu.reset();
-    try cpu.step();
-    try testing.expect(cpu.waiting);
-    cpu.reset();
-    try testing.expect(!cpu.waiting);
-    cpu.deinit();
-}
-
-test "WAIT: the timer ends the wait after its COUNT wait steps (DEVICES §3, §4)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{ WAIT, HALT });
-    cpu.timer.write(0, 10); // P = COUNT = 10
-    try cpu.step(); // WAIT: COUNT 9
-    try testing.expectEqual(9, cpu.timerWaitSteps().?);
-    for (0..9) |_| {
-        try testing.expect(cpu.waitStepDue());
-        try cpu.step();
+    // RTI, INT 2, and WAIT of before #162 halt as reserved words, with
+    // R15 the address after them, SR unchanged, and no data access.
+    for ([_]u32{ OLD_RTI, OLD_INT2, OLD_WAIT, 0x0C20_0001, 0x0FE0_0000 }) |w| {
+        cpu = try run(&.{ w, HALT });
+        try testing.expectEqual(.reserved, cpu.halt_reason);
+        try testing.expectEqual(1, cpu.regs[15]);
+        try testing.expectEqual(one_bit, cpu.getReg(14));
+        try testing.expectEqual(0, cpu.perf.reads);
+        cpu.deinit();
     }
-    try testing.expect(!cpu.waitStepDue()); // the 9th wait step raised it
-    try cpu.step(); // the HALT, E = 0
+    // The condition applies: a false one skips the word, as any other.
+    cpu = try run(&.{ 0x3C60_0000, HALT }); // ?Z, Z = 0
+    defer cpu.deinit();
     try testing.expectEqual(.halt, cpu.halt_reason);
-    try testing.expectEqual(11, cpu.perf.cycles);
-    cpu.timer_irq = false;
-    try testing.expectEqual(null, cpu.timerWaitSteps());
+    try testing.expectEqual(2, cpu.regs[15]);
 }
 
-test "skipWait is the same as single wait steps (DEVICES §3)" {
-    // Periods and steps on both sides of COUNT and of several periods, and
-    // a timer that raises no requests, so that it wraps.
-    for ([_]u32{ 0, 1, 3, 10 }) |period| {
-        for ([_]u64{ 0, 1, 2, 9, 10, 11, 25, 31 }) |n| {
-            var a = Cpu.init(testing.allocator);
-            defer a.deinit();
-            var b = Cpu.init(testing.allocator);
-            defer b.deinit();
-            for ([_]*Cpu{ &a, &b }) |c| {
-                try load(c, 0, &.{WAIT});
-                c.timer_irq = false;
-                c.timer.write(0, period);
-                try c.step();
-            }
-            const count = b.timer.count;
-            for (0..n) |_| try a.step();
-            b.skipWait(n);
-            try testing.expectEqual(a.perf.cycles, b.perf.cycles);
-            try testing.expectEqual(a.perf.micros, b.perf.micros);
-            try testing.expectEqual(a.timer.count, b.timer.count);
-            // With the timer's requests on, a run skips no further than
-            // COUNT, where both have raised the request of the last tick.
-            // Past COUNT, the steps drop the requests, which raise none.
-            if (n <= count) try testing.expectEqual(a.timer.raised, b.timer.raised);
-        }
-    }
-}
-
-test "TIME_SKIP: without a clock, a write skips wait steps, which a request drops (DEVICES §3)" {
+test "TIME_SKIP: without a clock, a write skips wait steps (DEVICES §3)" {
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     const write = alu_iw(.always, MOVE, .none, ind(1), reg(2), reg(0)); // MOVE @R1, R2
@@ -2556,7 +1915,6 @@ test "TIME_SKIP: without a clock, a write skips wait steps, which a request drop
     try cpu.step(); // the write
     try testing.expectEqual(3, cpu.time_skip);
     try testing.expect(cpu.skipStepDue());
-    try testing.expect(!cpu.waitStepDue()); // not a wait of §7.5
     try cpu.step();
     try cpu.step(); // two wait steps
     try testing.expectEqual(1, cpu.time_skip);
@@ -2565,16 +1923,17 @@ test "TIME_SKIP: without a clock, a write skips wait steps, which a request drop
     try testing.expectEqual(3, cpu.perf.micros);
     try testing.expectEqual(3, cpu.tod.us);
     try testing.expectEqual(1, cpu.perf.instrs);
-    cpu.requestIrq(5); // E = 0: not taken, but it drops the rest
+    try cpu.step(); // the last wait step
     try testing.expect(!cpu.skipStepDue());
-    try cpu.step(); // the second write, in the same step
+    try testing.expectEqual(1, cpu.regs[15]);
+    try cpu.step(); // the second write, 3 again
     try testing.expectEqual(2, cpu.perf.instrs);
     try testing.expectEqual(3, cpu.time_skip);
-    try testing.expect(!cpu.skipStepDue()); // the request is still pending
-    try cpu.step(); // the HALT, which drops the skip
+    try runToHalt(&cpu); // three wait steps, and the HALT
     try testing.expectEqual(.halt, cpu.halt_reason);
     try testing.expectEqual(0, cpu.time_skip);
-    try testing.expectEqual(5, cpu.perf.cycles);
+    try testing.expectEqual(3, cpu.perf.instrs);
+    try testing.expectEqual(9, cpu.perf.cycles);
 }
 
 test "TIME_SKIP: skipWait counts the steps of a skip at once, and reset drops it (DEVICES §3)" {
@@ -2586,7 +1945,6 @@ test "TIME_SKIP: skipWait counts the steps of a skip at once, and reset drops it
         try load(c, 0, &.{ alu_iw(.always, MOVE, .none, ind(1), reg(2), reg(0)), HALT });
         c.regs[1] = 0xFFFF_FF5F;
         c.regs[2] = 7;
-        c.timer.write(0, 100);
         try c.step();
     }
     for (0..4) |_| try a.step();
@@ -2594,8 +1952,11 @@ test "TIME_SKIP: skipWait counts the steps of a skip at once, and reset drops it
     try testing.expectEqual(a.perf.cycles, b.perf.cycles);
     try testing.expectEqual(a.perf.micros, b.perf.micros);
     try testing.expectEqual(a.tod.us, b.tod.us);
-    try testing.expectEqual(a.timer.count, b.timer.count);
     try testing.expectEqual(3, b.time_skip);
+    // No more than the skip has left: 3 of the 10 asked for.
+    b.skipWait(10);
+    try testing.expectEqual(0, b.time_skip);
+    try testing.expectEqual(8, b.perf.cycles);
     b.reset();
     try testing.expectEqual(0, b.time_skip);
 }
@@ -2685,98 +2046,6 @@ test "with input that can have no byte, a console read returns 0 then" {
     try testing.expectEqual(0, cpu.regs[3]);
     try testing.expectEqual(0x200, cpu.regs[4]);
     try testing.expectEqual(0, script.answers.len);
-}
-
-test "a console input that can have no byte raises a request when a byte enters it empty, or it ends (DEVICES §1.9)" {
-    const Fifo = struct {
-        bytes: [4]u8 = undefined,
-        len: usize = 0,
-        ended: bool = false,
-        fn push(self: *@This(), b: u8) void {
-            self.bytes[self.len] = b;
-            self.len += 1;
-        }
-        fn next(ctx: *anyopaque) Input.Next {
-            const self: *@This() = @ptrCast(@alignCast(ctx));
-            if (self.len == 0) return if (self.ended) .end else .none;
-            const b = self.bytes[0];
-            std.mem.copyForwards(u8, self.bytes[0 .. self.len - 1], self.bytes[1..self.len]);
-            self.len -= 1;
-            return .{ .byte = b };
-        }
-        fn peek(ctx: *anyopaque) Input.State {
-            const self: *@This() = @ptrCast(@alignCast(ctx));
-            if (self.len != 0) return .byte;
-            return if (self.ended) .end else .none;
-        }
-    };
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    var fifo: Fifo = .{};
-    cpu.input = .{ .ctx = &fifo, .next_fn = Fifo.next, .peek_fn = Fifo.peek };
-    // A byte that enters while the enable is 0 raises nothing, but the
-    // enable set while it waits does.
-    fifo.push('a');
-    cpu.pollConsole();
-    try cpu.write(console_irq_addr, 0x150);
-    try testing.expectEqual(0x150, cpu.peek(console_irq_addr));
-    try testing.expectEqual(0x50, cpu.console_pending);
-    cpu.console_pending = null;
-    // A byte that enters while one waits raises nothing, nor does a read
-    // that leaves one waiting, or one that leaves none.
-    fifo.push('b');
-    cpu.pollConsole();
-    try testing.expectEqual(0x161, cpu.read(console_addr));
-    try testing.expectEqual(0x162, cpu.read(console_addr));
-    try testing.expectEqual(null, cpu.console_pending);
-    try testing.expectEqual(0, cpu.read(console_addr));
-    // A byte that enters the empty input raises one, which keeps its
-    // vector when the vector changes.
-    fifo.push('c');
-    cpu.pollConsole();
-    try testing.expectEqual(0x50, cpu.console_pending);
-    try cpu.write(console_irq_addr, 0x151); // the enable stays 1: no request
-    try testing.expectEqual(0x50, cpu.console_pending);
-    cpu.console_pending = null;
-    // The read of the last byte, once the input has ended, raises one for
-    // the end, and only once.
-    fifo.ended = true;
-    try testing.expectEqual(0x163, cpu.read(console_addr));
-    try testing.expectEqual(0x51, cpu.console_pending);
-    cpu.console_pending = null;
-    cpu.pollConsole();
-    try testing.expectEqual(0x200, cpu.read(console_addr));
-    try testing.expectEqual(null, cpu.console_pending);
-    // The enable to 0 withdraws nothing, and to 1 again after the end
-    // raises one.
-    cpu.console_pending = 0x51;
-    try cpu.write(console_irq_addr, 0x52);
-    try testing.expectEqual(0x51, cpu.console_pending);
-    cpu.console_pending = null;
-    try cpu.write(console_irq_addr, 0x152);
-    try testing.expectEqual(0x52, cpu.console_pending);
-    // A reset clears the register and the request.
-    cpu.reset();
-    try testing.expectEqual(0, cpu.peek(console_irq_addr));
-    try testing.expectEqual(null, cpu.console_pending);
-}
-
-test "with an input whose read waits, the console raises a request after each byte read (DEVICES §1.9)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    var r: std.Io.Reader = .fixed("A");
-    cpu.input = .fromReader(&r);
-    // A byte or the end always waits, so the enable set raises one.
-    try cpu.write(console_irq_addr, 0x160);
-    try testing.expectEqual(0x60, cpu.console_pending);
-    cpu.console_pending = null;
-    // The read of "A" lets the end enter, and the read of the end raises
-    // nothing.
-    try testing.expectEqual(0x141, cpu.read(console_addr));
-    try testing.expectEqual(0x60, cpu.console_pending);
-    cpu.console_pending = null;
-    try testing.expectEqual(0x200, cpu.read(console_addr));
-    try testing.expectEqual(null, cpu.console_pending);
 }
 
 test "idle reads are the console reads that find no byte and the reads of TIME_LO (DEVICES §1.6)" {
@@ -3015,10 +2284,9 @@ test "the counters count instructions and steps, and ignore writes (DEVICES §3)
     // 2:  ?Z MOVE R2, 7         skipped, but counts
     // 4:  MOVE R2, @INSTR_LO    2
     // 6:  MOVE R3, @CYCLE_LO    3 steps before it
-    //     NMI with vector 13, which holds 8: a step, not an instruction
     // 8:  MOVE R4, @INSTR_LO    4
-    // 10: MOVE R5, @CYCLE_LO    6 steps: 5 instructions and the NMI
-    // 12: HALT                  the 7th instruction and the 8th step
+    // 10: MOVE R5, @CYCLE_LO    5 steps
+    // 12: HALT                  the 7th instruction and step
     var cpu = Cpu.init(testing.allocator);
     defer cpu.deinit();
     try load(&cpu, 0, &.{
@@ -3029,19 +2297,20 @@ test "the counters count instructions and steps, and ignore writes (DEVICES §3)
         alu_iw(.always, MOVE, .none, reg(4), ind_imm(0), reg(0)), perf_base + 2,
         alu_iw(.always, MOVE, .none, reg(5), ind_imm(0), reg(0)), perf_base,
         HALT,
-        8, // the NMI's vector table entry, at 13
     });
-    for (0..4) |_| try cpu.step();
-    cpu.requestNmi(13);
     try runToHalt(&cpu);
-    try testing.expectEqual([5]u32{ 0, 2, 3, 4, 6 }, cpu.regs[1..6].*);
+    try testing.expectEqual([5]u32{ 0, 2, 3, 4, 5 }, cpu.regs[1..6].*);
     try testing.expectEqual(7, cpu.perf.instrs);
-    try testing.expectEqual(8, cpu.perf.cycles);
+    try testing.expectEqual(7, cpu.perf.cycles);
     try cpu.write(perf_base + 2, 99);
     try cpu.write(perf_base + 3, 99);
     try testing.expectEqual(7, cpu.peek(perf_base + 2));
     try testing.expectEqual(0, cpu.peek(perf_base + 3));
-    // The fetch statistics are not memory: they ignore writes and read 0.
+    // INTR_LO and INTR_HI count nothing (#162), and the fetch statistics
+    // are not memory: they ignore writes and read 0.
+    try cpu.write(perf_base + 0x12, 3);
+    try testing.expectEqual(0, cpu.read(perf_base + 0x12));
+    try testing.expectEqual(0, cpu.read(perf_base + 0x13));
     try cpu.write(perf_base + 0x10, 3);
     try cpu.write(perf_base + 0x3F, 99);
     try testing.expectEqual(0, cpu.read(perf_base + 0x10));
@@ -3184,102 +2453,6 @@ test "a read of CLOCK_USEC takes the microseconds and the seconds at one instant
     }
 }
 
-test "the timer counts down from the write and raises a request every P steps (DEVICES §4)" {
-    var timer: Timer = .{};
-    timer.tick(); // stopped: nothing changes
-    try testing.expectEqual(Timer{}, timer);
-    timer.write(2, 0x1234); // the vector keeps bits 7..0
-    timer.write(0, 3);
-    try testing.expectEqual(3, timer.read(0));
-    try testing.expectEqual(3, timer.read(1));
-    try testing.expectEqual(0x34, timer.read(2));
-    timer.tick(); // the cycle of the write counts
-    try testing.expectEqual(2, timer.read(1));
-    timer.tick();
-    try testing.expectEqual(null, timer.raised);
-    timer.tick(); // the third cycle: a request, and COUNT is reloaded
-    try testing.expectEqual(0x34, timer.raised);
-    try testing.expectEqual(3, timer.read(1));
-    timer.write(1, 9); // COUNT cannot be written
-    timer.write(15, 9);
-    try testing.expectEqual(3, timer.read(1));
-    try testing.expectEqual(0, timer.read(15));
-    timer.write(0, 0); // stops the timer
-    try testing.expectEqual(0, timer.read(1));
-    timer.tick();
-    try testing.expectEqual(0, timer.read(1));
-}
-
-test "a new period written while the timer runs restarts the count (DEVICES §4)" {
-    // timer.nasm writes a nonzero period only while the timer is stopped.
-    var timer: Timer = .{ .vector = 9 };
-    timer.write(0, 5);
-    timer.tick();
-    timer.tick();
-    try testing.expectEqual(3, timer.read(1));
-    timer.write(0, 2); // P = 2 and COUNT = 2, from 3
-    try testing.expectEqual(2, timer.read(1));
-    timer.tick(); // the cycle of the write counts: 1
-    try testing.expectEqual(null, timer.raised);
-    timer.tick(); // the second cycle after the write: a request, COUNT = P
-    try testing.expectEqual(9, timer.raised);
-    try testing.expectEqual(2, timer.read(1));
-    // P = 1 raises a request at the end of every cycle.
-    timer.raised = null;
-    timer.write(0, 1);
-    timer.tick();
-    try testing.expectEqual(9, timer.raised);
-    try testing.expectEqual(1, timer.read(1));
-}
-
-test "the timer's request is an IRQ, and merges with a pending one (DEVICES §4)" {
-    // 0: MOVE @TIMER_PERIOD, 2, then NOPs. The vector table entries 0x10
-    // and 0x11 hold 0x40 and 0x50, each an RTI.
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, ind_imm(0), imm(0), reg(0)), timer_base, 2 });
-    try load(&cpu, 0x10, &.{ 0x40, 0x50 });
-    try load(&cpu, 0x40, &.{RTI});
-    try load(&cpu, 0x50, &.{RTI});
-    try cpu.write(timer_base + 2, 0x10);
-    try cpu.step(); // the write, and the first of the two steps
-    try testing.expectEqual(1, cpu.peek(timer_base + 1));
-    try cpu.step(); // a NOP; the request is raised at its end
-    try testing.expectEqual(null, cpu.irq_pending);
-    try cpu.step(); // E = 0: the request is pending, and a NOP runs
-    try testing.expectEqual(0x10, cpu.irq_pending);
-    try testing.expectEqual(5, cpu.regs[15]);
-    cpu.requestIrq(7); // a request from elsewhere merges with it, and 0x10 stays
-    try cpu.write(timer_base + 2, 0x11);
-    try cpu.step(); // a NOP; the timer's second request is raised at its end
-    try cpu.step(); // it merges with the pending one, which keeps vector 0x10
-    try testing.expectEqual(0x10, cpu.irq_pending);
-    cpu.setReg(14, 1 << sr_e);
-    cpu.irq_pending = null;
-    try cpu.step(); // a NOP; the timer's third request, with vector 0x11
-    try testing.expectEqual(null, cpu.irq_pending);
-    try cpu.step(); // its entry
-    try testing.expectEqual(0x50, cpu.regs[15]);
-    try testing.expectEqual(null, cpu.irq_pending);
-    cpu.reset();
-    try testing.expectEqual(Timer{}, cpu.timer);
-}
-
-test "without timer requests, the timer counts and reloads, and raises none (--no-timer-irq)" {
-    // 0: MOVE @TIMER_PERIOD, 2, then NOPs, with E = 1.
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    cpu.timer_irq = false;
-    try load(&cpu, 0, &.{ alu_iw(.always, MOVE, .none, ind_imm(0), imm(0), reg(0)), timer_base, 2 });
-    cpu.setReg(14, 1 << sr_e);
-    try cpu.step(); // the write, and the first of the two steps
-    try cpu.step(); // a NOP; the request would be raised at its end
-    try testing.expectEqual(2, cpu.peek(timer_base + 1)); // COUNT is P again
-    try cpu.step(); // a NOP, not an entry
-    try testing.expectEqual(null, cpu.irq_pending);
-    try testing.expectEqual(5, cpu.regs[15]);
-}
-
 test "instruction fetches from the I/O range read 0 (§8.3)" {
     // 0xFFFFFEFF: MOVE R1, c, with c at 0xFFFFFF00 holding 7. The constant
     // is fetched from the I/O range, so R1 = 0. Then the words at
@@ -3334,37 +2507,9 @@ test "trace: write, jump, skip and halt" {
     , try traceSteps(&cpu, &buf, 5));
 }
 
-test "trace: an interrupt line shows no write of the instruction before (§7.2)" {
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{
-        alu_iw(.always, MOVE, .none, imm(0), imm(0), reg(0)), 0x50, 7, // 0: MOVE @0x50, 7
-    });
-    try load(&cpu, 6, &.{0x40}); // vector 6
-    var buf: [512]u8 = undefined;
-    try cpu.step();
-    cpu.requestNmi(6);
-    try testing.expectEqualStrings(
-        \\NMI 06            R14=81000000 R15=00000040
-        \\
-    , try traceSteps(&cpu, &buf, 1));
-}
-
-test "trace: control instructions and the halts other than HALT (§5.3, §7)" {
-    // 0: INT 2;  1: HALT;  2: .DAT 3 (vector 2);  3: RTI. INT lists I and
-    // the jump to 3, RTI the restored SR and the jump back to 1.
-    var cpu = Cpu.init(testing.allocator);
-    defer cpu.deinit();
-    try load(&cpu, 0, &.{ INT + 2, HALT, 3, RTI });
-    var buf: [512]u8 = undefined;
-    try testing.expectEqualStrings(
-        \\00000000 0c400002 R14=81000000 R15=00000003
-        \\00000003 0c200000 R14=01000000 R15=00000001
-        \\00000001 0c000000 HALT
-        \\
-    , try traceSteps(&cpu, &buf, 3));
-
+test "trace: control instructions, HALT and reserved (§5.3)" {
     // A skipped control word, then a reserved one: command 4.
+    var buf: [512]u8 = undefined;
     var cpu2 = Cpu.init(testing.allocator);
     defer cpu2.deinit();
     try load(&cpu2, 0, &.{ 0x8C80_0000, 0x0C80_0000 });
@@ -3374,24 +2519,14 @@ test "trace: control instructions and the halts other than HALT (§5.3, §7)" {
         \\
     , try traceSteps(&cpu2, &buf, 2));
 
-    // INT inside the routine of INT 2, which starts at 3.
+    // INT 2 of before #162 is reserved too, and changes nothing.
     var cpu3 = Cpu.init(testing.allocator);
     defer cpu3.deinit();
-    try load(&cpu3, 0, &.{ INT + 2, 0, 3, INT + 2 });
+    try load(&cpu3, 0, &.{OLD_INT2});
     try testing.expectEqualStrings(
-        \\00000000 0c400002 R14=81000000 R15=00000003
-        \\00000003 0c400002 INT inside an interrupt routine
+        \\00000000 0c400002 reserved control instruction
         \\
-    , try traceSteps(&cpu3, &buf, 2));
-
-    // RTI outside an interrupt routine.
-    var cpu4 = Cpu.init(testing.allocator);
-    defer cpu4.deinit();
-    try load(&cpu4, 0, &.{RTI});
-    try testing.expectEqualStrings(
-        \\00000000 0c200000 RTI outside an interrupt routine
-        \\
-    , try traceSteps(&cpu4, &buf, 1));
+    , try traceSteps(&cpu3, &buf, 1));
 }
 
 test "trace: console output comes before the line of the instruction that wrote it" {

@@ -26,11 +26,11 @@ data read returns.
   - [1.6 Pacing](#16-pacing)
   - [1.7 Read counter](#17-read-counter)
   - [1.8 Font](#18-font)
-  - [1.9 Receive interrupt](#19-receive-interrupt)
+  - [1.9 Reserved](#19-reserved)
   - [1.10 Chunky mode](#110-chunky-mode)
 - [2. Math unit](#2-math-unit)
 - [3. Performance counters](#3-performance-counters)
-- [4. Timer](#4-timer)
+- [4. Reserved](#4-reserved)
 - [5. SD card](#5-sd-card)
 - [6. Network station](#6-network-station)
 - [7. Ethernet frames](#7-ethernet-frames)
@@ -57,9 +57,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFF0000`–`0xFFFF45FF` | 17920 | The emulator's screen: the characters of 80×28 in its first 2240 words (§1.1), or 160×112 pixels (§1.10). |
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
-| `0xFFFFFF02` | 1 | The console's receive interrupt (§1.9). |
-| `0xFFFFFF03`–`0xFFFFFF0F` | 13 | Reserved for I/O. |
-| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Timer (§4). |
+| `0xFFFFFF02`–`0xFFFFFF1F` | 30 | Reserved for I/O (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
@@ -131,11 +129,9 @@ With `--link`, the keys and the bytes from the host go into the one input buffer
 
 ### 1.6 Pacing
 
-With `--window`, the emulator runs as fast as the host can, as without the window. The microsecond counter (§3) keeps the host's time, so a program that waits on it waits real time, and the screen changes as the program writes it. The cycle counter and the timer count one per step (§3, §4), at the host's rate of steps, tens of megahertz, which varies, so a program that keeps time by the timer or by counting steps runs at a rate of its own. The option `--speed N` runs N steps a second for such a program: at `--speed 1000000`, one step per microsecond, the cycle counter counts at 1 MHz, and a timer period of P cycles lasts P microseconds, where on a board of 100 MHz it lasts P/100.
+With `--window`, the emulator runs as fast as the host can, as without the window. The microsecond counter (§3) keeps the host's time, so a program that waits on it waits real time, and the screen changes as the program writes it. The cycle counter counts one per step (§3), at the host's rate of steps, tens of megahertz, which varies, so a program that keeps time by counting steps runs at a rate of its own. The option `--speed N` runs N steps a second for such a program: at `--speed 1000000`, one step per microsecond, the cycle counter counts at 1 MHz, where on a board of 100 MHz it counts at 100 MHz.
 
 While a program waits, the emulator sleeps. A console read that finds no byte and a read of `TIME_LO` are idle reads, and two idle reads within 1000 steps of each other mean a wait loop. At each step of one, the emulator waits for a key or another event of the window, so a key still reaches the program at once: for up to a millisecond when the loop has read `TIME_LO` within the last 1000 steps, so that a wait on the counter ends at most a millisecond late, and for up to 10 milliseconds when it waits for a key alone. A program that polls less often than once in 1000 steps never sleeps, and runs at full speed. With `--speed`, the pace sleeps instead, and the rule does not apply.
-
-A wait for an interrupt ([ISA.md §7.5](ISA.md#75-waiting)) takes no time on the host, as the emulator counts its steps at once (§3). With `--speed`, the pace runs them at N a second, as any steps. A wait that no request can end, with no timer running, no `--irq` or `--nmi` to come, and no request of the console to come (§1.9), stops a run with an error, unless the run has the window or the link. Then the emulator sleeps until the window closes or the host ends the run. A wait with the console's enable set, under the window, sleeps until a key or a byte from the host comes, and its request ends the wait. So a program that waits for input with `WAIT` sleeps without the rule of the idle reads above. While the timer runs too, the timer's next request ends the wait at once, as above, and the host does not sleep.
 
 ### 1.7 Read counter
 
@@ -174,43 +170,9 @@ The window draws every cell from the font that the base selects. While the font 
 
 The fonts are memory to every access. An instruction fetch reads them as a data read does, `--dump` and the debug link read and write them, and a write to the ROM is dropped from each. `--screen` and `--color` print the codes of the screen as text, whatever the font. The chunky mode (§1.10) draws no font.
 
-### 1.9 Receive interrupt
+### 1.9 Reserved
 
-At `0xFFFFFF02` the emulator and the FPGA implementation map `CONSOLE_IRQ`, with which the console raises IRQ when input comes, so that a program can wait for input with `WAIT` (ISA §7.5) instead of polling.
-
-| Bits | A data read returns | A write |
-|---|---|---|
-| 7..0 | the vector v | sets v |
-| 8 | the enable | sets the enable |
-| 31..9 | 0 | is ignored |
-
-While the enable is 1, the console raises IRQ with vector v when:
-
-1. a byte enters the input while no byte waits,
-2. the input ends, so that a read returns `0x200` (§1.2), or
-3. a write sets the enable from 0 to 1 while a byte waits or the input has ended.
-
-- The request is an edge, not a level. A byte that enters while others wait raises none, so a program reads the input until no byte waits before it waits again. A level would be taken again after each `RTI`, for as long as the byte waits, and the wait loop below would never get back to read it.
-- A request may come for a byte that the program has read already. It only ends a wait once more, for a read that finds no byte.
-- A write of the enable to 0 withdraws no request that is pending, as a stop of the timer does not (§4).
-- The interrupt routine need not acknowledge the request. Taking it is enough.
-- The console is a source of IRQ beside the timer, which goes first (§4).
-- Reset sets v and the enable to 0, with no request pending.
-
-When a byte enters depends on the input. From the window, with `--link` or without, it enters when a key is typed or the host sends it (§1.5), and from a UART when it arrives. From stdin, a file, `--link` without the window ([DEBUG.md §7](DEBUG.md#7-transports)), or the simulation memory of the FPGA core, where a read waits for its byte, the first byte enters at the start of the run, and each one after it when the read before has taken one. So there a program that waits for each byte with `WAIT` runs as one that polls. Input that is dropped while the processor is held or has halted (§1.5, §8) enters nothing, and a halted processor takes no request (ISA §7.1).
-
-A program waits for a byte with E = 0, so that a byte that comes between its read and its `WAIT` leaves a request pending, and the `WAIT` ends at once. With the enable set, and a vector whose routine is only `RTI`:
-
-    :               AND     R14, R14, 0xBFFFFFFF  ; E = 0
-                    MOVE    R1, @0xFFFFFF00
-                    AND[M]  R0, R1, 0x100   ; bit 8: a byte waits
-            ?!Z     JMP     :+
-                    WAIT                    ; ends when a request is pending
-                    OR      R14, R14, 0x40000000  ; E = 1: the request is taken
-                    JMP     :-
-    :               ...                     ; the byte is in R1
-
-The loop can leave a request pending: a byte that enters after E is cleared is read at once, and its request stays. A program that then sets another vector table and E = 1 takes it through that table. So before such a hand-over, a program clears the enable and takes the request: it sets E = 1 and then clears it again, with VBASE still on the table whose routine for v is only `RTI`. A request that a stopped timer leaves pending needs the same.
+The console has no word at `0xFFFFFF02`. It is reserved for I/O (§4).
 
 ### 1.10 Chunky mode
 
@@ -276,11 +238,9 @@ The next 16 words work on the 64-bit operands C and D. Each 64-bit value takes t
 
 These are RISC-V's results for the two special cases. Software never needs to wait for a result. The FPGA implementation starts a new computation at each write to an operand, which may take many cycles, and holds off the acknowledge of a read of a result until the result is ready.
 
-A use of the MPU takes several instructions, and an interrupt may come between them. An interrupt service routine that uses the MPU must therefore read the operands it changes first, and write them back before `RTI`. The results depend only on the operands, so that restores the whole state.
-
 ## 3. Performance counters
 
-The emulator and the FPGA implementation map performance counters at `0xFFFFFF40`–`0xFFFFFF7F`: three 64-bit counters of cycles, instructions, and time, five 64-bit counters of the events of a program, and the fetch statistics of the FPGA implementation.
+The emulator and the FPGA implementation map performance counters at `0xFFFFFF40`–`0xFFFFFF7F`: three 64-bit counters of cycles, instructions, and time, four 64-bit counters of the events of a program, and the fetch statistics of the FPGA implementation.
 
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
@@ -299,61 +259,33 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 | `0xFFFFFF4F` | `SKIP_HI` | bits 63..32 of the skip counter's snapshot | is ignored |
 | `0xFFFFFF50` | `JUMP_LO` | bits 31..0 of the jump counter, and takes a snapshot of it | is ignored |
 | `0xFFFFFF51` | `JUMP_HI` | bits 63..32 of the jump counter's snapshot | is ignored |
-| `0xFFFFFF52` | `INTR_LO` | bits 31..0 of the interrupt counter, and takes a snapshot of it | is ignored |
-| `0xFFFFFF53` | `INTR_HI` | bits 63..32 of the interrupt counter's snapshot | is ignored |
-| `0xFFFFFF54`–`0xFFFFFF5E` | | 0 | is ignored |
+| `0xFFFFFF52`–`0xFFFFFF5E` | | 0 | is ignored |
 | `0xFFFFFF5F` | `TIME_SKIP` | 0 | is ignored, but with `--step-time` the emulator counts a skip of that many wait steps (below) |
 | `0xFFFFFF60`–`0xFFFFFF7F` | | the fetch statistics (MICROARCH.md §8.1), or 0 in the emulator | as MICROARCH.md §8.1 says, or is ignored in the emulator |
 
-- The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false, a control instruction, and `INT`. An interrupt entry for IRQ or NMI does not count, because it is not an instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
-- The **cycle counter** counts the clock cycles since reset while the core runs, and stops when the core is held, paused, or has halted, so a reading after a halt does not change. The emulator has no clock, so it counts one cycle for each instruction, each interrupt entry, and each wait step (below), that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
-- The **microsecond counter** counts microseconds since reset while the core runs, and stops when the core is held, paused, or has halted, like the cycle counter. The FPGA implementation derives it from its clock frequency, so for a clock of 1 MHz or more the count after N cycles is the integer part of N·10⁶ divided by the frequency, whether or not it is a multiple of 1 MHz: it adds 1000000 to an accumulator in each cycle, and counts a microsecond and subtracts the clock frequency in hertz each time the sum reaches it. The emulator counts the host's monotonic time, without the time the host sleeps, in microseconds since reset, less the time the processor was held, paused, or halted. A read of `TIME_LO` reads the host's clock. So a program that waits on the counter waits real time, as on a board, with or without the window and at any speed (§1.6). A console read that waits for input counts as running, as a board polls meanwhile, and so does a wait (below). With the option `--step-time`, the emulator instead counts one microsecond for each step, as its cycle counter counts one cycle, so that a run counts the same each time. A program that needs a time in seconds divides by 1000000, whatever the board.
+- The **instruction counter** counts the instructions that have completed since reset. Every instruction counts, including one whose condition is false and a control instruction. An instruction that reads `INSTR_LO` reads the number of instructions that completed before it.
+- The **cycle counter** counts the clock cycles since reset while the core runs, and stops when the core is held, paused, or has halted, so a reading after a halt does not change. The emulator has no clock, so it counts one cycle for each instruction and each wait step of a skip (below), that is, for each step. Its cycle counter is an approximation and differs from the FPGA implementation's.
+- The **microsecond counter** counts microseconds since reset while the core runs, and stops when the core is held, paused, or has halted, like the cycle counter. The FPGA implementation derives it from its clock frequency, so for a clock of 1 MHz or more the count after N cycles is the integer part of N·10⁶ divided by the frequency, whether or not it is a multiple of 1 MHz: it adds 1000000 to an accumulator in each cycle, and counts a microsecond and subtracts the clock frequency in hertz each time the sum reaches it. The emulator counts the host's monotonic time, without the time the host sleeps, in microseconds since reset, less the time the processor was held, paused, or halted. A read of `TIME_LO` reads the host's clock. So a program that waits on the counter waits real time, as on a board, with or without the window and at any speed (§1.6). A console read that waits for input counts as running, as a board polls meanwhile. With the option `--step-time`, the emulator instead counts one microsecond for each step, as its cycle counter counts one cycle, so that a run counts the same each time. A program that needs a time in seconds divides by 1000000, whatever the board.
 - In the emulator, the cycle counter and the microsecond counter have no fixed ratio, unless with `--step-time`. A program that divides one by the other gets the rate at which the host runs steps, which varies from run to run.
 - The **event counters** count what the program does, not what the processor that runs it does. So the emulator and every FPGA core count the same, and a program reads the same counts on each:
-  - The **data read counter** counts the data reads of ISA §8.2: the operand reads, and the vector table reads of interrupt entries and `INT`. A read of `READ_LO` returns the number of data reads before it, the earlier reads of its own instruction included.
+  - The **data read counter** counts the data reads of ISA §8.2: the operand reads. A read of `READ_LO` returns the number of data reads before it, the earlier reads of its own instruction included.
   - The **store counter** counts the destination writes of ISA §8.2, to a device too, and to a word that ignores them.
   - The **skip counter** counts the instructions whose condition was false.
-  - The **jump counter** counts the instructions that are not skipped and write R15: as their register destination, in mode 000, 001, or 010, or by the side effect of a field, in mode 001, 010, 101, or 110 (ISA §4), and `RTI`. It counts a jump to the next instruction too. It does not count `INT`, an interrupt entry, or an instruction that halts.
-  - The **interrupt counter** counts the interrupt entries for IRQ and NMI, and `INT`. An `INT` that halts does not count.
+  - The **jump counter** counts the instructions that are not skipped and write R15: as their register destination, in mode 000, 001, or 010, or by the side effect of a field, in mode 001, 010, 101, or 110 (ISA §4). It counts a jump to the next instruction too. It does not count an instruction that halts.
   - A read of a counter's low word returns the events of the steps before its instruction, and for the data read counter also the earlier reads of its own instruction. The accesses of the debug link (DEBUG.md) are not the program's, and do not count.
 - Reset sets all the counters and their snapshots to 0. No counter can be written. A program measures an interval as the difference of two readings.
 - A counter wraps from `0xFFFFFFFF_FFFFFFFF` to 0. At one count per cycle at 100 MHz that takes over 5000 years.
 - The **fetch statistics** count what the pipelined FPGA core does in each cycle: a cause for each cycle, and the flushes of its pipeline by cause, to show where the cycles of a program go. They depend on the core, so MICROARCH.md §8.1 describes them. The emulator has none: their words read 0 and ignore writes, and are not memory.
 
-**Waiting.** A processor that waits for an interrupt ([ISA.md §7.5](ISA.md#75-waiting)) runs: the cycle counter, the microsecond counter, and the timer (§4) count on, and the instruction counter and the event counters count nothing. In the FPGA implementation a wait lasts a whole number of clock cycles. In the emulator it lasts a whole number of wait steps, and the cycle counter and the timer count one for each, as for any step. The emulator does not run the wait steps one by one. It counts them at once, up to the step at which the next request comes, from the timer or from `--irq` or `--nmi`, or up to the step limit, with the same result. So the microsecond counter, which keeps the host's time, moves on little during a wait, unless with `--step-time`, where it counts one for each wait step.
-
-**Skipping time.** With `--step-time`, a write of N to `TIME_SKIP` makes the emulator count N wait steps after the step of the write, as for a wait of N steps, without the wait of ISA §7.5. It counts them at once, as those of a wait. So the cycle counter, the microsecond counter, the clock of the time of day (§10), and the timer (§4) move on by N, and the instruction counter and the event counters count nothing. A request ends a skip early, as it ends a wait: the timer's, one of `--irq` or `--nmi`, or one of the console (§1.9), and the rest of the skip is dropped. A skip counts nothing while a request is pending, even with E = 0, and the step limit cuts it short, as it cuts a wait. The steps of a skip count toward the steps of the step limit and of the line the run ends with. A write of 0 skips nothing. Under the debug link, a pause takes effect during a skip, and a single step runs the rest of the skip with the step that follows it ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). The FPGA implementation ignores the write, as it ignores a write of every word of the counters but those of the clock, and so does the emulator without `--step-time`, and the word reads 0 everywhere. With `--no-cycle-counter`, which makes the words of the cycle counter, the microsecond counter, and the clock memory, `TIME_SKIP` stays a device, and a skip counts its steps.
+**Skipping time.** With `--step-time`, a write of N to `TIME_SKIP` makes the emulator count N wait steps after the step of the write, steps in which the processor runs no instruction. It counts them at once, not one by one. So the cycle counter, the microsecond counter, and the clock of the time of day (§10) move on by N, and the instruction counter and the event counters count nothing. The step limit cuts a skip short. The steps of a skip count toward the steps of the step limit and of the line the run ends with. A write of 0 skips nothing. Under the debug link, a pause takes effect during a skip, and a single step runs the rest of the skip with the step that follows it ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)). The FPGA implementation ignores the write, as it ignores a write of every word of the counters but those of the clock, and so does the emulator without `--step-time`, and the word reads 0 everywhere. With `--no-cycle-counter`, which makes the words of the cycle counter, the microsecond counter, and the clock memory, `TIME_SKIP` stays a device, and a skip counts its steps.
 
 A test that runs a program with `--step-time` counts the same each time, but a program that polls through minutes of its own time takes minutes of the host's. With `TIME_SKIP`, a program writes the time to its next poll, in microseconds, where it would spin, and polls again. On a board, and in a run without `--step-time`, the write does nothing, and the program polls more often, with the same result.
 
 **Reading a counter.** Read the low word first, then the high word: `MOVE R1, @CYCLE_LO` then `MOVE R2, @CYCLE_HI`. The read of the low word copies the whole 64-bit counter into the snapshot, and the read of the high word returns the high half of the snapshot. So R2:R1 is the value at the time of the first read, even when the low word wraps from `0xFFFFFFFF` to 0 between the two reads. Each counter has its own snapshot.
 
-An interrupt service routine that reads a counter's low word overwrites its snapshot. If the routine interrupted code between the two reads, that code then reads a high word that may not belong to its low word. So either interrupt service routines do not read the counters, or the code that reads them clears E, the interrupt enable flag (ISA §1.3), around its two reads and NMI service routines do not read them.
+## 4. Reserved
 
-## 4. Timer
-
-The emulator and the FPGA implementation map a timer at `0xFFFFFF10`–`0xFFFFFF1F`. It raises IRQ once every P cycles.
-
-| Address | Name | A data read returns | A write |
-|---|---|---|---|
-| `0xFFFFFF10` | `TIMER_PERIOD` | the period P | sets P, and COUNT, to the value written |
-| `0xFFFFFF11` | `TIMER_COUNT` | COUNT, the cycles left until the next request | is ignored |
-| `0xFFFFFF12` | `TIMER_VECTOR` | the vector v in bits 7..0, and 0 in bits 31..8 | sets v to bits 7..0 of the value written |
-| `0xFFFFFF13`–`0xFFFFFF1F` | | 0 | is ignored |
-
-- While P ≠ 0, COUNT decreases by one at the end of each cycle, the cycle of the write to `TIMER_PERIOD` included. When COUNT reaches 0, the timer raises IRQ with vector v, and COUNT is set to P again. So the first request comes at the end of the P-th cycle, counting from the write, and then one comes every P cycles.
-- P = 0 stops the timer, and COUNT stays 0. A request that is already pending stays pending.
-- The emulator counts one cycle for each step, a wait step included, as its cycle counter does (§3). The FPGA implementation counts clock cycles while the core runs. Like the cycle counter, COUNT stops when the core is held or has halted, and counts on while it waits for an interrupt (§3).
-- The timer and the console's receive interrupt (§1.9) are the sources of IRQ (ISA §7.1). Each one's requests merge only with its own. When both are pending, the timer's is taken first, so that a timer routine's latency stays steady; the console's input waits in its buffer meanwhile. The emulator's `--irq` raises requests of the timer's source, as it stands in for the timer in the tests of the FPGA core.
-- A request keeps the vector it was raised with. If the timer's last request is still pending when it raises the next one, the two merge (ISA §7.1), and the pending one keeps its vector. So a timer whose period is shorter than its interrupt routine, or than a stretch of code with E = 0, loses requests. To keep time, read the cycle counter rather than count interrupts.
-- The interrupt routine need not acknowledge the request. Taking it is enough.
-- Reset sets P, COUNT, and v to 0, with no request pending.
-
-To get an IRQ through vector table entry `0x41` every 100000 cycles, that is, every millisecond at 100 MHz:
-
-                    MOVE    @TIMER_VECTOR, 0x41
-                    MOVE    @TIMER_PERIOD, 100000
-                    OR      R14, R14, 0x40000000  ; E = 1
+`0xFFFFFF02`–`0xFFFFFF1F` are reserved for I/O (§8). No system of this file maps a device there.
 
 ## 5. SD card
 
@@ -438,8 +370,6 @@ The errors in `SD_ERROR`:
 
 **The debug link.** Nothing but reset affects the controller. It runs while the processor is held, paused, or halted, so a host can read and write the card then. A host that does so while a program is paused can restore `SD_CHUNK`, `SD_LBA`, `SD_SELECT`, and the buffer, which it can read first, as reads have no side effects. It cannot restore `SD_ERROR` and the error bit, which its own commands overwrite, nor "ready" and "changed", which an Init or a change of slot changes. So a host that uses the card of a paused program uses only the program's slot, does no Init, waits for the program's command to end before it starts, and lets its own end before the program goes on. While the processor is held or has halted, a host may do anything, since the program starts again from reset.
 
-**Interrupts.** An interrupt or NMI service routine does not use the card. `SD_CHUNK`, `SD_LBA`, `SD_SELECT`, the buffer, and a running command are shared with the program it interrupts.
-
 **The emulator.** `niceemu --sd0 FILE --sd1 FILE` gives a slot an image file, which holds the card's sectors in order. The emulator refuses to start with an image that is empty, or whose size is not a multiple of 512 bytes.
 
 - The emulator always has 2 slots, as the MEGA65 does, so `SD_SLOTS` is 2 with any images or none, and `--sd1` alone puts a card in slot 1 and leaves slot 0 empty.
@@ -478,8 +408,6 @@ A system that serves the debug link over TCP ([DEBUG.md §7](DEBUG.md#7-transpor
 
 **Reset.** A reset of the system sets the IP address to 0, the MAC address to 02:4E:49:43:45:00, and the counts to 0. Unlike the other devices, the station is not reset by a start of the processor ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), nor by the link's clear, so that a host connected over TCP keeps its connection through a start, and a program finds the addresses that an earlier one set. The MAC address is a locally administered one. Two systems on one network need different ones.
 
-**Interrupts.** The station raises no interrupt.
-
 **The emulator.**
 
 - `NET_IP`, `NET_MAC_HI`, and `NET_MAC_LO` are registers with the reset values above, which keep what a program writes. The emulator serves the link where `--link` says, whatever `NET_IP` holds, and a write closes no connection.
@@ -512,7 +440,7 @@ The status, from a read of `ETH_CSR`:
 | 2 | Busy: a frame is being sent |
 | 31..3 | 0 |
 
-A program writes 0 to bits 31..1 of `ETH_CSR`. Bit 1 is reserved for a receive interrupt.
+A program writes 0 to bits 31..1 of `ETH_CSR`. Bit 1 is reserved.
 
 **Enabled.** While "enabled" is 0, the queue is empty, no frame enters it, and a write of `ETH_TX_LEN` sends nothing, so a program that does not use the network sees no frame and sends none. The station answers as it does without the port. A write of `ETH_CSR` with bit 0 at 0 empties the queue and sets `ETH_DROPPED` to 0. So a program that sets "enabled" gets no frame from before.
 
@@ -540,8 +468,6 @@ In the queue's buffer, the bytes after the frame's last byte are not defined. Th
 
 **Reset.** Reset, which a start of the processor gives the devices ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), sets "enabled" to 0, empties the queue, and sets `ETH_DROPPED` and `ETH_CHUNK` to 0. A frame being sent finishes first, so busy may read 1 after reset. The station is not reset (§6), and goes on answering on its own.
 
-**Interrupts.** The port raises no interrupt. An interrupt or NMI service routine does not use it, as `ETH_CHUNK` and the queue are shared with the program it interrupts.
-
 **The emulator.** The emulator has no Ethernet. Its frames come from a file or a UDP socket, and go to a file or the socket, with these options:
 
 - `--eth-in FILE`: the frames that the station receives, one per line, each byte as two hex digits. Spaces between bytes are allowed, a `#` starts a comment that runs to the end of the line, and a line with no bytes is skipped. A line may start with `N:`, a decimal number and a colon: the frame then waits until the program has sent N frames since the emulator started. The lines are taken in order. At each write of `ETH_CSR` that sets "enabled" from 0 to 1, and each write of `ETH_TX_LEN` that sends a frame, every next line whose N has been reached arrives at the station, which serves it or passes it to the queue, where it is dropped and counted if the queue is full. So a run is the same each time, and a test fills the queue on purpose with lines that enter at once.
@@ -556,11 +482,9 @@ The emulator's station serves the frames that a board's does, by the same rules,
 
 A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65), may differ from the emulator in the points below. Its own README has the details.
 
-- **Reserved words.** `0xFFFFFF03`–`0xFFFFFF0F`, `0xFFFFFF80`–`0xFFFFFF86`, `0xFFFFFF90`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF87` for its screen registers, with the mode word of §1.10 at `0xFFFFFF87`, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFD0`–`0xFFFFFFFF` for the debug registers of the link, which it serves in version 8 (**Debug link** below). It keeps the NMI request of version 8, but does not pass it to the core (MJoergen/NiceMonMEGA65#106).
+- **Reserved words.** `0xFFFFFF02`–`0xFFFFFF1F`, `0xFFFFFF80`–`0xFFFFFF86`, `0xFFFFFF90`–`0xFFFFFF9F`, and `0xFFFFFFD0`–`0xFFFFFFFF` are reserved for I/O. A board may use them if it documents them. A system without the clock of §10 has nothing at `0xFFFFFF46`–`0xFFFFFF49`. The emulator treats all these words as ordinary memory for data accesses, and only instruction fetches read 0 ([ISA.md §8.3](ISA.md)). NiceMonMEGA65 uses `0xFFFFFF80`–`0xFFFFFF87` for its screen registers, with the mode word of §1.10 at `0xFFFFFF87`, `0xFFFFFF90`–`0xFFFFFF9F` for its board's devices, and `0xFFFFFFD0`–`0xFFFFFFFF` for the debug registers of the link, which it serves in version 8 (**Debug link** below).
 - **Screen.** A board's screen may be larger than the emulator's 80×28, or show fewer rows. NiceMonMEGA65's has up to 32K words, and shows 28 rows from its `V2.5` (MJoergen/NiceMonMEGA65#157). Its releases before that show 25, so a program written for 28 rows loses its last 3 there. No register tells the rows. The runtime's `NICE_SCREEN_ROWS` is the 28 of §1.1, and a program for a system that shows another number takes it from that system's documents. The color format of §1.1 applies unchanged. The display offset belongs to the board. The emulator's window draws the cursor from the board's cursor registers (§1.4), but has no offset. A board may lack the chunky mode of §1.10, and then its mode word reads 0, so a program finds out (§1.10). A board that has it applies its display offset in the mode too. NiceMonMEGA65 has the mode on the MEGA65 from its `V2.3` (MJoergen/NiceMonMEGA65#144), with 160×112 pixels from its `V2.5` (MJoergen/NiceMonMEGA65#157). Before that it has 160×100, which cover its 25 rows, so a program written for 112 rows of pixels loses its last 12 there. The Nexys4DDR, whose screen has 8192 words, has no mode: its `0xFFFFFF87` reads 0 and takes no write, so a program finds no mode there.
 - **Console input.** A UART or a keyboard feeds the same console at `0xFFFFFF00`, with the same bits (§1.2). A break on the UART may end the line's input: the UART's bytes are then dropped until the next start, and a read returns `0x200` once the FIFO is empty, but the keyboard's bytes still go into the FIFO, and a read returns them. So a monitor that a host leaves keeps running on the keyboard, and a program that reads until the end still ends with the host's input. A keyboard sends no break. A board's keyboard gives the bytes of the window's keys (§1.5), and may have more keys.
-- **NMI.** No device of this file raises NMI. The debug link's request is a source of NMI ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), and the only one of the emulator but for `--nmi`, its own source, which goes first. A board may have more, such as a button or a watchdog, and merges them into the core's one NMI port, each request merging only with its own (ISA.md §7.1). NiceMonMEGA65 does not wire the link's request yet (MJoergen/NiceMonMEGA65#106).
-- **Receive interrupt.** A system may leave out the receive interrupt of §1.9. Then it has nothing at `0xFFFFFF02`, and the timer is its only source of IRQ. A board raises the request from its input FIFO, so one request covers its keyboard and its UART. NiceMonMEGA65 does not have it yet (MJoergen/NiceMonMEGA65#104).
 - **Input FIFO.** A system's input FIFO may lose bytes. NiceMonMEGA65 drops a UART byte that arrives when the FIFO is full, with the link's `o` notice ([DEBUG.md §4](DEBUG.md#4-notices)), or after a break. Over a transport with flow control, such as TCP, the byte waits up to 50 ms for room first ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). Input that arrives while the processor is held or has halted is dropped, as by `niceemu --link`, and input that arrives while it is paused waits in the FIFO ([DEBUG.md §1](DEBUG.md#1-the-byte-stream)). A keyboard byte waits until the FIFO has room for two, so that a UART byte still finds room.
 - **SD card slots.** A system without an SD card controller has nothing at `0xFFFFFFA0`–`0xFFFFFFAF`. The MEGA65 has 2 slots: the microSD slot at the back, and the full-size slot underneath, the only one with write protect, whose card detect does not work on the R3 (§5). NiceMonMEGA65 numbers them 0 and 1 (MJoergen/NiceMonMEGA65#55). The Nexys4DDR has 1, its microSD slot.
 - **Network station.** A system that serves the debug link only on a UART, or not at all, has nothing at `0xFFFFFFB0`–`0xFFFFFFBF`. NiceMonMEGA65 has the station of §6 there, on the MEGA65 and the Nexys4DDR (MJoergen/NiceMonMEGA65#78).
@@ -599,8 +523,7 @@ so a word or a halfword through a window never straddles two words.
 - **One access.** A read or a write through a window is one data access
   in the sense of ISA §8.2, and the counters of §3 count it once. A
   write changes only its byte or halfword, as one access: nothing,
-  an interrupt routine included, can write the word between a read and
-  a write of it.
+  can write the word between a read and a write of it.
 - **The first 64M words.** W is below `0x04000000`, so a window reaches
   only words `0x00000000`–`0x03FFFFFF`, and never the I/O range, the
   screen, or the font.
@@ -611,9 +534,6 @@ so a word or a halfword through a window never straddles two words.
   value runs (ISA §8.2): the pipelined core's check of
   [MICROARCH.md §5.5](MICROARCH.md#55-self-modifying-code) compares the
   address of the store, not the address of the word.
-- **Vector tables.** The read of a vector table entry is a data access
-  (ISA §7.3), so a VBASE of `0x100000`–`0x5FFFFF` puts the table in a
-  window, where an entry is read from another word.
 - **The debug link** reads and writes through the windows as the
   processor's data accesses do. A program image has no words in
   `0x10000000`–`0x5FFFFFFF`.
@@ -632,12 +552,12 @@ The emulator and the FPGA implementation map a clock of the time of day at `0xFF
 | `0xFFFFFF48` | `CLOCK_SEC_HI` | bits 63..32 of the seconds' snapshot | stages bits 63..32 of the seconds |
 | `0xFFFFFF49` | `CLOCK_STATUS` | "set" in bit 0, and 0 in bits 31..1 | clears "set", whatever the value |
 
-- **Reading.** Read `CLOCK_USEC` first, then `CLOCK_SEC_LO` and `CLOCK_SEC_HI`. The read of `CLOCK_USEC` copies the seconds into the snapshot in the same instant, so the three give one time, even when a second ends between the reads. The rule of §3 for interrupt service routines applies to this snapshot too.
+- **Reading.** Read `CLOCK_USEC` first, then `CLOCK_SEC_LO` and `CLOCK_SEC_HI`. The read of `CLOCK_USEC` copies the seconds into the snapshot in the same instant, so the three give one time, even when a second ends between the reads.
 - **Setting.** Write `CLOCK_SEC_LO` and `CLOCK_SEC_HI`, in either order, then `CLOCK_USEC`. The writes of the seconds only stage them, so the clock never shows a half-set time. The write of `CLOCK_USEC` sets the clock to the staged seconds and the microseconds written, at once, and sets "set" to 1. A value of 1000000 or more sets 999999. The staged seconds keep their value, so a second write of `CLOCK_USEC` sets the same second again.
 - **"Set"** says that the clock holds a time: 0 after a reset of the system, and 1 once a program has set the clock, or the system has set it from a source of its own. A program that finds it 0 does not know the time. `time()` of the C library then returns -1.
 - **It always runs.** The clock counts on while the processor is held, paused, halted, or waiting, and a start over the debug link (DEBUG.md §6) leaves it, its snapshot, the staged seconds, and "set" as they are. Only a reset of the system, when the FPGA is loaded or the emulator starts, sets them all to 0. So the time survives a start of a program, unlike the microsecond counter of §3. The seconds wrap from `0xFFFFFFFF_FFFFFFFF` to 0.
 - The FPGA implementation counts the microseconds from its clock frequency, as the microsecond counter does (§3), but in every cycle.
-- The emulator reads the host's clock of the time of day, plus an offset that a write sets, so a program that sets the clock sees the time it set run on. "Set" is 1 from the start, as the host knows the time. With `--step-time`, the clock instead counts one microsecond for each step, a wait step included, from 0 with "set" 0, so that a run reads the same each time. With `--no-cycle-counter`, the four words are memory, as are those of the cycle counter and the microsecond counter.
+- The emulator reads the host's clock of the time of day, plus an offset that a write sets, so a program that sets the clock sees the time it set run on. "Set" is 1 from the start, as the host knows the time. With `--step-time`, the clock instead counts one microsecond for each step, a wait step of a skip included, from 0 with "set" 0, so that a run reads the same each time. With `--no-cycle-counter`, the four words are memory, as are those of the cycle counter and the microsecond counter.
 - A system may set the clock from a source of its own, such as a real-time clock with a battery, at a reset of the system, or by its ROM at its start after the reset, and then set "set" too (§8). It may take the time in local time when the source keeps it so.
 
 To read the time into R3:R2 seconds and R1 microseconds:
@@ -937,8 +857,7 @@ The fault is a flag for a bug, and not a way to a deeper stack.
 
 - **Calls.** A routine may use 8 values of the stack, and leaves the depth as it found it. So a caller may keep up to 8 values on the stack across a call. A function of §11.3 needs more: its operands, and k values above them, up to 15 values in all for `POW`. [ABI.md](../runtime/ABI.md) takes this rule with nicewasm's use of the FPU, and the routines of `math.h` that run a function.
 - **C.** Program size comes before speed. So nicewasm translates a float operation of wasm as a call of a short routine of the float library, which writes the FPU's registers, and not as the accesses themselves, which take some 20 words at every use for a binary64 operation. The float operations take 289 words of the library. nicewasm's `--inline-fpu` writes the accesses inline, for speed: on `bench/float.c` it costs 2.5% more words and saves 42% of the cycles on the pipelined core. The functions of `math.h` are such routines too, on the functions of phase 2, in 194 words more. A program that uses floats is joined with the whole library, 483 words.
-- **Interrupts.** An interrupt service routine does not use the FPU. Its state is up to 16 values, the depth, and the flags, which is far more than the math unit's operands. This rule goes if #162 removes the interrupts.
-- **Time.** The longest commands are `DIGITS n`, which runs `SCALE10` more than once, `POW`, `TAN`, and `FMOD`, which takes one step for each bit of the difference of the exponents, up to some 2100. They take some thousands of cycles, some tens of microseconds at 100 MHz. An interrupt, and the pause and the step of the debug link, wait for the command that runs. In the FPGA implementation, `hdl/src/fpu.vhd`, `ADD`, `SUB`, and `MUL` take some 20 cycles, and `DIV` and `SQRT` some 70, so the sequences multiply by the constants of `CONST` where a correctly rounded quotient is not needed. `XMUL`, a product and then its error, takes some 60 cycles, `ISQRT`, which is `SQRT` toward zero and then a rounding, some 90, `FMOD` up to some 2100, and `DIGITS` up to some 3400. A function runs its steps one after the other, a command in the time it takes alone, so `SIN` and `COS` take up to some 1600 cycles, `TAN` up to some 2100, `ASIN`, `ACOS`, and `ATAN` up to some 1100, `ATAN2` up to some 1300, `LN`, `LOG2`, `LOG10`, and `EXP` up to some 1200, `POW2` up to some 1100, `HYPOT` up to some 550, and `POW` up to some 3000.
+- **Time.** The longest commands are `DIGITS n`, which runs `SCALE10` more than once, `POW`, `TAN`, and `FMOD`, which takes one step for each bit of the difference of the exponents, up to some 2100. They take some thousands of cycles, some tens of microseconds at 100 MHz. The pause and the step of the debug link wait for the command that runs. In the FPGA implementation, `hdl/src/fpu.vhd`, `ADD`, `SUB`, and `MUL` take some 20 cycles, and `DIV` and `SQRT` some 70, so the sequences multiply by the constants of `CONST` where a correctly rounded quotient is not needed. `XMUL`, a product and then its error, takes some 60 cycles, `ISQRT`, which is `SQRT` toward zero and then a rounding, some 90, `FMOD` up to some 2100, and `DIGITS` up to some 3400. A function runs its steps one after the other, a command in the time it takes alone, so `SIN` and `COS` take up to some 1600 cycles, `TAN` up to some 2100, `ASIN`, `ACOS`, and `ATAN` up to some 1100, `ATAN2` up to some 1300, `LN`, `LOG2`, `LOG10`, and `EXP` up to some 1200, `POW2` up to some 1100, `HYPOT` up to some 550, and `POW` up to some 3000.
 - **The emulator** computes with the host's binary64 values, and gives the same bits as the FPGA implementation, since the operations are IEEE 754's and the sequences are part of this section. With `--no-fpu`, the eight words are ordinary memory, as on a system without the FPU.
 
 To add two binary32 values in R1 and R2, and leave the binary32 sum in R3 and the stack as it was:

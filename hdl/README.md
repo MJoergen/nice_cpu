@@ -18,9 +18,9 @@ what each does. `wb_dmux` is [the data bus decoder](#the-data-bus-decoder),
 which puts the memory and the devices on the core's data bus. The debug
 link's side port is for a client inside the system, such as a debugger on
 the board ([The debug link](#the-debug-link)). `make slow` in the top
-directory runs the benchmark, Dhrystone, CoreMark, the float benchmark
-(`float` and `float_inline`), and the stride sweeps on both cores at
-once, and with them `make -C emulator fpu-long` and the C library's
+directory runs the benchmark, Dhrystone, CoreMark, and the float
+benchmark (`float` and `float_inline`) on both cores at once, and with
+them `make -C emulator fpu-long` and the C library's
 fuzz, `make -C runtime/libc fuzz`. `release.py check` records what it
 and `make timing` found in the release stamp
 ([release/RELEASE.md](../release/RELEASE.md)).
@@ -34,7 +34,6 @@ and `make timing` found in the release stamp
 - [The debug link](#the-debug-link)
 - [The memory model](#the-memory-model)
 - [The console](#the-console)
-- [The timer](#the-timer)
 - [The math unit](#the-math-unit)
 - [The performance counters](#the-performance-counters)
 - [The clock of the time of day](#the-clock-of-the-time-of-day)
@@ -69,26 +68,23 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 
 | Target | What it runs | Takes |
 |---|---|---|
-| `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 13 minutes in GHDL on 20 CPUs, bound by the interrupt sweeps of `hazard.nasm` (2026-11-18), and 18 in nvc, bound by the same (2026-11-16) |
+| `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 5 minutes in GHDL on 20 CPUs (2026-11-22) |
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
 | `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
 | `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 11 minutes on 20 CPUs, 40 with `FLOW=timing` |
 | `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 13 on each core in CI; several times longer in GHDL |
-| `make strides` | `pcfx` and `sidefx` swept with strides 17, 31, and 64 on `CORE`. | 6 minutes on the pipelined core |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |
 | `make random-sweep` | Seeds 1 to `RANDOM_LAST` (1000) of `make random` on each core of `CORES`. | an hour or more |
-| `make sweep` | `pcfx` and `sidefx` with one interrupt per run on `CORE`, after a change to the interrupt path. | 3.8 hours on the pipelined core and 2 on the multi-cycle one |
 | `make typecheck` | mypy on the Python scripts. | seconds |
 
 `CORE` is `pipeline` by default, or `multicycle`, and `CORES` both.
 
 `SIM=nvc` runs the simulations in [nvc](https://www.nickg.me.uk/nvc/)
 instead, tested with nvc 1.20 locally and 1.23.0 in CI. Its traces are byte for byte those of
-GHDL, and it is several times faster on the long runs (`make programs`,
-`make sweep`, and the benchmark in `bench/`). On short runs it is slower,
-because its compiler takes about a second of CPU time on each: `make test`
-took 15 minutes in nvc and 5 in GHDL on 20 CPUs. GHDL is still needed for
+GHDL, and it is several times faster on the long runs (`make programs`
+and the benchmark in `bench/`). On short runs it is slower, because its
+compiler takes about a second of CPU time on each. GHDL is still needed for
 the synthesis check of `make test` and for `make formal`. The top-level
 `make slow` runs in nvc.
 [sim.mk](sim.mk) holds the commands of both: nvc analyzes into
@@ -97,8 +93,7 @@ for `SIM`.
 
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
 synthesize both cores, the math unit, the FPU and its arithmetic unit,
-the performance counters, the clock of the time of day, the timer, the
-console's receive interrupt, the merge of the IRQ sources, the fetch
+the performance counters, the clock of the time of day, the fetch
 statistics, the data bus decoder, the debug link, the SD card
 controller, the network station, and the port for Ethernet frames
 (`ghdl --synth`), and runs the tests, those of the cores once for each
@@ -106,10 +101,9 @@ core. Everything it makes goes in `build/`.
 `make clean` removes it.
 
 The runs go in parallel, one per CPU, or as many as `-j` gives, and
-their PASS and FAIL lines come in the order they finish. The interrupt
-sweeps and `make programs` run many simulations each, from a pool of
-threads in `test/irq_sweep.py` and `test/programs.py`. Under make, each
-of those simulations takes a token from make's jobserver first
+their PASS and FAIL lines come in the order they finish. `make programs`
+runs many simulations, from a pool of threads in `test/programs.py`.
+Under make, each of those simulations takes a token from make's jobserver first
 (`test/core_runs.py`), so that all of them and make's own runs together
 stay within `-j`, also under the top-level `make test`. Each run leaves
 its files in a directory of its own, `build/run/GROUP/NAME`, where GROUP
@@ -141,28 +135,15 @@ and the same two generics: a system instantiates `pipeline` of
 | `clk_i`, `rst_i` | The clock, and the reset, synchronous and active high. |
 | `ibus_cyc_o`, `ibus_stb_o`, `ibus_stall_i`, `ibus_ack_i`, `ibus_addr_o`, `ibus_data_i` | The instruction bus: a pipelined Wishbone B4 master, read only, 64 bits wide. The address names a pair of words, 2a and 2a + 1, with word 2a in bits 31..0 ([The memory model](#the-memory-model)). |
 | `dbus_cyc_o`, `dbus_stb_o`, `dbus_stall_i`, `dbus_ack_i`, `dbus_we_o`, `dbus_addr_o`, `dbus_data_o`, `dbus_data_i` | The data bus: a pipelined Wishbone B4 master, 32 bits wide, read and write. |
-| `nmi_valid_i`, `nmi_ready_o`, `nmi_vector_i`, `irq_valid_i`, `irq_ready_o`, `irq_vector_i` | The interrupt requests of ISA.md §7, NMI and IRQ: a valid/ready handshake and an 8-bit vector each (below). |
 | `pause_i`, `paused_o` | A debugger's pause (below). |
-| `waiting_o` | 1 while the core waits after `WAIT` with no request valid, also while paused (ISA.md §7.5), for bit 6 of the debug link's control register. |
 | `brk_addr_i`, `brk_en_i` | The breakpoints of DEBUG.md §6: `G_BREAKS` addresses, a `t_brk_addrs` of `src/trace_pkg.vhd`, and one enable bit each (below). |
 | `wch_addr_i`, `wch_en_i`, `wch_hit_o`, `wch_pc_o` | The watchpoints of DEBUG.md §6: `G_WATCHES` addresses, a `t_wch_addrs` of `src/trace_pkg.vhd`, and two enable bits each, of the reads and of the writes; and while paused, those that the step before the pause hit, and the address of that step (below). The inputs default to 0. |
 | `reg_we_i`, `reg_idx_i`, `reg_data_i` | A write of a register while the core is paused, for a debugger (below). They default to 0. |
 | `halted_o`, `halt_reason_o` | 1 once the core has halted and no bus cycle is open, and why, a `t_halt` of `src/trace_pkg.vhd` (below). |
-| `instret_o` | 1 for one cycle for each completed instruction, but not for an interrupt entry, for the instruction counter (DEVICES.md §3). |
-| `wstep_o` | 1 for one cycle for each wait step (ISA.md §7.5), for a timer that counts steps, as the tests' does. A system leaves it open. |
+| `instret_o` | 1 for one cycle for each completed instruction, for the instruction counter (DEVICES.md §3). |
 | `regs_o` | R0 to R15 from the core's registers, a `t_regs`, for a monitor that shows them (below). |
-| `in_service_o`, `after_rti_o`, `saved_pc_o`, `saved_sr_o` | The hidden state of ISA.md §1.4 from the core's registers, as `regs_o`, for bits 7 and 8 and the words `0xFFFFFFD0` and `0xFFFFFFD1` of the debug link (DEBUG.md §6). A system without a debugger leaves them open. |
 | `retire_o` | One report per step, a `t_retire`, for the trace writer. Simulation only. |
 | `stats_o` | The pipelined core only: what the core did two cycles before, a `t_fetch_events` of `src/pipe_pkg.vhd`, for the fetch statistics. |
-
-Interrupt requests use valid/ready ports, with an 8-bit vector each. A device
-holds `valid` until the core raises `ready`, and the NMI vector with it. The
-IRQ vector may change meanwhile, as the merge of two sources changes it, and
-the core takes the one of the cycle of `ready`. The core raises it
-for one cycle when it takes the request, the multi-cycle core in
-`BOUNDARY` and the pipelined core in WRITE. `ready` depends
-combinationally on `valid`, so a device must not make `valid` depend
-combinationally on `ready`.
 
 `halted_o` is 1 once the core has halted and no bus cycle is open: CYC
 is 0 on both buses, so every ACK owed has come. Only reset restarts it.
@@ -180,12 +161,10 @@ before. A reset clears it. `halt_code` in `trace_pkg` gives its code in
 DEBUG.md §6. So a system need not read the reason off `retire_o`.
 
 `pause_i` and `paused_o` are for a debugger (MICROARCH.md §6.1). While
-`pause_i` is 1, the core stops at the next step boundary, where it would
-take an interrupt, whatever `in_service` and `after_rti` are, and ahead of
-an interrupt. `paused_o` is 1 there once no bus cycle is open, as for
-`halted_o`. When `pause_i` is 0 while the core is paused, it goes on and
-runs one step, which may be an interrupt entry, whatever `pause_i` is
-then. So one cycle of `pause_i` = 0 while the core is paused runs exactly one step, and `paused_o`
+`pause_i` is 1, the core stops at the next step boundary. `paused_o` is
+1 there once no bus cycle is open, as for `halted_o`. When `pause_i` is
+0 while the core is paused, it goes on and runs one step, whatever
+`pause_i` is then. So one cycle of `pause_i` = 0 while the core is paused runs exactly one step, and `paused_o`
 drops for at least a cycle. A halted core ignores `pause_i`, and
 `paused_o` stays 0, so a system that raises `pause_i` waits for `paused_o`
 or `halted_o`. `pause_i` must come from a flip-flop, and must not depend
@@ -198,13 +177,12 @@ Both cores have the breakpoints of DEBUG.md §6 (MICROARCH.md §6.1): the
 generic `G_BREAKS`, from 0 to 8, and the ports `brk_addr_i`, a
 `t_brk_addrs` of `src/trace_pkg.vhd`, and `brk_en_i`, one bit each, from
 flip-flops. Breakpoints from `G_BREAKS` up are ignored. A breakpoint
-fires after the checks for a pause and an interrupt, so an interrupt
-entry goes first, as in niceemu. It does not depend on `in_service` or
-`after_rti`, and the first step after a pause is exempt. The multi-cycle
+fires after the check for a pause, and the first step after a pause is
+exempt. The multi-cycle
 core compares R15 in `BOUNDARY`. The pipelined core compares the address
 of each instruction in DECODE, and pauses on the flag in WRITE, so a
 breakpoint written while it runs may miss an instruction that DECODE
-holds already (ASSUMPTIONS.md, items 20 to 22). At a breakpoint the core
+holds already (ASSUMPTIONS.md, items 14 and 15). At a breakpoint the core
 pauses, and stays paused until `pause_i` has been 1 and is 0 again. So a
 system sees `paused_o` rise while `pause_i` is 0, raises `pause_i`, and
 then goes on or steps as after any pause. It finds the breakpoint by R15
@@ -216,10 +194,9 @@ the generic `G_WATCHES`, from 0 to 4, and the ports `wch_addr_i`, a
 `t_wch_addrs`, and `wch_en_i`, two bits each, bit 2i for the reads of
 watchpoint i and bit 2i + 1 for its writes, from flip-flops. Watchpoints
 from `G_WATCHES` up are ignored. The core checks each data access
-against them: the operand reads, the store, and the vector read of an
-entry or of `INT`. After a step that hits one, the core pauses at the
-step boundary, before a pause request and an interrupt, and stays paused
-as at a breakpoint. `wch_hit_o` has a bit set for each watchpoint that
+against them: the operand reads and the store. After a step that hits
+one, the core pauses at the step boundary, before a pause request, and
+stays paused as at a breakpoint. `wch_hit_o` has a bit set for each watchpoint that
 the step hit, and `wch_pc_o` is the address of the step: R15 at its
 start. Both hold while the core is paused, and the go on clears
 `wch_hit_o`. While a watchpoint is enabled, the pipelined core holds
@@ -231,8 +208,7 @@ one without watchpoints.
 (DEBUG.md §6, MICROARCH.md §6.1). In a cycle where the core is paused,
 `pause_i` is 1, and `reg_we_i` is 1, the core writes `reg_data_i` into
 the register `reg_idx_i`, as a register-direct write of an instruction
-does: R0 stays 0, and R14 gets bit 24. No flags are computed, and the
-hidden state stays. In every other cycle, the cycle in which `pause_i`
+does: R0 stays 0, and R14 gets bit 24. No flags are computed. In every other cycle, the cycle in which `pause_i`
 falls included, `reg_we_i` changes nothing. The write is on `regs_o` in
 the next cycle, and the core goes on from a written R15. The ports come
 from flip-flops, and default to 0, so a system without a debugger leaves
@@ -259,12 +235,9 @@ of `src/pipeline.vhd` rely on them:
   a store back past a later fetch.
 - Up to 8 instruction requests and 4 data requests are in flight. A slave
   that cannot take more raises STALL.
-- A device holds `valid` until `ready`, and the NMI vector with it, and
-  `valid` may not depend combinationally on `nmi_ready_o` or
-  `irq_ready_o`, which depend combinationally on `valid`.
 - `pause_i` comes from a flip-flop, and does not depend combinationally on
-  the core's outputs. It feeds the flush, `nmi_ready_o`, and
-  `irq_ready_o`, and the core's timing at 100 MHz is tight. A system that
+  the core's outputs. It feeds the flush, and the core's timing at
+  100 MHz is tight. A system that
   raises it waits for `paused_o` or `halted_o`.
 
 ### Timing
@@ -355,7 +328,7 @@ pipeline classifies the cycle a cycle later, which wins back most of it.
 - `dbus_ack_i` goes into WRITE's retire and so into FETCH, through 10 LUT
   levels. A system should drive it from a register, or from little logic,
   not from an address decode and a wait-state mux.
-- A store or a vector read leaves DBUS's register. `dbus_addr_o` and
+- A store leaves DBUS's register. `dbus_addr_o` and
   `dbus_data_o` have 2.6 ns or more in every run (the least is
   `dbus_data_o` on the MEGA65), and most have 4 ns or more. Read data goes
   into WRITE only for a register write.
@@ -366,22 +339,20 @@ pipeline classifies the cycle a cycle later, which wins back most of it.
 
 ## The multi-cycle core
 
-`multicycle` runs one step at a time, either one instruction or one interrupt
-entry, in the order of ISA.md §5. It is meant to be simple and obviously
+`multicycle` runs one instruction at a time, in the order of ISA.md §5. It is meant to be simple and obviously
 right, not fast: an instruction takes about ten cycles.
 
 | State | What it does |
 |---|---|
-| `BOUNDARY` | Pauses while `pause_i` is 1, takes a pending NMI or IRQ (ISA.md §7.1), stops at a breakpoint, or starts an instruction. After `WAIT`, it stays, one wait step per cycle, until a request is valid (MICROARCH.md §6.2). |
+| `BOUNDARY` | Pauses while `pause_i` is 1, stops at a breakpoint, or starts an instruction. |
 | `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
 | `COND` | Tests the condition, and runs a control instruction. |
 | `SRC` | Evaluates s0, then s1, with their side effects. |
 | `MOD33` | For `C<C` and `C>C` only, reduces the count mod 33. |
 | `EXEC` | Computes the result, writes the destination, and updates the flags. |
 | `DEST_ADJ` | For a register destination with mode 001 or 010 only, steps the register after the result. |
-| `VEC` | Reads the vector table entry for IRQ, NMI, and `INT`. |
 | `RETIRE` | Reports the step on `retire_o`. |
-| `FETCH_WAIT`, `SRC_WAIT`, `DEST_WAIT`, `VEC_WAIT` | Wait for the ACK of the read that `FETCH`, `SRC`, or `VEC` issued, or of the store that `EXEC` issued. |
+| `FETCH_WAIT`, `SRC_WAIT`, `DEST_WAIT` | Wait for the ACK of the read that `FETCH` or `SRC` issued, or of the store that `EXEC` issued. |
 | `PAUSED` | Waits while `pause_i` is 1, and after a breakpoint until `pause_i` has been 1, then goes back to `BOUNDARY` for one step (MICROARCH.md §6.1). |
 | `HALTED` | Entered from `RETIRE` when the step halted. Only reset leaves it. |
 
@@ -414,8 +385,8 @@ data bus port, each an entity of its own:
 | FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight, into a ring of 16 words. Presents the next four to DECODE. |
 | DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4), with a skid register for one that PREPARE does not take. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always", and for a conditional `ADD R15, R15, c` with a negative `c`. |
 | PREPARE | `pipe_prepare` | Reads the registers and forms every operand value and address, reduces the shift count, tests the condition when it can, and issues the data reads. |
-| WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, takes interrupts, and runs the control instructions. Its one bypass is the value it wrote last. |
-| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store or a vector read goes onto the bus. |
+| WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, and runs the control instructions. Its one bypass is the value it wrote last. |
+| DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store goes onto the bus. |
 
 `pipeline` connects the parts.
 Each stage holds one item and passes it on when the next stage frees
@@ -423,8 +394,8 @@ itself. DECODE keeps a micro-operation that PREPARE does not take in a
 skid register, so that its own registers do not wait on PREPARE. Each part keeps its state in registers, but some of the signals
 between them are combinational, as each part's header lists: PREPARE
 decides on a data read with WRITE's decisions of the same cycle, a flush
-reaches every stage at once. Its stores and vector reads go out from a
-register in DBUS, a cycle later. In the best case one micro-operation retires each cycle.
+reaches every stage at once. Its stores go out from a register in DBUS,
+a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
 stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
 [bench/](../bench/README.md) takes about 1.4 cycles per instruction
@@ -464,9 +435,9 @@ micro-operation may still change SR, otherwise in WRITE. A data read waits
 in PREPARE until the core is certain to run its instruction, as
 MICROARCH.md §5.3 asks: the condition is true, the older micro-operation
 in WRITE cannot jump, halt, or store into fetched code and has issued its
-store, no interrupt can be taken first, and every older instruction is
-counted on `instret_o`. Stores and vector reads leave from WRITE, through
-DBUS's register. The ACKs
+store, no pause can be taken first, and every older instruction is
+counted on `instret_o`. Stores leave from WRITE, through DBUS's
+register. The ACKs
 come back in order, and at most 4 data requests are in flight, so the
 core needs the data bus decoder of `src/wb_dmux.vhd`, which `tb_core`
 has.
@@ -474,9 +445,9 @@ has.
 When the pipelined core halts, `tb_core` prints the cycles from reset, and
 those in which a data read waited only for its condition or for an older
 micro-operation in WRITE that is not a store: rule 1 or 2 of MICROARCH.md
-§5.3. A wait for a store, an interrupt, an operand, or the bus does not
+§5.3. A wait for a store, a pause, an operand, or the bus does not
 count. It charges each wait to the micro-operation in PREPARE, and adds it
-up when that goes on to WRITE or is dropped by a flush or an interrupt:
+up when that goes on to WRITE or is dropped by a flush:
 
     Read waits: C cycles; went on: S for the condition, W for an older micro-operation; dropped: S, W
 
@@ -485,16 +456,15 @@ CORE=pipeline` in `bench/` prints the line for the benchmark
 ([bench/README.md](../bench/README.md)), and `test/readwait.nasm` checks
 it.
 
-WRITE flushes the pipeline after a jump that DECODE did not resolve, after
-`RTI`, `INT`, an interrupt entry, and a halt, and after a store into a word
+WRITE flushes the pipeline after a jump that DECODE did not resolve,
+after a halt, and after a store into a word
 fetched but not retired: the range of words that `pipe_fetch` holds or
 will receive, and the instructions in DECODE's and PREPARE's registers
 (MICROARCH.md §5.5).
 
-An interrupt is taken in WRITE before an instruction, unless the
-instruction has issued a data read. Then it is taken after it. A pause is
-taken at the same boundaries, and also inside an interrupt routine and
-after `RTI`, ahead of an interrupt. It flushes the pipeline, so that FETCH
+A pause is taken in WRITE before an instruction, unless the instruction
+has issued a data read. Then it is taken after it. It flushes the
+pipeline, so that FETCH
 waits at R15, and WRITE waits in `PAUSED_ST`. PREPARE issues no first data
 read of a new instruction while `pause_i` is 1, but for the first step
 after a pause (MICROARCH.md §5.3, rule 4). `instret_o`
@@ -511,7 +481,7 @@ asserts, in simulation, the invariants that its design relies on.
 `G_SLAVES` slaves. The instantiator decodes the address into `sel_i`, the
 index of the slave, so the decoder holds no address map. In `tb_core`,
 slave 0 is the memory model, the default slave, then come the math unit,
-the performance counters, the timer, the fetch statistics, the SD card
+the performance counters, the fetch statistics, the SD card
 controller, the network station, the port for Ethernet frames, and the
 clock of the time of day. CYC, WE, ADDR, and the write data go to every slave
 directly.
@@ -543,8 +513,8 @@ halt as inputs, drives `hold_o`, `rom_hide_o`, and `pause_o`, takes
 clear the memory with `clear_o` and `clear_done_i`. A write with bits 4 and
 5 to a paused core is a step: `pause_o` drops for one cycle and rises
 again, and the link does not own the memory until the core has paused or
-halted again. The board stops the counters and the timer while the core is
-paused, and not during a step. The clock of the time of day does not stop,
+halted again. The board stops the counters while the core is paused, and
+not during a step. The clock of the time of day does not stop,
 and a start, which resets the core, leaves it. While the processor runs, a read of R0 to
 R15 returns `regs_i` of that cycle, and otherwise the copy of the last halt
 or pause.
@@ -555,26 +525,9 @@ one cycle, with `reg_idx_o` and `reg_data_o`, which connect to the core's
 new value at once. A `W` that reaches R0 to R15 while bit 4 reads 0 gets
 `e04`, and writes none of its words (DEBUG.md §6).
 
-`waiting_i` connects to the core's `waiting_o`. Bit 6 of the control
-register reads it while the processor is neither held nor halted
-(DEBUG.md §6). A board without it leaves it open, and bit 6 reads 0.
-`in_service_i`, `after_rti_i`, `saved_pc_i`, and `saved_sr_i` connect to
-the core's `in_service_o`, `after_rti_o`, `saved_pc_o`, and `saved_sr_o`.
-The link keeps and reads them as it does `regs_i`, for bits 7 and 8 and
-the words `0xFFFFFFD0` and `0xFFFFFFD1`, which take no write. The
-reserved words, `0xFFFFFFD2`, `0xFFFFFFD3`, and
+Bits 6 to 10 of the control register read 0 (DEBUG.md §6). The reserved
+words, `0xFFFFFFD0`–`0xFFFFFFD3`, `0xFFFFFFD7`, and
 `0xFFFFFFDC`–`0xFFFFFFDF`, read 0 and take no write.
-`nmi_pending_i` and `irq_pending_i` connect to the core's `nmi_valid_i`
-and `irq_valid_i`, for bits 9 and 10, which read them while the processor
-is neither held nor halted. A board without these inputs leaves them
-open, and they read 0.
-`nmi_valid_o`, `nmi_ready_i`, and `nmi_vector_o` are the NMI request of
-`0xFFFFFFD7` (DEBUG.md §6), for the core's NMI port. A write with bit 8
-set, while the processor is neither held nor halted, raises
-`nmi_valid_o` with the vector of bits 7 to 0, which stays, with the
-vector stable, until `nmi_ready_i`, or a hold, which resets the core in
-the same cycle. A board with another source of NMI merges them, and
-keeps the vector stable until the core's ready, as the cores ask.
 
 The host's line ends with `rx_break_i`, a pulse for a UART break: `eoi_o`
 rises, the link drops the host's console bytes, and the board's console
@@ -657,54 +610,7 @@ emulator with stdin from `/dev/null`. `tb_core` passes its own
 with `emulator/test/input.txt`.
 The read counter is at `0xFFFFFF01`, as in the emulator. A data read returns
 the number of data reads of it since the last write, and a write sets that
-number. The rest of the I/O range is plain memory, as in the emulator,
-but for `0xFFFFFF02`, which `tb_core` sends to the console's receive
-interrupt (below). A read of the console that takes a byte raises
-`console_took_o` in the cycle it is accepted, as the next byte or the end
-enters then.
-
-## The timer
-
-`timer` holds the timer of DEVICES.md §4: `TIMER_PERIOD`, `TIMER_COUNT`, and
-`TIMER_VECTOR` at offsets 0, 1, and 2. Its bus port is a pipelined Wishbone
-slave with a 4-bit address, like that of the performance counters. The bus
-decoder selects it for `0xFFFFFF10`–`0xFFFFFF1F`.
-
-It counts down in each cycle with `tick_i` high. A system drives `tick_i`
-with "the core is running", so that the timer counts clock cycles and
-stops at a halt. `tb_core` connects it to
-the core's report of each step, so that it counts as the emulator does.
-Its request goes to the core's IRQ port, with the valid/ready handshake of
-`src/multicycle.vhd`, through `irq_merge` (below) in a system that has the
-console's receive interrupt too. It holds `valid` and the vector until
-`ready`, and a request raised while one waits merges with it. While no
-request is raised, `ready` has no effect, so the timer may share its `ready`
-with another device of its source, as `tb_core` shares it with `--irq`.
-Another source of IRQ gets a `ready` of its own from `irq_merge`, as the
-requests of two sources do not merge (ISA.md §7.1).
-
-## The console's receive interrupt
-
-`console_irq` holds `CONSOLE_IRQ` of DEVICES.md §1.9, the vector and the
-enable, as one word with no address. The system tells it about the
-console's input: `entered_i` for one cycle when a byte enters the empty
-input, or the input ends, and `waits_i` while a byte waits or the input has
-ended. While the enable is 1, `entered_i` raises a request, and so does a
-write that sets the enable from 0 to 1 while `waits_i` is high. The request
-is held as the timer's is. `tb_core` raises `entered_i` with the memory
-model's `console_took_o`, and holds `waits_i` high, as a read of the file
-waits for its byte.
-
-`irq_merge` joins the timer's source, the timer's request and that of
-`--irq` in `tb_core`, and the console's into the core's IRQ port. The
-timer's goes first, and the core's `ready` goes to the source whose vector
-it sees, so the two sources never merge (DEVICES.md §4). `make test` runs
-the emulator's `conirq` probe, on a stalling memory too and with held
-pauses. The probe takes each request right after the instruction that
-sets E, which no core can take later, so its runs are compared exactly,
-as those of `wait` are, and not by `irq_compare.py`. The console's
-requests are not in the interrupt log of `G_INTR_LOG`, as the emulator
-raises them itself.
+number. The rest of the I/O range is plain memory, as in the emulator.
 
 ## The math unit
 
@@ -770,8 +676,8 @@ command, so that a function gives the bits of the model by construction
 of its steps.
 
 So the FPU holds a request for as long as a command runs, up to some
-3400 cycles for `DIGITS`, the longest. A pause, an interrupt, and a step
-of the debug link wait that long, and so must a watchdog of the system:
+3400 cycles for `DIGITS`, the longest. A pause and a step of the debug
+link wait that long, and so must a watchdog of the system:
 `tb_core`'s waits 10000 cycles for a step. Its reset is that of a start
 of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
@@ -826,9 +732,8 @@ checks).
 
 `perf` holds the performance counters of DEVICES.md §3: `CYCLE_LO` and
 `CYCLE_HI` at offsets 0 and 1, `INSTR_LO` and `INSTR_HI` at 2 and 3, and
-`TIME_LO` and `TIME_HI` at 4 and 5, and the event counters at `0x0A`–`0x13`:
-data reads, stores, skips, jumps, and interrupts, a low and a high word
-each. It
+`TIME_LO` and `TIME_HI` at 4 and 5, and the event counters at `0x0A`–`0x11`:
+data reads, stores, skips, and jumps, a low and a high word each. It
 is a pipelined Wishbone slave with a 5-bit address. It never stalls, and it
 acknowledges each request in the next cycle. The bus decoder selects it for
 `0xFFFFFF40`–`0xFFFFFF5F`.
@@ -836,8 +741,7 @@ acknowledges each request in the next cycle. The bus decoder selects it for
 The cycle counter counts every clock cycle after reset in which `run_i` is
 high. The instruction
 counter counts the core's `instret_o`, which the multi-cycle core raises for
-one cycle in `RETIRE` after each instruction, but not after an interrupt
-entry. An instruction makes its data reads before its own `RETIRE`, so a
+one cycle in `RETIRE` after each instruction. An instruction makes its data reads before its own `RETIRE`, so a
 read of `INSTR_LO` returns the number of instructions before it, as DEVICES.md
 §3 requires. A read of a low word copies its 64-bit counter into a
 snapshot, and a read of the high word returns the snapshot's high word.
@@ -846,8 +750,7 @@ The event counters take the core's `retire_o` on `retire_i`, and the
 core's own data bus on `dbus_stb_i`, `dbus_we_i`, and `dbus_stall_i`, not
 the debug link's. A data read or a store counts in the cycle that the bus
 accepts it. A step that does not halt counts as a skip if it was skipped,
-as a jump if it writes R15 (`writes_r15` of `nice_pkg`), and as an
-interrupt if it is an interrupt entry or `INT`. Both cores report a step no
+and as a jump if it writes R15 (`writes_r15` of `nice_pkg`). Both cores report a step no
 later than its `instret_o`, so a read of a counter counts what came before
 it, as in the emulator.
 
@@ -879,7 +782,7 @@ does.
 It counts in every cycle, with an accumulator for the microseconds as
 that of the microsecond counter, so it is exact for any `G_CLK_HZ` of 1 MHz
 or more. It has no input for "the core is running": it runs on while the
-core is held, paused, halted, or waiting. Its reset must be the reset of
+core is held, paused, or halted. Its reset must be the reset of
 the system, at power-up or when the FPGA is loaded, not the reset that a
 start over the debug link gives the core, which must leave the clock.
 `tb_core` has one reset for both.
@@ -972,8 +875,8 @@ connects its station, which takes ARP, ping, and the link's TCP first.
 
 ## The trace writer
 
-The core reports each step in a `t_retire`: one instruction, skipped or not,
-or one interrupt entry. A report carries the address, the instruction word,
+The core reports each step in a `t_retire`: one instruction, skipped or
+not. A report carries the address, the instruction word,
 whether it was skipped, the register values after the step, the memory
 write, and the halt reason. The rules the core must keep are in the header of
 `src/trace_pkg.vhd`.
@@ -991,15 +894,8 @@ the emulator's last lines: the `Halted` or `Stopped` line and the registers.
 Then it gives the emulator's exit status: 0 after `HALT`, 2 after the other
 halts, and 3 at the step limit.
 
-A wait step of the core, on `wstep_i`, counts as a step, as in the
-emulator, and prints no line.
-
 With `G_TRACE` false, it prints only the console output and the last lines,
 like `niceemu` without `--trace`.
-
-After those lines, it prints a `Pending:` line for the interrupt requests
-that were never taken, as the emulator does. The testbench gives it the
-requests its interrupt source still holds.
 
 ## What the tests check
 
@@ -1076,9 +972,9 @@ stands still with it low, that the instruction
 counter counts the cycles with `instret_i` high, and that a read of a high
 word returns the snapshot of the last read of the low word, across the
 wrap. It checks that the event counters count the reads and stores that
-the bus accepts but not a stalled one, the skipped steps, a jump but not
-one that halts, and an interrupt entry and an `INT` but not a skipped one,
-and that each has its own snapshot. It also checks the spare words, that
+the bus accepts but not a stalled one, the skipped steps, and a jump but
+not one that halts or a control word, and that each has its own
+snapshot. It also checks the spare words, that
 writes change nothing, and reset.
 
 `tb_tod` runs the clock of the time of day at 2 MHz, so that it counts a
@@ -1089,14 +985,6 @@ read of `CLOCK_USEC` takes the snapshot of the seconds, the end of a
 second after 999999, the write of `CLOCK_STATUS`, a value of 1000000 or
 more taken as 999999, the wrap of the seconds, the rate over 2020
 cycles, and that reset sets everything to 0, the staged seconds too.
-
-`tb_timer` runs the timer on the clock, as a system does. It checks that a
-write of P sets the period and the count, that the request comes at the end
-of the P-th cycle counting the write's, and that the count stops while
-`tick_i` is low. A raised request must keep its vector until `ready`, also
-when the vector is written and more requests merge with it, and a check
-in every cycle makes sure of that. It also checks a stop with a request
-pending, P = 1 with `ready` high in every cycle, the spare words, and reset.
 
 `tb_sd_regs` plays the engine and the cards of the SD card controller,
 without the held ACK, so that busy shows. It checks the start of each
@@ -1143,9 +1031,9 @@ notices `b`, `h`, `o`, `p`, and `x`, the clear, one that a dropped packet starte
 a `W` that wraps past `0xFFFFFFFF`, the hold and restart, and the pause: its
 notice after and before the answer, the memory and registers while paused,
 a hold and a start that keep or begin a pause, a go on, and a halt that
-goes first; the hidden state and the requests, bits 7 to 10, `saved_pc`,
-`saved_sr`, and the reserved words below R0: live while the program runs,
-kept by a hold, read only, and the requests at 0 while held; and the step: `pause_o` low for exactly one cycle, bit 4 and the
+goes first; bits 6 to 10 of the control register at 0 and the reserved
+words below R0 at 0, while the program runs, paused, and held; and the
+step: `pause_o` low for exactly one cycle, bit 4 and the
 memory during the step, one `p` after it, a quick step, a hold during the
 step, a write with bit 5 that does not step, and a step into a halt; and
 the breakpoints: their registers and ports, `x` with the lowest number at a
@@ -1181,8 +1069,7 @@ it, and checks its echo of console bytes, `e02` while it runs, the halt
 after a UART break with the registers it left, the restart of DEBUG.md §8,
 a pause of the core with its registers, memory, and console, a hold
 while it runs, the halt reasons 2 to 4, and the single step: R15 after each step of the echo program,
-a step into `HALT`, the writes with bit 5 that do not step, and an `INT` with
-the registers of each step as `niceemu --trace` shows them, and the
+a step into `HALT`, the writes with bit 5 that do not step, and the
 breakpoints, 4 on the link and the core: a stop before the echo, a step and
 a go on from a breakpoint, and a breakpoint disabled while paused, the
 watchpoints, 4 on the link and the core: a stop after the echo's write of
@@ -1192,20 +1079,17 @@ writes of R0 to R15: R3, R0, R14, and R15 at a start paused, a step and a
 go on from the written R15, also at an enabled breakpoint, and `e04` while
 held, halted, and running, and with `rx_flow_i`, a flood of console bytes
 to the echo program with none lost, and a byte that a paused program's
-full buffer loses with `o`, with the go on behind it, and the hidden
-state and the requests: bits 7 to 10, `saved_pc`, and `saved_sr`, step
-by step through an `INT`, its `RTI`, and an NMI that its request source
-raises inside the routine with an IRQ that E = 0 holds, at the halt and
-the hold after it, and the link's NMI request, raised while paused,
-taken by a step, refused while halted, and dropped by a hold. Its input buffer
+full buffer loses with `o`, with the go on behind it, the halt reason 2
+for `INT`, `RTI`, `WAIT`, and the other reserved control words, and the
+reserved words of the link, which read 0 and take no write. Its input buffer
 holds 16 bytes, so that a flood fills it soon. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at
 a start, when `hold_o` falls, and not while the processor is held, so that
 the link can reach them; and an instruction ACK that comes after a hold
 reset the core is ignored, as Wishbone ignores an ACK while CYC is low.
 
-`tb_trace` runs four times, each against the emulator on the same program
-with the same NMI: with the full trace, without the trace, and stopped at two
+`tb_trace` runs four times, each against the emulator on the same
+program: with the full trace, without the trace, and stopped at two
 step limits. The output and exit status of each run must match the
 emulator's exactly.
 
@@ -1214,19 +1098,15 @@ emulator's exactly.
 but for the pipelined core's `stats_o`, and the rest of the testbench
 serves them both. `make test` runs them on
 each core in `CORES`, both by default, and `make test CORES=pipeline` on
-one. `make random`, `make programs`, `make sweep`, and `make strides` run the core in
-`CORE`, and pass it on to `test/irq_sweep.py` and `test/programs.py` with
-their option `--core`. `make random-sweep` runs seeds 1 to `RANDOM_LAST`
+one. `make random` and `make programs` run the core in `CORE`, and pass
+it on to `test/programs.py` with its option `--core`. `make random-sweep` runs seeds 1 to `RANDOM_LAST`
 (1000) of `make random` on each core of `CORES` in turn. The PASS and FAIL lines name the core. The trace, the output,
 and the exit status of each must match those of `niceemu -t` on the same
-program, with the same interrupt requests. The pipelined core may take a
-request later than the emulator (MICROARCH.md §6), so its runs with
-requests are compared only by `test/irq_compare.py --read-delay`, below.
+program.
 
 - The three 2004 examples `count`, `replicate`, and `print`, and `wrap`, from
   `assembler/test/`.
-- The emulator's probes in `emulator/test/`, `cputest` among them, with the
-  interrupt options that `emulator/Makefile` gives them, but `scrbound`,
+- The emulator's probes in `emulator/test/`, `cputest` among them, but `scrbound`,
   `screencolor`, and `screeninvert`, which check the emulator's screen and
   need `--color` and `--invert-fg`. Their memory dumps
   are left out, because the trace lists every memory write. The trace does
@@ -1236,38 +1116,14 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   `fpu`, `fpustack`, `fpudec`, and `fpufunc` use the FPU: the views, a
   few commands of each group, the stack and its faults, the decimal
   commands, and the functions.
-  `fpu` reads the time, so its counters are memory in both, as for `wait`.
+  `fpu` reads the time, so its counters are memory in both.
   `fpudec` runs again with random pauses, with pauses held for up to
   3000 cycles, and one step at a time, so that pauses and steps come
   while the core waits for `DIGITS` and `SCALE10` (DEVICES.md §11.5).
-  `perf` reads the instruction counter, with an NMI and an `INT`, and
+  `perf` reads the instruction counter, and
   checks the cycle counter only through flags, because the emulator counts
-  steps, not cycles. `timer` runs the timer, which counts steps here: its
-  `tick_i` is the core's `instret_o`, its report of each interrupt
-  entry, and its `wstep_o`, so that a read of `TIMER_COUNT` sees the ticks of every older
-  instruction on any core. The pipelined core counts an instruction with
-  a data read before its store, so when that store writes `TIMER_PERIOD`,
-  the timer gets the instruction's tick again with the write, and the
-  new count sees it, as in the emulator. A read of the old count cannot
-  come between the two. Its request and those of the
-  interrupt source share the core's IRQ port, with the vector of the one raised first when both are pending, as the emulator merges them.
-  `wait` waits for the timer, for an IRQ with E = 0, and for an NMI
-  (ISA.md §7.5). Its timer ticks on `wstep_o` too, and its requests and
-  the trace count the wait steps, as the emulator does. It runs again on
-  a stalling memory, with random and held pauses, one step at a time,
-  and with a breakpoint after each `WAIT`, `wait_breaks`. Its cycle
-  counts and time are memory in both, with `G_CYCLE_COUNTER` false and
-  `--no-cycle-counter`. Every core takes its requests at the step the
-  emulator does, so its runs are compared exactly, and not by
-  `irq_compare.py`, which moves a request to the step of its entry and so
-  would end a wait at another step. `waitnone`, a wait that nothing ends,
-  does not run on a core, which would wait for ever.
+  steps, not cycles.
 - `test/shift.nasm`.
-- `test/irqwave.nasm`, with two IRQs: one that comes before an instruction
-  that has not begun, and one that comes just after the next instruction
-  has issued its data read, which the pipelined core takes after that
-  instruction. Its values are those of the timing diagram
-  [doc/interrupt.png](../doc/interrupt.png).
 - `test/addwave.nasm`, the worked example of ISA.md §11 between plain
   instructions. Its values are those of the timing diagram
   [doc/flow.png](../doc/flow.png).
@@ -1316,42 +1172,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   register in all three fields of a shift, for every pair of source
   modes and six destination modes. None of them checks itself; the
   core's trace is compared with the emulator's.
-- `test/hazard.nasm` with an interrupt request at every point (MICROARCH.md
-  §9, step 5). `test/irq_sweep.py` runs it once for each step S, with
-  `--nmi S:8`, and once more with `--irq S:9`, on a memory that stalls in
-  30% of the cycles. Each run on the core must match the emulator's, and
-  the emulator must take the request and still pass the program's checks.
-  So `hazard.nasm` keeps E = 1 at all but one step, and has a vector
-  table entry for each VBASE it uses. Each run is repeated with the
-  request raised a few cycles late, with `--delays` and `tb_core`'s
-  `G_INTR_DELAY`, so that it arrives at different points within an
-  instruction: 3 and 7 cycles on the multi-cycle core, and 1, 2, and 3
-  on the pipelined one. A delayed run is compared only through
-  `test/irq_compare.py`. The runs go in parallel, on all
-  cores; set the number with `-j`, which under make with `-j` its
-  jobserver bounds too. Each worker runs the simulator in its own
-  directory under `build/sweep`, because the LLVM and GCC backends of GHDL
-  write an executable where they run. `test/irqhazard.nasm` and
-  `test/latecount.nasm` are swept the same way, without the delays.
-  `test/fpuirq.nasm`, `fpudec` after an `FMOD`, is swept as below, with
-  `--stride 16`, and with delays of 40, 400, and 1500 cycles too, so that
-  requests come while the core waits for a command of the FPU, which it
-  finishes first.
-  For each kind, `irq_sweep.py` says how many steps no request came
-  before because it had to wait (ISA.md §7): those of an `INT` routine
-  and the step after its `RTI`, and for IRQ, those with E = 0.
-- The programs of `test/pcfx_prog.py` and `test/sidefx_prog.py` swept
-  with `--stride 16`: each run raises a request before every 16th step,
-  from step k, and 16 runs, k = 0 to 15, cover every step. A request
-  taken adds the steps of its entry and its routine, so `irq_sweep.py`
-  shifts the later requests of a run by them, and counts the steps that a
-  request came before. `sidefx_prog.py`'s program writes R14 with any
-  value, so at some steps there is no vector table. `irq_sweep.py` drops
-  a request whose entry finds no vector word that names the same routine
-  as the one for VBASE = 0, and says how many steps it left out: about
-  280 of 7444 for NMI, and 75 for IRQ. `make sweep` sweeps the two with
-  one request per run instead.
-- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `fpu`, `perf`, `events`, `timer`, and `sd` again, on a memory that
+- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `fpu`, `perf`, `events`, and `sd` again, on a memory that
   stalls in 30% of the cycles, and `sd` with pauses held for a random time.
   `sd` runs with an image in slot 0 that `make test` makes in the run's
   directory, and the emulator with a copy of it, which it writes.
@@ -1370,11 +1191,10 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
   core) must give 1 and 1 that went on, and 0 and 2 dropped.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
-  shift instructions, they use R15 with every side effect, `HALT`, `RTI`,
-  `INT`, reserved control words, and the read counter. Most jumps skip
-  only a few instructions, sources often read a register that one of the
-  last three instructions wrote, and each interrupt vector leads to a
-  short routine that ends with `RTI`. A random program may read any address, and now and then one reaches the cycle counter at
+  shift instructions, they use R15 with every side effect, `HALT`, the
+  reserved control words, and the read counter. Most jumps skip only a
+  few instructions, and sources often read a register that one of the
+  last three instructions wrote. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps
   (DEVICES.md §3). The microsecond counter at `0xFFFFFF44` and the clock of
   the time of day at `0xFFFFFF46`–`0xFFFFFF49` differ likewise. So these
@@ -1395,7 +1215,7 @@ requests are compared only by `test/irq_compare.py --read-delay`, below.
 `test/random_stats.py` shows how well the random programs test the core
 (MICROARCH.md §9, step 8). It runs a range of seeds on the emulator, as
 `make test` does, and reports where the steps run, how much of each
-program runs, how many interrupt requests are taken, how the runs end, and
+program runs, how the runs end, and
 how often they make the hazards of MICROARCH.md §5, beside the benchmark's
 shares. With `--generator`, it measures another version of
 `random_prog.py`.
@@ -1435,22 +1255,6 @@ runs make its two words memory, as the random programs do.
 with the emulator's. `--sim` picks GHDL or nvc. `--stall PERCENT` sets `G_STALL` of the memory, and
 `--core` picks the core (`make programs`).
 
-`make sweep` sweeps the programs of `test/pcfx_prog.py` and
-`test/sidefx_prog.py` on the core in `CORE` with one request per run, as
-`hazard.nasm` is swept, but without the delays. A run of the whole
-program for each of its 9500 steps and each kind of request makes some
-19000 runs. On 20 CPUs, that took 3.8 hours on the pipelined core and 2
-on the multi-cycle one on 2026-10-27, and both passed. Run it after a
-change to the interrupt path: WRITE's interrupt entry, RTI, or the
-request ports.
-
-`make strides` sweeps the same two programs on `CORE` with each stride of
-`SLOW_STRIDES`, 17, 31, and 64, in one pool of `SWEEP_JOBS` workers.
-`make test` sweeps them with stride 16; 17 and 31 shift the requests
-against those, and 64 leaves most of each run without one. That is 448
-runs, which took 5.7 minutes on the pipelined core on 20 CPUs. `make slow`
-at the top runs it, not `make sweep`.
-
 `make random` runs more random programs, with the seeds, step count, and
 stall rate given as variables:
 
@@ -1467,17 +1271,12 @@ the names of the I/O words it knows:
 **The generics of `tb_core`.** The generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
 `--no-cycle-counter` does in the emulator. The generic `G_FPU` set to false sends the
-FPU's eight words to the memory model, as `--no-fpu` does. The generic `G_INTERRUPTS` takes the emulator's options,
-for example `--nmi 2:1 --irq 2:2`. A request for step S is raised once S
-steps have retired, as the emulator raises it before step S. A second request
-of the same kind merges with one still pending and leaves its vector, as the emulator
-merges them.
+FPU's eight words to the memory model, as `--no-fpu` does.
 
 With the generic `G_PAUSE` = P, `tb_core` raises `pause_i` in a random
 P percent of the cycles. With `G_PAUSE_HOLD` = H as well, a pause starts
 in P percent of the cycles and is held until the core has paused, then
-for a random 0 to H - 1 cycles more, so that interrupt requests come
-while the core is paused. With `G_SINGLE_STEP`, it holds `pause_i` at 1
+for a random 0 to H - 1 cycles more. With `G_SINGLE_STEP`, it holds `pause_i` at 1
 from reset on, lowers it for one cycle each time the core has paused,
 and checks that each such pulse runs exactly one step. None of them may
 change the trace. With `G_PATCH_STEP` = S as well, `tb_core` writes
@@ -1510,67 +1309,18 @@ same from the `w` notices. `make test` compares the two for
 `test/watches.nasm`, `watches`, and on a stalling memory,
 `watches_stall`: reads and writes in each addressing mode, two reads in
 one step, a skipped read, a read that must not pass a hit before it, an
-I/O store, a jump through memory, the
-vector reads of `INT` and of IRQ entries, and an IRQ raised right after a
-hit.
-
-With the generic `G_INTR_DELAY` = N, each request is raised N cycles
-after its step would raise it, and none after the end of the run. The
-core may have begun the step already, so the log gives such a request the
-step after.
-
-With the generic `G_INTR_LOG`, `tb_core` writes an interrupt log:
-`raised S nmi V` when it raises a request after S steps, `accepted nmi`
-when the core takes it with `ready`, which takes every request of the kind
-raised before, and `taken S nmi V` when the core reports the interrupt
-entry as step S, counting from 0. The same goes for `irq`. The timer's
-requests are IRQs in the log too: `raised S irq V` when the timer raises
-one while none of its own waits, with S its ticks so far, which is the
-step the emulator's timer raises it for. `irq_compare.py` runs the
-emulator with `--no-timer-irq`, so that the log's requests stand in for
-those of its timer, and a core may take a timer request late like any
-other. `make test` writes the log for the runs of `timer.nasm` too.
+I/O store, and a jump through memory.
 
 With the generic `G_RETIRE_LOG`, `tb_core` writes a retire log: a line
 for each step the core reports, with the cycle it is reported in,
 counting from the first cycle after reset, and the address of the
-instruction in hex, or `intr` for an interrupt entry. A third field has
-a letter for each cycle since the line before: its cause from `stats_o`
-(MICROARCH.md §8.1), `a` for cause 0 to `o` for cause 14, followed by
-`A` to `E` for the cause of a flush in that cycle. The letters lag the
-cycles by two, as `stats_o` does, and the multi-cycle core reports `o`,
-OTHER, in every cycle. `make -C bench
+instruction in hex. A third field has a letter for each cycle since the
+line before: its cause from `stats_o` (MICROARCH.md §8.1), `a` for cause
+0 to `n` for cause 13, followed by `A` to `D` for the cause of a flush in
+that cycle. The letters lag the cycles by two, as `stats_o` does, and
+the multi-cycle core reports `n`, OTHER, in every cycle. `make -C bench
 core` writes it, `bench/pipecycles.py --retires` compares it with
 the cycle model, step by step, and `--causes` by cause, phase by phase ([bench/README.md](../bench/README.md#the-cycle-estimate)).
-
-`test/irq_compare.py` reads the log, for a core that may take a request
-later than the step it was raised for, as the pipelined core may
-(MICROARCH.md §6 and §9). It runs the emulator with each request that the
-core took raised for the step where the core took it, and with each
-request it never took raised as before, and compares the two runs. Then,
-for each request taken, it runs the emulator with the request raised as
-it was, stopped `--max-delay` steps (default 0) before the step where the
-core took it, and the request must still be pending there. `make test`
-runs it after each run with requests, the random programs included, and
-`test/irq_sweep.py` after each of its runs. On the multi-cycle core it
-agrees with the comparison that uses the steps the requests were raised
-for.
-
-With `--read-delay`, the check follows the core. A core that takes a
-request at the first instruction boundary after it arrives, unless the
-next instruction has already issued a data read (MICROARCH.md §6), may
-pass a run of instructions with a data read, not skipped, that starts at
-the first step where the emulator would take the request. After that run
-it must take the request where the emulator does, which may be later
-still, after an NMI that goes first. So the emulator runs with the
-request raised as it was. If it takes it at a step that is such an
-instruction in the core's run, it runs again with the request raised for
-the next step, and so on, while the steps follow each other. The emulator
-must then take the request at the step where the core took it.
-`irq_compare.py --test` checks this on a small program with made-up logs,
-in `make test`. `test/irq_sweep.py` takes the same option, and then compares the
-core's runs only through `irq_compare.py`, and checks the self-check of
-`hazard.nasm` on the core's run.
 
 ## The formal checks
 
@@ -1602,10 +1352,9 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipe_decode` | DECODE: what PREPARE's proof assumes of it, and its redirects of FETCH. | k-induction, Yices | 15 seconds |
 | `pipe_prepare` | PREPARE: its data reads go out only when the core is certain to run the instruction. | k-induction, Yices | seconds |
 | `pipe_dbus` | DBUS: read data in the order of the ACKs, none lost. | k-induction, Yices | seconds |
-| `pipe_write` | WRITE: a halt stays, a paused or waiting WRITE does nothing, a step or a wait step comes after a pause, the breakpoints and the watchpoints, the interrupts, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
+| `pipe_write` | WRITE: a halt stays, a paused WRITE does nothing, a step comes after a pause, the breakpoints and the watchpoints, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
 | `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
-| `timer` | The timer's ports. | k-induction of depth 10, Yices | seconds |
 | `tod` | The clock of the time of day: its bus port, and the microseconds below 1000000. | k-induction of depth 10, Yices | seconds |
 | `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
 | `net_regs` | The network station's bus port, and what sets its addresses and `wr_o`. | k-induction of depth 10, Yices | seconds |
@@ -1622,9 +1371,9 @@ times are those of one `make formal` with Yosys 0.56, all jobs at once
 on 20 CPUs. The paragraphs below say what each job assumes and asserts.
 
 `formal_multicycle` connects the multi-cycle core to `core_check`, which
-both cores share, and which puts a checker on each of four ports. Every
-input is free, apart from a reset in the first cycle, so the solver plays
-every slave, every interrupt source, and every program. Each checker
+both cores share, and which puts a checker on each of its two buses.
+Every input is free, apart from a reset in the first cycle, so the solver
+plays every slave and every program. Each checker
 assumes the rules of the other side of its port and asserts the core's:
 
 - The instruction bus and the data bus (`wb_master_check`), as pipelined
@@ -1637,11 +1386,6 @@ assumes the rules of the other side of its port and asserts the core's:
   request waits at a time, and that reset drops CYC and STB. A slave with
   a registered ACK relies on CYC in that first cycle, so dropping CYC then
   would be no clean way to abandon a request.
-- The NMI and IRQ ports (`handshake_check`), with the AXI handshake. The
-  checker assumes that a device holds `valid` until `ready`, and for NMI
-  the vector too; the IRQ vector is free to change.
-  It asserts that the core raises `ready` only for a request, and never in
-  reset.
 
 `core_check` also asserts the rules of a stopped core
 (MICROARCH.md §6.1), with `pause_i` free, so that the system around the
@@ -1650,10 +1394,7 @@ stays halted until reset, with `halt_reason_o` other than `HALT_NONE`
 exactly then; a core that is paused, with `pause_i` still 1, stays paused
 with no bus cycle open and `regs_o` unchanged; it is never paused and
 halted at once; and once `paused_o` falls, it reports a step on
-`retire_o`, or makes a wait step on `wstep_o`, before `paused_o` rises
-again. A wait step comes only while `waiting_o` is 1, and reports
-nothing, takes no request, and does not pause; and `waiting_o` is 1 only
-with no request valid, and never while halted (ISA.md §7.5). With two
+`retire_o` before `paused_o` rises again. With two
 breakpoints and two watchpoints, whose addresses and enable bits are
 free, it asserts that the core pauses without `pause_i` only when R15 was
 an enabled breakpoint or `wch_hit_o` has a bit set, and then stays paused
@@ -1674,31 +1415,14 @@ decoder's count to the checker's, so the decoder needs no `G_FORMAL`.
 The `cover` task shows a request that waits for another slave's ACKs,
 the most ACKs owed, and a switch from one slave to another.
 
-`formal_timer` checks the timer's ports from the other side. Every input
-is free. It asserts that a raised request stays raised, with its vector,
-until `ready` takes it, which is what `handshake_check` assumes of a
-device, and, with `wb_slave_check`, that the bus port acknowledges each
-request in the next cycle and never stalls.
-
-`formal_console_irq` checks the console's receive interrupt the same way,
-and with a shadow of the enable, that a request comes exactly when DEVICES.md
-§1.9 says, with the vector written, and that a read returns the enable and
-the vector. The enable shows only in a read, so the shadow cannot be tied
-to it for k-induction: the `prove` task proves the checks of the ports, and
-the `bmc` task all of them for 16 cycles from reset. `formal_irq_merge`
-proves that the core's `valid` holds until `ready`, that `ready` goes to one
-source, the timer's whenever it raises a request, and that the core sees
-the vector of the source that gets it.
-
 The `prove` task proves the assertions for every cycle by k-induction of
 depth 2, in a few seconds. The induction needs invariants that tie the ports to the core's state: the state
-is one of its 14 values, and each bus has CYC high exactly in its wait
+is one of its 13 values, and each bus has CYC high exactly in its wait
 states. The core asserts them itself when its generic `G_FORMAL` is true;
 `formal_multicycle` sets it, and the other users leave it false. The
-`cover` task shows that each port can do what the properties talk about: a
-read, a write, a stalled request, and each kind of interrupt taken. For
-the timer, it shows a request taken, and one that waits while the timer
-counts on.
+`cover` task shows that the core can do what the properties talk about:
+a step, a store, a halt, a pause, a step after a pause, a stop at a
+breakpoint, and a step after a register write.
 
 `formal_tod` checks the clock of the time of day with every input free,
 at a `G_CLK_HZ` of 1 MHz, so that it counts in every cycle. It asserts,
@@ -1808,9 +1532,8 @@ order, with the fields it decodes agreeing with the instruction word
 (`decoded_ok` in `src/pipe_pkg.vhd`, which `pipeline` also asserts in
 simulation), WRITE holds what PREPARE moves on while it runs, SR and
 WRITE's condition of the instruction change only while WRITE holds a
-micro-operation that may change them, and WRITE neither flushes nor takes
-an interrupt while PREPARE holds an instruction that has made a data
-read. The assertions
+micro-operation that may change them, and WRITE does not flush while
+PREPARE holds an instruction that has made a data read. The assertions
 say that the read request is held while the bus stalls it, that it never
 goes out with `C_MAX_OUT` requests in flight, that a micro-operation makes
 all its reads and no more before it moves on unless its condition is
@@ -1838,21 +1561,13 @@ bus does not stall.
 
 `formal_pipe_write` proves for every cycle, with every input free, that a
 halted WRITE stays halted until reset, and that neither a halted nor a
-paused WRITE makes a store or a vector read, takes an interrupt, or
-accepts a micro-operation. It also proves that once WRITE leaves
-`PAUSED_ST`, it reports a step, or makes a wait step, before it pauses
+paused WRITE makes a store or accepts a micro-operation. It also proves
+that once WRITE leaves `PAUSED_ST`, it reports a step before it pauses
 again, whether or not `paused_o` had risen: it does not pause while
-`after_go` is 1, and only a report or a wait step clears it. While it
-waits after `WAIT`, in `WAIT_ST`, it holds no micro-operation, makes no
-store, and accepts none, `waiting` is 1 exactly in `WAIT_ST` and in a
-pause during a wait, and a wait step comes only in `WAIT_ST` with no
-request. And it pauses without `pause_i` only on the breakpoint
-flag of the next instruction, in its own micro-operation or, while it
-holds none, in PREPARE's, and then stays paused until `pause_i` has been
-1. And it takes an interrupt only when one is requested, never in reset,
-and never two at once. WRITE's takes are the core's `nmi_ready_o` and
-`irq_ready_o`, so these are the assertions of `handshake_check`, for
-every cycle and not only in `formal_pipeline`. A register write taken in
+`after_go` is 1, and only a report clears it. And it pauses without
+`pause_i` only on the breakpoint flag of the next instruction, in its own
+micro-operation or, while it holds none, in PREPARE's, and then stays
+paused until `pause_i` has been 1. A register write taken in
 `PAUSED_ST` with `pause_i` at 1 is in the registers the next cycle, with
 ISA.md §4.3 applied, and nothing else changes them while paused.
 
@@ -1860,15 +1575,14 @@ ISA.md §4.3 applied, and nothing else changes them while paused.
 the model registers of PREPARE's proof: while WRITE runs, it holds the
 micro-operation PREPARE moved on until it retires it or flushes; SR
 changes only while WRITE holds a micro-operation that may change it, or
-with a flush, an interrupt entry, or a reset, or in `PAUSED_ST`, where a
-register write may set R14; WRITE's condition likewise,
-while it holds an instruction's first micro-operation, or else to the
-condition PREPARE found for the one it holds; and WRITE leaves `RUN_ST`
-only with a flush, an interrupt entry, or a reset. These are weaker than
-what PREPARE's proof assumed before: a micro-operation of two cycles
-changes SR and the condition in its first, and WRITE clears only the
-valid bit of a micro-operation it drops, and keeps that of INT through
-`VEC_ST`. The proof of PREPARE holds with them, with one more invariant.
+with a flush or a reset, or in `PAUSED_ST`, where a register write may
+set R14; WRITE's condition likewise, while it holds an instruction's
+first micro-operation, or else to the condition PREPARE found for the
+one it holds; and WRITE leaves `RUN_ST` only with a flush or a reset.
+These are weaker than what PREPARE's proof assumed before: a
+micro-operation of two cycles changes SR and the condition in its first,
+and WRITE clears only the valid bit of a micro-operation it drops. The
+proof of PREPARE holds with them, with one more invariant.
 Its only assumption about PREPARE, that the micro-operation agrees with
 its instruction word, is what PREPARE's proof asserts as `f_out_decoded`.
 
@@ -1895,12 +1609,13 @@ since a change while the core runs may miss an instruction. A register
 write comes only while the core is paused and `pause_i` is 1, as its
 contract asks, and the `bmc` task ties `reg_we_i` to 0, since the free
 write took it from 3 minutes to 29. The `cover` task keeps the write,
-and reaches a step after one at step 10. It also asserts that no
+and reaches a step after one at step 13. It also asserts that no
 instruction at an enabled breakpoint retires without a stop first, but
 as the first step after `pause_i` was 1. The pipeline is too deep for k-induction without many more invariants, so its `bmc` task
-checks only the first 12 cycles after reset. They hold an interrupt
-entry, a first store, and a pause, which its cover reaches at step 4, and
-a halt and the first step after a pause, which it reaches at step 9. The
+checks only the first 12 cycles after reset. They hold a first store,
+a pause, and a halt. The first step after a pause comes later, as the
+go on fetches from R15 again, so the `cover` task runs for 14 cycles
+and reaches it at step 12. The
 rules of a halted core and the report after a pause hold for every cycle
 through `formal_pipe_write`. The 12 cycles take 3 minutes with Yosys 0.56
 and its ABC, and each further cycle many times more. ABC refuses the
@@ -1913,7 +1628,7 @@ every run.
 wrapper: three 64-bit counters, one of every cycle with `run_i` high, one of the cycles
 with `instret_i` high, and one of microseconds at a clock of 1.5 MHz, which
 the model counts as two in every three cycles, without `perf`'s
-accumulator, so that the proof checks its arithmetic, the five event
+accumulator, so that the proof checks its arithmetic, the four event
 counters, from a free retire report and a free data bus, with the rule for
 a jump spelled out from the bits apart from `writes_r15`, and a snapshot of
 each, which a read of its low word takes. It asserts that the port never stalls, that it acknowledges
@@ -1936,10 +1651,10 @@ counted adds one to `FS_CYCLES` and to the bin of its cause, a flush to
 the bin of its cause, and each event to its counter. Stopped counters
 keep their values, a write of 1 to `FS_CTRL` starts them without a clear,
 and a clear or a reset clears them. The invariant is that the causes sum
-to `FS_CYCLES`. Ghost counters in a binary tree over the 15 causes,
+to `FS_CYCLES`. Ghost counters in a binary tree over the 14 causes,
 padded to 16 bins, count the cycles of each subtree. The root is asserted
 to be `FS_CYCLES`, and each node the sum of its two children, which gives
-the sum of the causes without any one assertion adding 15 counters.
+the sum of the causes without any one assertion adding 14 counters.
 There is no assumption but the reset. Boolector proves it all by
 k-induction.
 

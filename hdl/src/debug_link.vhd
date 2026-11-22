@@ -84,7 +84,7 @@
 --    counter a link-only path that these accesses take. The
 --    processor never uses the bus while this master does: the master
 --    works only while hold_o, halted_i, or the link's paused flag is high.
---    While the processor is paused, the counters and the timer stop, and a
+--    While the processor is paused, the counters stop, and a
 --    link read of a counter may take a snapshot (DEBUG.md §3).
 -- b) The Wishbone slave is pipelined, as the cores' data bus is: it sends
 --    ACK in a later cycle than the one that accepts a request, and holds
@@ -136,11 +136,6 @@
 --    R15 while bit 4 of the control register reads 0. side_data_o is the
 --    word read, valid from side_done_o until the next request is done. A
 --    new request may start the cycle after side_done_o.
--- h) nmi_ready_i is the core's nmi_ready_o, high in a cycle in which the
---    core takes the request on nmi_valid_o. This unit holds nmi_valid_o
---    and nmi_vector_o until then, and the vector stable, as the cores'
---    contract b asks, or until hold_o rises, which resets the core in the
---    same cycle.
 --
 -- The host side:
 -- * rx_*: a byte from the host, with valid and ready, and two pulses.
@@ -177,7 +172,7 @@
 -- * halted_i and halt_reason_i: the core's halt (DEBUG.md §6).
 -- * pause_o and paused_i: bit 4, the request of a pause, which comes from a
 --   flip-flop as MICROARCH.md §6.1 requires, and the core's pause. The
---   board stops the counters and the timer while paused_i is high.
+--   board stops the counters while paused_i is high.
 --   A step (DEBUG.md §6) drops pause_o for exactly one cycle while the core
 --   is paused, and raises it again.
 -- * reg_we_o, reg_idx_o, and reg_data_o: a write of a register, for the
@@ -187,21 +182,6 @@
 -- * wch_addr_o and wch_en_o: the watchpoints, for the core, and wch_hit_i
 --   and wch_pc_i: the core's hits, as contract e says. The entries from
 --   G_WATCHES up are 0. A board without them leaves the inputs open.
--- * waiting_i: the core's waiting_o, '1' while it waits for an interrupt
---   (ISA.md §7.5), which bit 6 reads while the core is not held or halted.
---   A board without it leaves it open, and bit 6 reads 0.
--- * in_service_i, after_rti_i, saved_pc_i, and saved_sr_i: the core's
---   hidden state (ISA.md §1.4), for bits 7 and 8 and the words 0xFFFFFFD0
---   and 0xFFFFFFD1 (DEBUG.md §6). They are kept and read as regs_i is
---   (contract e). A board without them leaves them open, and they read 0.
--- * nmi_pending_i and irq_pending_i: the requests that the core sees on
---   nmi_valid_i and irq_valid_i, for bits 9 and 10, which read them while
---   the core is not held or halted. A board without them leaves them
---   open, and the bits read 0.
--- * nmi_valid_o, nmi_ready_i, and nmi_vector_o: the NMI request of the
---   word 0xFFFFFFD7 (DEBUG.md §6), for the core's NMI port, as contract h
---   says. A board that does not wire them leaves nmi_ready_i open, and a
---   write of the word raises a request that is never taken, until a hold.
 --
 -- FORMAL
 -- With G_FORMAL, the properties that need the state of the processes, for
@@ -225,8 +205,8 @@
 -- are in formal/formal_debug_link.vhd.
 --
 -- RESET
--- Synchronous. It sends `b08`, empties everything, clears the breakpoints,
--- the watchpoints, and the NMI request, and leaves the
+-- Synchronous. It sends `b10`, empties everything, clears the breakpoints
+-- and the watchpoints, and leaves the
 -- processor held with G_BOOT_HELD, or running with the ROM shown otherwise.
 -- G_HAS_ROM is false on a system without a ROM: bit 3 then reads 1 and
 -- ignores writes, and rom_hide_o is 1.
@@ -295,16 +275,6 @@ entity debug_link is
       reg_we_o       : out std_logic;
       reg_idx_o      : out std_logic_vector(3 downto 0);
       reg_data_o     : out std_logic_vector(31 downto 0);
-      waiting_i      : in  std_logic                     := '0';
-      in_service_i   : in  std_logic                     := '0';
-      after_rti_i    : in  std_logic                     := '0';
-      saved_pc_i     : in  std_logic_vector(31 downto 0) := (others => '0');
-      saved_sr_i     : in  std_logic_vector(31 downto 0) := (others => '0');
-      nmi_pending_i  : in  std_logic                     := '0';
-      irq_pending_i  : in  std_logic                     := '0';
-      nmi_valid_o    : out std_logic;
-      nmi_ready_i    : in  std_logic                     := '0';
-      nmi_vector_o   : out std_logic_vector(7 downto 0);
 
       -- A second client of the debug registers and the memory, inside the
       -- system (contract g). A board without one leaves the inputs open.
@@ -356,7 +326,7 @@ architecture synthesis of debug_link is
    constant C_HASH  : t_byte := X"23";   -- '#', before the checksum
 
    -- Major 0, minor 8 (DEBUG.md §9)
-   constant C_VERSION : t_word := X"00000008";
+   constant C_VERSION : t_word := X"00000010";
 
    function is_hex(b : t_byte) return boolean is
    begin
@@ -511,22 +481,18 @@ architecture synthesis of debug_link is
    signal clearing_r  : std_logic                    := '0';
    signal clr_hold_r  : std_logic                    := '0';
    signal regs_r      : std_logic_vector(511 downto 0) := (others => '0');
-   -- The hidden state, kept as regs_r: in_service, after_rti, saved_pc,
-   -- and saved_sr, from bit 65 down
-   signal hid_r      : std_logic_vector(65 downto 0)  := (others => '0');
-   signal hid_i      : std_logic_vector(65 downto 0);
-   signal reg_we_r   : std_logic                    := '0';
-   signal reg_idx_r  : std_logic_vector(3 downto 0) := (others => '0');
-   signal reg_data_r : t_word                       := (others => '0');
-   signal wb_cyc_r   : std_logic                    := '0';
-   signal wb_stb_r   : std_logic                    := '0';
-   signal wb_we_r    : std_logic                    := '0';
-   signal wb_addr_r  : t_word                       := (others => '0');
-   signal wb_data_r  : t_word                       := (others => '0');
-   signal brk_addr_r : t_brk_addrs                  := (others => (others => '0'));
-   signal brk_en_r   : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
-   signal wch_addr_r : t_wch_addrs                  := (others => (others => '0'));
-   signal wch_en_r   : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0) := (others => '0');
+   signal reg_we_r    : std_logic                    := '0';
+   signal reg_idx_r   : std_logic_vector(3 downto 0) := (others => '0');
+   signal reg_data_r  : t_word                       := (others => '0');
+   signal wb_cyc_r    : std_logic                    := '0';
+   signal wb_stb_r    : std_logic                    := '0';
+   signal wb_we_r     : std_logic                    := '0';
+   signal wb_addr_r   : t_word                       := (others => '0');
+   signal wb_data_r   : t_word                       := (others => '0');
+   signal brk_addr_r  : t_brk_addrs                  := (others => (others => '0'));
+   signal brk_en_r    : std_logic_vector(C_BREAKS_MAX - 1 downto 0) := (others => '0');
+   signal wch_addr_r  : t_wch_addrs                  := (others => (others => '0'));
+   signal wch_en_r    : std_logic_vector(2 * C_WATCHES_MAX - 1 downto 0) := (others => '0');
    -- The address of the hit, at a stop after one: 0xFFFFFFD6
    signal wch_pc_r  : t_word                       := (others => '0');
    signal pause_d_r : std_logic                    := '0';
@@ -536,9 +502,6 @@ architecture synthesis of debug_link is
    -- The stop register: bit 9 and the number of the watchpoint hit, or
    -- bit 8 and the number of the breakpoint at R15
    signal stop_r : std_logic_vector(9 downto 0) := (others => '0');
-   -- The NMI request of 0xFFFFFFD7, and its vector, until the core takes it
-   signal nmi_r     : std_logic                    := '0';
-   signal nmi_vec_r : std_logic_vector(7 downto 0) := (others => '0');
 
    -- p_acc takes the request of acc_go: at once for a debug register, and
    -- for another word only after a clear. The request is the side
@@ -871,24 +834,22 @@ begin
    side_err_o  <= side_err_r;
    side_data_o <= side_data_r;
 
-   hold_o       <= hold_r;
-   eoi_o        <= eoi_r;
-   pause_o      <= pause_r;
-   pause_own    <= paused_r and pause_r and not stepping_r;
-   own_stop     <= paused_i and not paused_r and not pause_d_r and not hold_r;
-   brk_addr_o   <= brk_addr_r;
-   brk_en_o     <= brk_en_r;
-   wch_addr_o   <= wch_addr_r;
-   wch_en_o     <= wch_en_r;
-   nmi_valid_o  <= nmi_r;
-   nmi_vector_o <= nmi_vec_r;
-   reg_we_o     <= reg_we_r;
-   reg_idx_o    <= reg_idx_r;
-   reg_data_o   <= reg_data_r;
-   mem_own      <= hold_r or halted_r or pause_own;
-   mem_ok       <= hold_r or halted_r or (pause_own and paused_i);
-   clear_o      <= clearing_r;
-   rom_hide_o   <= hide_r when G_HAS_ROM else
+   hold_o     <= hold_r;
+   eoi_o      <= eoi_r;
+   pause_o    <= pause_r;
+   pause_own  <= paused_r and pause_r and not stepping_r;
+   own_stop   <= paused_i and not paused_r and not pause_d_r and not hold_r;
+   brk_addr_o <= brk_addr_r;
+   brk_en_o   <= brk_en_r;
+   wch_addr_o <= wch_addr_r;
+   wch_en_o   <= wch_en_r;
+   reg_we_o   <= reg_we_r;
+   reg_idx_o  <= reg_idx_r;
+   reg_data_o <= reg_data_r;
+   mem_own    <= hold_r or halted_r or pause_own;
+   mem_ok     <= hold_r or halted_r or (pause_own and paused_i);
+   clear_o    <= clearing_r;
+   rom_hide_o <= hide_r when G_HAS_ROM else
                  '1';
 
    wb_cyc_o  <= wb_cyc_r;
@@ -897,13 +858,10 @@ begin
    wb_addr_o <= wb_addr_r;
    wb_data_o <= wb_data_r;
 
-   hid_i <= in_service_i & after_rti_i & saved_pc_i & saved_sr_i;
-
 
    p_acc : process (clk_i)
       variable nh_v   : std_logic;
       variable rd_v   : t_word;
-      variable hid_v  : std_logic_vector(65 downto 0);
       variable idx_v  : natural range 0 to 31;
       variable stop_v : std_logic_vector(9 downto 0);
    begin
@@ -912,11 +870,6 @@ begin
          pause_d_r   <= pause_r;
          side_done_r <= '0';
          reg_we_r    <= '0';
-
-         -- The core takes the NMI request of the link.
-         if nmi_ready_i = '1' then
-            nmi_r <= '0';
-         end if;
 
          -- At a stop, the lowest watchpoint that the step before hit, or else
          -- the lowest enabled breakpoint at R15, until the core leaves the
@@ -944,7 +897,6 @@ begin
             halted_r <= '1';
             reason_r <= halt_reason_i;
             regs_r   <= regs_i;
-            hid_r    <= hid_i;
          end if;
 
          -- The registers at a pause stay through a hold, as those of a halt.
@@ -956,7 +908,6 @@ begin
             if reg_we_r = '0' then
                regs_r <= regs_i;
             end if;
-            hid_r <= hid_i;
          else
             paused_r <= '0';
          end if;
@@ -1014,20 +965,12 @@ begin
                      end if;
                      if acc_we = '1' and acc_addr(5) = '0' then
                         -- 0xFFFFFFD0 to 0xFFFFFFDF, idx_v 16 to 31, take no
-                        -- write, but the watchpoints and the NMI request.
+                        -- write, but the watchpoints.
                         if idx_v = 20 then
                            wch_en_r(2 * G_WATCHES - 1 downto 0) <= acc_wdata(2 * G_WATCHES - 1 downto 0);
                         end if;
                         if idx_v >= 24 and idx_v - 24 < G_WATCHES then
                            wch_addr_r(idx_v - 24) <= acc_wdata;
-                        end if;
-                        -- The NMI request: bit 8 raises one, unless one is
-                        -- pending, which keeps its vector, or the core is
-                        -- held or halted.
-                        if idx_v = 23 and acc_wdata(8) = '1' and nmi_r = '0' and
-                           hold_r = '0' and halted_r = '0' and halted_i = '0' then
-                           nmi_r     <= '1';
-                           nmi_vec_r <= acc_wdata(7 downto 0);
                         end if;
                      elsif acc_we = '1' and idx_v < 16 then
                         -- R1 to R15 take a write while paused, R0 none. The
@@ -1076,28 +1019,15 @@ begin
                         end if;
                      else
                         rd_v := (others => '0');
-                        -- The hidden state reads as R0 to R15 do.
-                        if hold_r = '0' and halted_r = '0' and paused_r = '0' then
-                           hid_v := hid_i;
-                        else
-                           hid_v := hid_r;
-                        end if;
                         if acc_addr(5) = '0' then
-                           -- saved_pc and saved_sr, the watchpoints, and the
-                           -- reserved words, 0xFFFFFFD0 to 0xFFFFFFDF at
-                           -- idx_v 16 to 31
-                           if idx_v = 16 then
-                              rd_v := hid_v(63 downto 32);
-                           elsif idx_v = 17 then
-                              rd_v := hid_v(31 downto 0);
-                           elsif idx_v = 20 then
+                           -- The watchpoints, and the reserved words,
+                           -- 0xFFFFFFD0 to 0xFFFFFFDF at idx_v 16 to 31
+                           if idx_v = 20 then
                               rd_v(2 * C_WATCHES_MAX - 1 downto 0) := wch_en_r;
                            elsif idx_v = 21 then
                               rd_v := to_slv(G_WATCHES, 32);
                            elsif idx_v = 22 and stop_r(9) = '1' then
                               rd_v := wch_pc_r;
-                           elsif idx_v = 23 and nmi_r = '1' then
-                              rd_v(8 downto 0) := '1' & nmi_vec_r;
                            elsif idx_v >= 24 and idx_v - 24 < G_WATCHES then
                               rd_v := wch_addr_r(idx_v - 24);
                            end if;
@@ -1112,11 +1042,6 @@ begin
                            rd_v(1) := halted_r and not cleared_r;
                            rd_v(3) := hide_r or not to_sl(G_HAS_ROM);
                            rd_v(4) := pause_own;
-                           rd_v(6) := waiting_i and not hold_r and not halted_r;
-                           rd_v(7) := hid_v(65);
-                           rd_v(8) := hid_v(64);
-                           rd_v(9) := nmi_pending_i and not hold_r and not halted_r;
-                           rd_v(10) := irq_pending_i and not hold_r and not halted_r;
                         elsif idx_v = 17 then
                            if cleared_r = '0' then
                               rd_v(2 downto 0) := reason_r;
@@ -1196,8 +1121,6 @@ begin
          hold_r <= nh_v;
          if nh_v = '1' then
             stepping_r <= '0';
-            -- A hold drops the NMI request, and resets the core with it.
-            nmi_r      <= '0';
          end if;
          -- A stop at a breakpoint is a pause: the request stands, so the core
          -- goes on only after a go on. It wins over a write of bit 4 in
@@ -1233,7 +1156,6 @@ begin
             brk_en_r   <= (others => '0');
             wch_addr_r <= (others => (others => '0'));
             wch_en_r   <= (others => '0');
-            nmi_r      <= '0';
             pause_d_r  <= '0';
             reg_we_r   <= '0';
             stop_r     <= (others => '0');

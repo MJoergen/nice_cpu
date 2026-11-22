@@ -88,10 +88,7 @@ than a small change: a difference smaller than the range of `SPREAD` in
 §11 is built beside the core, and must keep 100 MHz too: a change under
 `hdl/src/fpu*` that touches the paths of its `timing_groups.rpt` needs
 `make -C hdl timing UNIT=fpu` before and after, with both figures in
-the commit message. A change to the
-interrupt path of a core (WRITE's interrupt entry, RTI, or the request ports) needs
-`make -C hdl sweep CORE=...` on that core, with one interrupt per run,
-which takes hours. No release runs it. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
+the commit message. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
 `make -C hdl lint` checks.
 
 **Python** uses the standard library only and is `mypy --strict` clean.

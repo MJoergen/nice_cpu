@@ -204,8 +204,7 @@ per character; a UART's rate is the limit on a board anyway. The input
 has no vector, as the console's input is the line and the keyboard both.
 
 The counter routines read the low word first, as DEVICES.md §3 describes.
-So an interrupt service routine that reads a counter can spoil the reading
-of the code it interrupted. The screen routines write `0xFFFF0000` to
+The screen routines write `0xFFFF0000` to
 `0xFFFF08BF`, so with the emulator's `-2004` they miss the screen. On a
 system without a screen, those words are RAM or nothing.
 
@@ -690,8 +689,7 @@ a heap larger than the initial memory needs `--memory-pages` (translator
 README). Where only the start of the memory is reserved, the heap ends
 there. When the memory cannot grow, an allocation fails: Zig returns
 `error.OutOfMemory`, and Rust's `alloc` crate panics, except in calls
-such as `Vec::try_reserve`, which return an error. An interrupt routine
-must not use the heap. `test/zigheap.zig` and `test/rustheap.rs` are
+such as `Vec::try_reserve`, which return an error. `test/zigheap.zig` and `test/rustheap.rs` are
 examples.
 
 Zig's own `std.heap.wasm_allocator`, which `std.heap.page_allocator` is

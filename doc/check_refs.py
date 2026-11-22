@@ -9,7 +9,8 @@ Two things are checked in every file that git tracks:
 - A section reference "FILE §n.m" or "FILE.md §n.m", where FILE is one of
   the documents in DOCUMENTS, names a section that FILE has. The notes in
   doc/review/ are left out: they cite the sections as they were numbered
-  on their dates (doc/REFERENCES.md).
+  on their dates (doc/REFERENCES.md). So is RELEASE_NOTES.md, whose
+  section of each tag cites the sections as they were at that tag.
 - In a Markdown file, a link "[text](target)" or "![text](target)" whose
   target is not a URL names a file that exists, relative to the file, and
   its "#anchor", if it has one, names a heading of that file, as GitHub
@@ -40,7 +41,7 @@ DOCUMENTS = {
 }
 
 # The files whose section references are not checked.
-HISTORICAL = ("doc/review/",)
+HISTORICAL = ("doc/review/", "RELEASE_NOTES.md")
 
 SECTION_REF = re.compile(r"\b(" + "|".join(name[:-3] for name in DOCUMENTS)
                          + r")(?:\.md)?\s*§\s*(\d+(?:\.\d+)*)")

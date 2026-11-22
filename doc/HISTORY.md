@@ -152,8 +152,8 @@ that does not drive `run_i` sees no change.
 
 ## Merged interrupt requests
 
-ISA.md §7.1 once left open which vector a request kept when it found one
-of its kind pending. The emulator kept the newer vector for `--irq` and
+The rules of ISA.md for interrupts (below) once left open which vector a
+request kept when it found one of its kind pending. The emulator kept the newer vector for `--irq` and
 `--nmi`, and the older for the timer. On 2026-10-22 the rule became that
 the first vector is kept, in the emulator (2b7a24e) and in both cores.
 
@@ -935,3 +935,31 @@ A program that wanted a block or an arrow copied the ROM into the font
 RAM and drew its own. Then `0x80` to `0x99` got the blocks U+2580 to
 U+258F and the arrows U+2190 to U+2199, each at the low byte of its
 code point, so that a program finds them in the ROM (#204).
+
+## The interrupts
+
+Until `V3.0`, NICE had interrupts, as QNICE has: a maskable request
+(IRQ), a non-maskable one (NMI), and the software interrupt `INT n`. An
+entry saved PC and SR in hidden registers, set I (SR bit 31), and jumped
+through a vector table of 256 words at VBASE·256, with VBASE in SR bits
+23..0. `RTI` returned, and IRQs were taken only while E (SR bit 30) was
+1. `WAIT` (#133, `V2.0`) waited for a request. The control commands 1,
+2, and 3 were `RTI`, `INT`, and `WAIT`. The emulator and the cores had a
+timer that raised IRQ, and from `V2.1` a receive interrupt of the
+console (#153), and the debug link raised an NMI from its version 8.
+
+On 2026-11-15 the interrupts were removed (#162). Nothing needed them:
+the runtime, the C library, the translator's output, nice_chess, and the
+monitor of NiceMonMEGA65 all polled, the board keeps its input in
+buffers and its TCP engine in hardware, and its debugger breaks into a
+hung program through the debug link. Only the tests, the demo's timer
+routine, and an example of the slides used them. The removal saved
+about 400 LUTs of the pipelined core, 5%, and 80 to 100 registers, as
+measured at `V2.1`, and the interrupt sweeps of the tests. SR bits 31,
+30, and 23..0 stayed, as storage named F1, F0, and U, so that the
+conditions `?F1` and `?F0` keep their use, and the assembler takes
+`?I`, `?E`, and `?M` for them. The debug link went to version `0x10`,
+a new major, without the saved PC and SR, the NMI request, bits 6 to
+10 of its control register, and the halt reasons 3, for `INT` inside an
+interrupt routine, and 4, for `RTI` outside one. The interrupt counter
+of the performance counters went too.

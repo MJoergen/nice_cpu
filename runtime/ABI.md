@@ -37,10 +37,10 @@ These rules let separately written C and assembly code call each other. Compiler
 | R7–R11 | Variables | Yes |
 | R12 | Frame pointer, FP, when a function uses one; otherwise a variable | Yes |
 | R13 | Stack pointer, SP (ISA §9.1) | Yes |
-| R14 | SR | The flags X, C, Z, N, and V no; I, E, and VBASE yes |
+| R14 | SR | The flags X, C, Z, N, and V no; F1, F0, and U yes |
 | R15 | PC | — |
 
-A function may change a preserved register only if it restores it before it returns. Only code whose purpose is to change I, E, or VBASE, such as a routine that enables interrupts, may leave them changed.
+A function may change a preserved register only if it restores it before it returns. Only code whose purpose is to change F1, F0, or U may leave them changed.
 
 **Calls.** A call pushes the address of the instruction after the jump and then jumps. A return pops it into PC. The pushed address depends on the size of the jump instruction:
 
@@ -71,9 +71,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 **The stack.**
 
 - SP points at the last word pushed, and the stack grows down (ISA §9.1). The ISA has no alignment rule, so neither does the stack.
-- There is no red zone. An interrupt routine may push onto the stack at any time, so the words below SP may change between any two instructions.
-- An interrupt routine must save and restore every register it uses (ISA §7.4), R1–R6 included.
-- So a C function cannot be an interrupt routine by itself: it may change R1–R6, and it returns with `MOVE PC, @SP++`, not `RTI`. An assembly wrapper saves R1–R6, calls the C function, restores R1–R6, and executes `RTI`.
+- There is no red zone. A function does not rely on the words below SP after it calls another, which pushes onto them.
 
 **Frames.** A function needs no frame pointer. If it uses one, it must build the frame this way. A debugger can then follow the chain of frames through the functions that use one:
 
@@ -101,7 +99,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 **Programs and units.** There is no linker. A program is one assembly file, made by joining the start-up code, the compiled units, the hand-written assembly files, the translated wasm module if there is one ([WASM.md](../translator/WASM.md)), and the runtime library, in the order that the [runtime README](README.md#joining-a-program) lists. Every label and `.EQU` name must therefore be unique in the whole program. The assembler rejects a second definition.
 
-- Only the start-up code may use `.ORG`, because a `.ORG` in one file moves every file after it. Anything that must sit at a fixed address, such as an interrupt vector table (ISA §7.3), therefore belongs in the start-up code.
+- Only the start-up code may use `.ORG`, because a `.ORG` in one file moves every file after it. Anything that must sit at a fixed address therefore belongs in the start-up code.
 
 - Each compiled unit has a unit name, given when it is compiled, for example from the file name. It consists of letters, digits, and `_`, and it differs from the names of the other units in the program.
 - The compiler's own labels are `L.unit.n`, for example `L.main.12`.
@@ -144,7 +142,7 @@ Division by zero is undefined in C, so these routines may return any value for i
 
 - Each routine makes the data accesses that its device needs, and no others. `nice_getc` reads the console until a byte is there or the input has ended; `nice_pollc` reads it once.
 - `nice_putc` and `nice_print` write through `___putc_vector`, a word of the start-up code (Start-up) that holds the address of the routine that writes one character. It starts as `___console_putc`, which writes bits 7..0 of R1 to the console, and the start-up code of a program under a monitor (below), or an assembly program itself, may store another routine in it. That routine follows these rules, takes the character in bits 7..0 of R1, and may change R1–R6 and the flags, so `nice_putc` and `nice_print` may too; `___console_putc` changes nothing. The input has no vector: the console's input is the line and the keyboard both, in the emulator's window and on a board.
-- `nice_cycles` and `nice_instructions` read the low word and then the high word, as [DEVICES.md §3](../doc/DEVICES.md#3-performance-counters) describes. The rule there for interrupt service routines applies to them.
+- `nice_cycles` and `nice_instructions` read the low word and then the high word, as [DEVICES.md §3](../doc/DEVICES.md#3-performance-counters) describes.
 - The screen routines write ordinary memory on the emulator. On a system without a screen, the writes are ignored or land in RAM. With the emulator's option `-2004`, the screen is at `0x400`, and these routines do not reach it.
 
 **Start-up.** The start-up code sits at address 0. It sets SP to one past the highest word the program may use, so that the first push lands on that word. If the program has a wasm module, it then calls `___wasm_start` ([WASM.md](../translator/WASM.md)). The runtime library has two versions of the start-up code, one with this call and one without, and a program uses the version that matches it. A third, `start_wasm_trap.nasm`, is the one with the call, and its `___wasm_trap_vector` holds the trap report of `trapmsg.nasm` ([runtime README](README.md)). Then the start-up code calls `_main` with R1 = 0 and R2 = 0, so a `main(int argc, char **argv)` sees no arguments and a null `argv`. After `main` returns, the start-up code executes `HALT` with `main`'s return value still in R1. `exit(status)` is the routine `_exit`, which every start-up file defines: in these three, that same `HALT`, with the status in R1, so a program ends the same way from anywhere. Static data gets its initial values when the program image is loaded. Reset does not restore them. A wasm module whose code runs from a ROM is the exception: its static data is in RAM, and `___wasm_start` gives it its initial values ([WASM.md](../translator/WASM.md), Code in a ROM).
@@ -159,7 +157,7 @@ The start-up code also holds the two words that the runtime library jumps throug
 | R1 | The monitor's putc routine, or 0 to leave the output on the console. The start-up code stores a nonzero R1 in `___putc_vector` (Device routines), so that `nice_putc`, `nice_print`, and the C library's output, `printf` included, reach the monitor's screen. |
 | R2, R3 | `argc` and `argv`, which the start-up code passes to `main` in R1 and R2, where the start-up code at 0 passes 0 and 0. |
 
-So the start-up code does not set SP: it saves it and jumps to `main` with `MOVE PC, _main`, a tail call, so that `main` returns to the monitor with `MOVE PC, @SP++`, with its return value in R1, instead of the start-up code executing `HALT`, which would stop the processor until reset. `exit(status)` restores the saved SP and returns the same way, from anywhere, with the status in R1. On either return the monitor may rely on SP and R1 and on nothing else: `exit` discards the frames below it, so R7–R12 are not restored, and the flags, I, E, and VBASE may have changed. The monitor clears E, stops the timer, and resets VBASE itself, so a program may own the interrupts outright: it sets VBASE to a page of its own image and restores nothing. A wasm trap halts the processor, as elsewhere, after the trap report's line through `___putc_vector` if the program has the report; a program that wants the monitor back instead stores a handler of the monitor's in `___wasm_trap_vector` ([WASM.md](../translator/WASM.md)). The program may use nothing below `0x8000`: a write to the ROM is dropped, so a stack or data there is lost. What else the monitor offers, such as its routines, is documented with the monitor; a program calls them through stubs in a file of the monitor's, joined with the program. `nicebuild.py --monitor` builds such a program ([translator README](../translator/README.md)).
+So the start-up code does not set SP: it saves it and jumps to `main` with `MOVE PC, _main`, a tail call, so that `main` returns to the monitor with `MOVE PC, @SP++`, with its return value in R1, instead of the start-up code executing `HALT`, which would stop the processor until reset. `exit(status)` restores the saved SP and returns the same way, from anywhere, with the status in R1. On either return the monitor may rely on SP and R1 and on nothing else: `exit` discards the frames below it, so R7–R12 are not restored, and the flags, F1, F0, and U may have changed. A wasm trap halts the processor, as elsewhere, after the trap report's line through `___putc_vector` if the program has the report; a program that wants the monitor back instead stores a handler of the monitor's in `___wasm_trap_vector` ([WASM.md](../translator/WASM.md)). The program may use nothing below `0x8000`: a write to the ROM is dropped, so a stack or data there is lost. What else the monitor offers, such as its routines, is documented with the monitor; a program calls them through stubs in a file of the monitor's, joined with the program. `nicebuild.py --monitor` builds such a program ([translator README](../translator/README.md)).
 
 **Example.** This function and call:
 

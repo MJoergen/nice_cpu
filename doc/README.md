@@ -6,7 +6,7 @@ specification, and it wins over every other document here.
 | Path | What it is |
 |---|---|
 | [ISA.md](ISA.md) | The instruction set: the specification for everything else here. |
-| [DEVICES.md](DEVICES.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, timer, SD card, network station, Ethernet frames, clock, and floating-point unit. |
+| [DEVICES.md](DEVICES.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, SD card, network station, Ethernet frames, clock, and floating-point unit. |
 | [TOOLCHAIN.md](TOOLCHAIN.md) | The tools: what each reads and writes, the steps that build a program, and how the tools use each other. |
 | [DEBUG.md](DEBUG.md) | The debug link: how a host reads and writes the memory of the emulator or a board, and loads and starts a program. |
 | [MICROARCH.md](MICROARCH.md) | The design note for the pipelined FPGA core. |
@@ -17,9 +17,8 @@ specification, and it wins over every other document here.
 
 ## Diagrams
 
-`pipeline.tex` is the block diagram of MICROARCH.md, `flow.tex` its
-timing diagram of one instruction, and `interrupt.tex` its interrupt
-timing diagram. `make diagrams` in the top directory renders
+`pipeline.tex` is the block diagram of MICROARCH.md, and `flow.tex` its
+timing diagram of one instruction. `make diagrams` in the top directory renders
 them to PNGs. Edit the `.tex`, and commit both it and the `.png`.
 
 `window.png` is the screenshot in the top

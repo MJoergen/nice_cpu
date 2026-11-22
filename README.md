@@ -46,10 +46,10 @@ follows a tag.
 ## The emulator
 
 `niceemu` runs NICE programs on the host. It implements the whole
-instruction set of [doc/ISA.md](doc/ISA.md), the interrupts included,
-and the devices of [doc/DEVICES.md](doc/DEVICES.md): the console, the
+instruction set of [doc/ISA.md](doc/ISA.md) and the devices of
+[doc/DEVICES.md](doc/DEVICES.md): the console, the
 80×28 character screen, the math unit, the performance counters, the
-timer, the SD card controller, the network station's registers, the
+SD card controller, the network station's registers, the
 port for Ethernet frames, the clock of the time of day, and the
 floating-point unit. It is the
 reference that the FPGA cores are compared with.
@@ -62,7 +62,7 @@ It can:
 - show the screen in a window while the program runs, with the keys
   typed into it going to the console, at a set speed or as fast as the
   host can (a build with `-Dwindow`);
-- raise IRQ and NMI requests at chosen steps, and stop at a step limit;
+- stop at a step limit;
 - give a program Ethernet frames from a file or a UDP socket, and send
   its frames to a file or a peer;
 - name the label where a program halted or trapped, from the symbols
@@ -247,7 +247,7 @@ and host tools they need.
 
 [doc/ISA.md](doc/ISA.md) covers the programmer's model, the instruction
 format, conditional execution, addressing modes, execution, flags,
-interrupts, reset, memory, the I/O range, software conventions, the assembler syntax, and the `.bin` object format. Where the [sources](doc/REFERENCES.md) disagree, it follows this
+why it has no interrupts, reset, memory, the I/O range, software conventions, the assembler syntax, and the `.bin` object format. Where the [sources](doc/REFERENCES.md) disagree, it follows this
 order:
 
 1. The intended behavior of the 2004 emulator `NICE.pm` and web page (not
@@ -255,7 +255,7 @@ order:
 2. The 1999 and 1997 articles.
 3. QNICE, the 16-bit descendant of NICE, as implemented in
    [MJoergen/qnice_cpu](https://github.com/MJoergen/qnice_cpu), for anything
-   the NICE sources leave open, such as interrupts.
+   the NICE sources leave open, such as the shift count.
 
 Appendix B of ISA.md lists every place where the specification departs from
 a source.

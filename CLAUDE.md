@@ -16,7 +16,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
 - `doc/ISA.md`: the specification. It is authoritative for all code here.
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/DEVICES.md`: the devices that the emulator maps into the I/O range
-  (console, math unit, counters, timer, SD card, network station,
+  (console, math unit, counters, SD card, network station,
   Ethernet frames, clock, FPU). ISA.md reserves the range and defines no device.
   ISA.md wins over it.
 - `doc/TOOLCHAIN.md`: the tools, what each reads and writes, the steps
@@ -31,8 +31,8 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
 - `doc/intro/`: beginner's slides (`nice_intro.tex`, built `nice_intro.pdf`)
   and their example programs. ISA.md wins over them.
 - `doc/MICROARCH.md`: design note for the FPGA core. ISA.md wins over it.
-  Its block diagram is `doc/pipeline.tex`, and its timing diagrams
-  `doc/flow.tex` and `doc/interrupt.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
+  Its block diagram is `doc/pipeline.tex`, and its timing diagram
+  `doc/flow.tex`, rendered to PNGs by `make diagrams`; edit the `.tex`
   and commit both. The timing values are read off a simulation by hand.
 - `assembler/niceasm.py`: Python 3, standard library only, `mypy --strict` clean.
   `assembler/nicefmt.py` checks the column layout of `.nasm` files, or fixes it with `--write`.
@@ -117,7 +117,6 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)
     cd hdl && make strides           # pcfx and sidefx swept with strides 17, 31, and 64 on CORE (minutes)
-    cd hdl && make sweep             # pcfx and sidefx with one interrupt per run on CORE, after an interrupt-path change, SIM=nvc for speed (hours)
     cd doc/intro && make test        # run the slides' example programs
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex

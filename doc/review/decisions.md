@@ -51,8 +51,10 @@ proposed again. The open items are the
 - **PR #36** (`RDSPC`, `RDSSR`, `WRSPC`, and `WRSSR`, control commands 4 to 7,
   to read and write the saved PC and SR from an interrupt routine). Closed on
   2026-10-26: the debug link's pause and single step (DEBUG.md §6) cover
-  breakpoints and stepping from the host. Its branch,
-  `claude/project-thread-k4m3qt`, stays.
+  breakpoints and stepping from the host. The saved PC and SR went with
+  the interrupts in `V3.0` (#162), and so did its branch,
+  `claude/project-thread-k4m3qt`. Its commit, 3230277, stays reachable
+  through the PR.
 - **Annotated tags for `RC01` to `RC06`** (sixth review §1.1). They stay
   lightweight: re-tagging means force-pushing tags that others may have
   fetched. `RC06` was made by hand, before `release.py tag` was used. From
@@ -231,10 +233,10 @@ proposed again. The open items are the
 - **A watchdog device that raises NMI** (#157). A system that runs
   unattended needs one to recover alone, and a NICE system runs with a
   person or a host on the debug link, which pauses a program that hangs
-  or raises an NMI in it (DEBUG.md §6). It would cost a block of the I/O
-  range, a device in the emulator and in `hdl/src` with its tests and
-  proofs, and a merge of a second NMI source. A button that raises NMI is
-  a board's (DEVICES.md §8). To revisit when a system runs unattended.
+  (DEBUG.md §6). It would cost a block of the I/O range, and a device in
+  the emulator and in `hdl/src` with its tests and proofs. Since `V3.0`
+  NICE has no NMI (#162), so a watchdog would reset the system. To
+  revisit when a system runs unattended.
 - **`--monitor` as nicebuild's default** (#176), with `--standalone` to
   turn it off. A program built for a monitor starts at `0x8000`, so the
   first build of README.md, run in `niceemu`, would run through the

@@ -1,9 +1,10 @@
-# The bus and interrupt ports of the pipelined core, and its own
-# invariants (formal_pipeline.vhd). "bmc" checks the assertions for the
-# first 12 cycles after reset, for every program and every bus, and
-# "cover" reaches each cover statement. 12 cycles hold an interrupt entry,
-# a first store, a halt, and the first step after a pause, which the
-# covers show. Each further cycle costs many times more.
+# The bus ports of the pipelined core, and its own invariants
+# (formal_pipeline.vhd). "bmc" checks the assertions for the first 12
+# cycles after reset, for every program and every bus, and "cover"
+# reaches each cover statement within 14. 12 cycles hold a first store,
+# a pause, and a halt; the first step after a pause comes at step 12 of
+# the cover, and after a register write at step 13, as the go on fetches
+# from R15 again. Each further cycle of bmc costs many times more.
 #
 # ABC refuses the undefined bits that a read out of an index's range
 # gives, a case the simulation never reaches, so the bmc task makes them
@@ -25,7 +26,7 @@ cover
 bmc: mode bmc
 bmc: depth 12
 cover: mode cover
-cover: depth 12
+cover: depth 14
 
 [engines]
 bmc: abc bmc3
@@ -33,8 +34,8 @@ cover: smtbmc yices
 
 [script]
 plugin -i ghdl
-bmc: ghdl --std=08 -fpsl -gG_REG_WRITES=false nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
-cover: ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
+bmc: ghdl --std=08 -fpsl -gG_REG_WRITES=false nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
+cover: ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd pipe_pkg.vhd pipe_fetch.vhd pipe_decode.vhd pipe_prepare.vhd pipe_dbus.vhd pipe_write.vhd pipeline.vhd wb_master_check.vhd core_check.vhd formal_pipeline.vhd -e formal_pipeline
 prep -top formal_pipeline
 bmc: techmap
 bmc: setundef -anyseq
@@ -50,6 +51,5 @@ bmc: setundef -anyseq
 ../src/pipe_write.vhd
 ../src/pipeline.vhd
 wb_master_check.vhd
-handshake_check.vhd
 core_check.vhd
 formal_pipeline.vhd

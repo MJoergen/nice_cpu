@@ -1,9 +1,7 @@
 ; The instruction counter (DEVICES.md §3) read right after two-cycle
-; destinations, late shifts, stores, skipped instructions, and INT.
+; destinations, late shifts, stores, and skipped instructions.
 INSTR           .EQU    0xFFFFFF42
                 JMP     start
-                .ORG    4
-                .DAT    isr
                 .ORG    0x100
 start           MOVE    R4, INSTR
                 MOVE    R1, 0x9ABCDEF1
@@ -22,22 +20,19 @@ start           MOVE    R4, INSTR
         ?!Z     MOVE    R2, @R4         ; skipped
                 MOVE    R2, @R4         ; 15
         ?Z      MOVE    R2, @R4         ; 16
-                INT     4
-                MOVE    R2, @R4         ; 20: INT, isr's MOVE, RTI count
+                MOVE    R2, @R4         ; 17
                 JMP     j1
-j1              MOVE    R2, @R4         ; 22
+j1              MOVE    R2, @R4         ; 19
                 ADD     R15, R15, R0
-                MOVE    R2, @R4         ; 24
+                MOVE    R2, @R4         ; 21
                 MOVE    R6, R15++
                 HALT
-                MOVE    R2, @R4         ; 26
+                MOVE    R2, @R4         ; 23
                 MOVE    @j2, 0
 j2              HALT
-                MOVE    R2, @R4         ; 29
-                ADD     R2, @R4, R4++   ; 30
+                MOVE    R2, @R4         ; 26
+                ADD     R2, @R4, R4++   ; 27
                 MOVE    R2, @0xFFFFFF43  ; the high word
                 HALT
-isr             MOVE    R7, @R4         ; 18
-                RTI
                 .ORG    0x1000
 scratch         .BLK    4

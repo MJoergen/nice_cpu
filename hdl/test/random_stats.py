@@ -5,10 +5,9 @@ Usage: random_stats.py [options] FIRST LAST
 
 Runs the programs of seeds FIRST to LAST on the emulator, as the makefile
 does, and reports what the runs spend their steps on:
-- where the steps run: the program, its interrupt routines, or elsewhere,
-  such as the words below DATA or empty memory, which runs as NOPs;
+- where the steps run: the program, or elsewhere, such as the words below
+  DATA or empty memory, which runs as NOPs;
 - how many of the program's instructions run at least once;
-- the interrupt requests, and how many are taken;
 - how the runs end;
 - the hazards of MICROARCH.md §5, as bench/hazards.py counts them, over
   all the runs, beside the shares of the benchmark of MICROARCH.md §5.6.
@@ -63,19 +62,15 @@ def main() -> None:
     generator = importlib.util.module_from_spec(gen)
     gen.loader.exec_module(generator)
     code = generator.CODE
-    routines = getattr(generator, "ROUTINES", None)
 
     where: collections.Counter[str] = collections.Counter()
     ends: collections.Counter[str] = collections.Counter()
-    requested = taken = covered = size = 0
+    covered = size = 0
     lines: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         binfile = os.path.join(tmp, "r.bin")
         for seed in range(args.first, args.last + 1):
-            opts = subprocess.run(
-                [sys.executable, args.generator, str(seed), binfile],
-                capture_output=True, text=True, check=True,
-            ).stdout.split()
+            subprocess.run([sys.executable, args.generator, str(seed), binfile], check=True)
             with open(binfile) as f:
                 image = dict((int(a, 16), int(w, 16)) for a, w in (line.split() for line in f))
             end = max(a for a in image if code <= a < code + 0x10000)
@@ -86,7 +81,7 @@ def main() -> None:
                 starts.add(a)
                 a += hazards.decode(image.get(a, 0)).words
             trace = subprocess.run(
-                [EMU, "-t", "-n", str(args.steps), "--no-cycle-counter", "--no-font", "--no-screen-mode", "--no-fpu", *opts, binfile],
+                [EMU, "-t", "-n", str(args.steps), "--no-cycle-counter", "--no-font", "--no-screen-mode", "--no-fpu", binfile],
                 capture_output=True, stdin=subprocess.DEVNULL,
             ).stdout.decode(errors="replace").splitlines()
             ran: set[int] = set()
@@ -98,22 +93,12 @@ def main() -> None:
                     if code <= a <= end:
                         counts["program"] += 1
                         ran.add(a)
-                    elif routines is not None and routines <= a < routines + 0x1000:
-                        counts["routines"] += 1
                     else:
                         counts["elsewhere"] += 1
-                elif line.startswith(("NMI ", "IRQ ")):
-                    counts["interrupts"] += 1
-            # The requests raised before the run ended: before its last step.
-            m = re.search(r"after (\d+) step", "\n".join(trace))
-            last = int(m.group(1)) if m else args.steps
-            n_req = sum(int(o.split(":")[0]) < last for o in opts[1::2])
             ending = next((x for x in trace if x.startswith(("Halted", "Stopped"))), "?")
             ending = re.sub(r" after.*", "", ending)
             where.update(counts)
             ends[ending] += 1
-            requested += n_req
-            taken += counts["interrupts"]
             covered += len(ran & starts)
             size += len(starts)
             # The steps up to the end of the run, as hazards.profile stops
@@ -122,14 +107,13 @@ def main() -> None:
             lines += trace[:stop]
             if args.verbose:
                 print(f"seed {seed}: {dict(counts)}, {len(ran & starts)} of {len(starts)} "
-                      f"instructions ran, {n_req} requests, {ending}")
+                      f"instructions ran, {ending}")
 
-    steps = sum(where[k] for k in ("program", "routines", "elsewhere"))
+    steps = sum(where[k] for k in ("program", "elsewhere"))
     print(f"seeds {args.first} to {args.last}, {steps} steps")
-    for k in ("program", "routines", "elsewhere"):
+    for k in ("program", "elsewhere"):
         print(f"  steps in {k:10s} {where[k]:7d} {100 * where[k] / steps:5.1f}%")
     print(f"  program instructions that ran: {100 * covered / size:.1f}%")
-    print(f"  interrupt requests taken: {taken} of the {requested} raised before the run ended")
     for ending, n in ends.most_common():
         print(f"  {n:3d} runs: {ending}")
     prof = hazards.profile(lines)

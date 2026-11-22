@@ -1,27 +1,22 @@
 -- Formal properties of the ports of a core, for SymbiYosys: the checkers
--- of its two buses and its two interrupt ports, and the rules of a stopped
--- core (MICROARCH.md §6.1). Both cores have these ports, so
--- formal_multicycle and formal_pipeline share it. It watches the ports and
--- drives nothing.
+-- of its two buses, and the rules of a stopped core (MICROARCH.md §6.1).
+-- Both cores have these ports, so formal_multicycle and formal_pipeline
+-- share it. It watches the ports and drives nothing.
 --
 -- THEORY OF OPERATION
--- A wb_master_check watches each bus, and a handshake_check each interrupt
--- port. Besides their assertions: the core goes quiet when it halts or
--- pauses, and stays quiet until reset or until it goes on; regs_i does not
--- change while paused, but for a write on reg_we_i, reg_idx_i, and
--- reg_data_i in a cycle with pause_i at '1', which is in regs_i the next
--- cycle with the rules of ISA.md §4.3; and once the core goes on, it reports a step on
--- retire_i, or makes a wait step on wstep_i, before it pauses again. A
--- wait step (ISA.md §7.5) comes only while waiting_i is '1', and so with
--- no request valid, and reports nothing, takes nothing, and neither pauses
--- nor halts. G_BREAKS breakpoints, with free
--- addresses and enable bits: the core pauses without pause_i only when R15
--- was an enabled breakpoint, or after a step that hit a watchpoint, which
--- wch_hit_i shows, and then stays paused until pause_i has been '1'. The
--- hits hold while the core is paused, and are gone once it goes on
--- (doc/DEBUG.md §6). The covers show a step reported, a store, a halt, a pause, a step
--- after a pause, a pause at a breakpoint, a step after a register write,
--- two wait steps, and a wait step after a pause.
+-- A wb_master_check watches each bus. Besides their assertions: the core
+-- goes quiet when it halts or pauses, and stays quiet until reset or
+-- until it goes on; regs_i does not change while paused, but for a write
+-- on reg_we_i, reg_idx_i, and reg_data_i in a cycle with pause_i at '1',
+-- which is in regs_i the next cycle with the rules of ISA.md §4.3; and
+-- once the core goes on, it reports a step on retire_i before it pauses
+-- again. G_BREAKS breakpoints, with free addresses and enable bits: the
+-- core pauses without pause_i only when R15 was an enabled breakpoint, or
+-- after a step that hit a watchpoint, which wch_hit_i shows, and then
+-- stays paused until pause_i has been '1'. The hits hold while the core
+-- is paused, and are gone once it goes on (doc/DEBUG.md §6). The covers
+-- show a step reported, a store, a halt, a pause, a step after a pause, a
+-- pause at a breakpoint, and a step after a register write.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The first cycle is a reset, so the registers here start from it.
@@ -57,19 +52,11 @@ entity core_check is
       dbus_we_i    : in  std_logic;
       dbus_addr_i  : in  std_logic_vector(31 downto 0);
       dbus_data_i  : in  std_logic_vector(31 downto 0);
-      nmi_valid_i  : in  std_logic;
-      nmi_ready_i  : in  std_logic;
-      nmi_vector_i : in  std_logic_vector(7 downto 0);
-      irq_valid_i  : in  std_logic;
-      irq_ready_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0);
       pause_i      : in  std_logic;
       paused_i     : in  std_logic;
       halted_i     : in  std_logic;
       reason_i     : in  t_halt;
       retire_i     : in  t_retire;
-      wstep_i      : in  std_logic;
-      waiting_i    : in  std_logic;
       regs_i       : in  t_regs;
       brk_addr_i   : in  t_brk_addrs;
       brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
@@ -141,19 +128,8 @@ begin
    --    regs_i = regs_w;
    -- psl f_pause_halt : assert always rst_i = '0' -> not (paused_i = '1' and halted_i = '1');
 
-   -- Once paused_i falls, a step is reported, or a wait step made, before
-   -- it rises again.
+   -- Once paused_i falls, a step is reported before it rises again.
    -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> paused_i = '0';
-
-   -- A wait step is a cycle of a wait in which nothing else happens, and
-   -- the core waits only while no request is valid, and never halted.
-   -- psl f_wstep : assert always (rst_i = '0' and wstep_i = '1') ->
-   --    (waiting_i = '1' and retire_i.valid = '0' and paused_i = '0' and
-   --     nmi_ready_i = '0' and irq_ready_i = '0');
-   -- psl f_waiting : assert always (rst_i = '0' and waiting_i = '1') ->
-   --    (halted_i = '0' and nmi_valid_i = '0' and irq_valid_i = '0');
-   -- psl c_wstep : cover {wstep_i = '1' and rst_i = '0'; wstep_i = '1' and rst_i = '0'};
-   -- psl c_go_wait : cover {paused_i = '1' and rst_i = '0'; wstep_i = '1' and rst_i = '0'};
 
    -- A pause of the core's own is at a breakpoint or after a hit, and
    -- lasts until pause_i has been '1'. The hits hold while paused, and the
@@ -215,34 +191,6 @@ begin
       ); -- i_dbus_check
 
 
-   i_nmi_check : entity work.handshake_check
-      generic map (
-         G_DATA_SIZE => 8
-      )
-      port map (
-         clk_i   => clk_i,
-         rst_i   => rst_i,
-         valid_i => nmi_valid_i,
-         ready_i => nmi_ready_i,
-         data_i  => nmi_vector_i
-      ); -- i_nmi_check
-
-
-   -- The IRQ vector may change before ready (src/irq_merge.vhd).
-   i_irq_check : entity work.handshake_check
-      generic map (
-         G_DATA_SIZE   => 8,
-         G_STABLE_DATA => false
-      )
-      port map (
-         clk_i   => clk_i,
-         rst_i   => rst_i,
-         valid_i => irq_valid_i,
-         ready_i => irq_ready_i,
-         data_i  => irq_vector_i
-      ); -- i_irq_check
-
-
    -- The step reported in the cycle before, but for one in a reset, the
    -- signals of the cycle before, owed_r, hit_d, and wait_r
    p_retire_d : process (clk_i)
@@ -272,7 +220,7 @@ begin
          elsif own then
             wait_r <= '1';
          end if;
-         if retire_i.valid = '1' or wstep_i = '1' then
+         if retire_i.valid = '1' then
             owed_r <= '0';
          elsif paused_d = '1' and paused_i = '0' then
             owed_r <= '1';

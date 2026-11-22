@@ -15,32 +15,15 @@
 ; checks that the emulator's run exits with 0, and then compares the core's
 ; trace with the emulator's. Every pair of side effects on one register is
 ; in sidefx_prog.py and pcfx_prog.py.
-;
-; The program runs with an NMI or an IRQ before any one of its steps, for
-; step 5 of the test order (test/irq_sweep.py), and still passes its checks.
-; So E = 1 almost everywhere, and VBASE is 0, 1, or 2 at every instruction
-; boundary, each with a vector table entry for NMI (vector 8) and IRQ
-; (vector 9). The routines change the flags, which RTI restores.
 COUNT           .EQU    0xFFFFFF01      ; the read counter (DEVICES.md §1)
 SP              .EQU    R13
 PC              .EQU    R15
 
-NMI             .EQU    8               ; the vectors of test/irq_sweep.py
-IRQ             .EQU    9
-
                 JMP     start           ; words 0,1
-                .ORG    4
-                .DAT    isr             ; vector 4, for INT 4 (VBASE = 0)
-                .ORG    NMI
-                .DAT    nmi, irq
-                .ORG    0x100+NMI
-                .DAT    nmi, irq
-                .ORG    0x200+NMI
-                .DAT    nmi, irq
 
                 .ORG    0x300
 start           MOVE    SP, stack
-                MOVE    R14, 0x40000000  ; E = 1
+                MOVE    R14, 0x40000000  ; F0 = 1
 
 ; 1. Each flag is set by a direct write of R14 and cleared by an instruction
 ; with M set, which the next instruction tests. Then it is set by an
@@ -79,34 +62,33 @@ start           MOVE    SP, stack
                 MOVE    R14, 0x49000000  ; Z = 1
                 ADD[M]  R0, R0, 1       ; Z = 0
         ?!Z     ADD     R1, R1, 1       ; 6
-; I is changed only by writes of R14, here direct ones.
-                MOVE    R14, 0xC1000000  ; I = 1
-        ?I      ADD     R1, R1, 1       ; 7
-                AND     R14, R14, 0x7FFFFFFF  ; I = 0
-        ?I      ADD     R1, R1, 0x100
+; F1 is changed only by writes of R14, here direct ones.
+                MOVE    R14, 0xC1000000  ; F1 = 1
+        ?F1     ADD     R1, R1, 1       ; 7
+                AND     R14, R14, 0x7FFFFFFF  ; F1 = 0
+        ?F1     ADD     R1, R1, 0x100
 ; R14 changed by the side effect of its destination, then tested. Bit 24
 ; is set by each of the two writes. A side effect can carry into the flags
-; only from VBASE = 0xFFFFFF, so the values pass through it within the
-; instruction. Between instructions, the vector table would be in the I/O
-; range.
+; only from U = 0xFFFFFF, so the values pass through it within the
+; instruction.
                 MOVE    R14++, 0x40FFFFFF  ; 0x41FFFFFF, then 0x42000000 + bit 24
         ?X      ADD     R1, R1, 1       ; 8
                 MOVE    R14++, 0x4AFFFFFF  ; 0x4BFFFFFF, then 0x4C000000 + bit 24
         ?C      ADD     R1, R1, 1       ; 9
         ?Z      ADD     R1, R1, 1       ; 10
         ?X      ADD     R1, R1, 0x100
-; The same through the side effects of two sources. s0 takes VBASE from 0
-; to 0xFFFFFF, and s1 carries from it into the flags, so that VBASE is 0
-; again when the instruction ends.
-                MOVE    R14, 0x41000000  ; E = 1
+; The same through the side effects of two sources. s0 takes U from 0 to
+; 0xFFFFFF, and s1 carries from it into the flags, so that U is 0 again
+; when the instruction ends.
+                MOVE    R14, 0x41000000  ; F0 = 1
                 ADD     R0, --R14, R14++  ; 0x41FFFFFF, then 0x42000000 + bit 24: X = 1
         ?X      ADD     R1, R1, 1       ; 11
                 ADD     R0, --R14, R14++  ; 0x43FFFFFF, then 0x44000000 + bit 24: C = 1
         ?C      ADD     R1, R1, 1       ; 12
         ?X      ADD     R1, R1, 0x100
 ; An instruction with M set and R14 as a register destination computes no
-; flags, though its result is 0. It clears E too, and an IRQ waits until
-; the OR sets it again.
+; flags, though its result is 0. It clears F0 too, which the OR sets
+; again.
                 MOVE[M] R14, 0          ; R14 = 0x01000000: Z = 0
         ?Z      ADD     R1, R1, 0x100
                 OR      R14, R14, 0x40000000
@@ -250,7 +232,7 @@ start           MOVE    SP, stack
                 CMP     R2, data+4
         ?!Z     JMP     fail
 
-; 4. R14 and R15 as pointers. R14 = 0xC1000000, with I and E set,
+; 4. R14 and R15 as pointers. R14 = 0xC1000000, with F1 and F0 set,
 ; points to the words at r14data, above the byte windows of DEVICES.md §9.
 ; When an instruction with M set changes the flags, R14 points elsewhere.
                 MOVE    R12, 4
@@ -297,7 +279,7 @@ x4              ADD     R1, @--R15, 0[R15]
 x5              HALT
                 MOVE    R15--, x6+1     ; R15 = x6
                 HALT
-x6              MOVE    R14, 0x41000000  ; VBASE = 0 again, for INT 4 in section 6
+x6              MOVE    R14, 0x41000000  ; U = 0 again
 
 ; 5. Stores into the words just fetched (MICROARCH.md §5.5): a NOP over a
 ; HALT in the next word and up to six words further, through a constant
@@ -374,7 +356,7 @@ s1              ADD     @s1+2, R1, 5    ; s1 + 2 holds the constant 5
 
 ; 6. Jumps over HALT: unconditional and conditional, through a register,
 ; through memory, by a side effect, to a jump, to the next instruction,
-; into the constant word of an instruction, and with INT and RTI.
+; and into the constant word of an instruction.
                 MOVE    R12, 6
                 JMP     j1
                 HALT
@@ -411,28 +393,8 @@ j8              CALL    subr
 j9              MOVE    R1, 0x01C1C000
                 CMP     R7, 1
         ?!Z     JMP     fail
-; INT right after the instruction that decides its condition. The routine
-; clears Z, and the instruction after RTI tests Z as it was before INT.
-                MOVE    R7, 0
-                ADD[M]  R0, R0, 1       ; Z = 0
-        ?Z      INT     4               ; skipped
-                CMP     R0, R0          ; Z = 1
-        ?Z      INT     4               ; R7 = 1
-        ?Z      ADD     R7, R7, 0x10    ; R7 = 0x11
-                CMP     R7, 0x11
-        ?!Z     JMP     fail
                 MOVE    R12, 0          ; passed
                 HALT
-
-; The routine of INT 4. It clears Z, which RTI restores.
-isr             ADD[M]  R7, R7, 1       ; Z = 0
-                RTI
-
-; The routines of NMI and IRQ. Each counts itself and changes the flags.
-nmi             ADD[M]  @nmis, @nmis, 1
-                RTI
-irq             ADD[M]  @irqs, @irqs, 1
-                RTI
 
 ; A subroutine that returns at once: the jump reads its target from memory.
 subr            RET
@@ -442,8 +404,6 @@ fail            .DAT    0x0FE00000      ; a reserved word: halts with status 2
 jt3             .DAT    j4
 jt4             .DAT    j5
 jtf             .DAT    fail
-nmis            .DAT    0
-irqs            .DAT    0
 
                 .ORG    0x800
 data            .BLK    16

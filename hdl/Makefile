@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/perf.vhd src/tod.vhd src/timer.vhd src/console_irq.vhd src/irq_merge.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/perf.vhd src/tod.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_timer.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -41,10 +41,10 @@ $(BUILD)/%.nasm: test/%_prog.py
 
 # tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
 # src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
-# tb_tod the clock of the time of day, tb_timer the timer, tb_fetch_stats the fetch statistics, tb_wb_dmux
+# tb_tod the clock of the time of day, tb_fetch_stats the fetch statistics, tb_wb_dmux
 # the data bus decoder, tb_sd_regs the SD card controller, tb_net_regs
 # the network station, and tb_eth_regs the port for Ethernet frames.
-UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_tod tb_timer tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs tb_eth_regs
+UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_tod tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs tb_eth_regs
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
@@ -96,16 +96,16 @@ $(FPU_RUNS): run/fpu/%:
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
-# the same NMI. The runs are: the full trace; no trace; a step limit right
-# after the skipped instruction; and a step limit at the NMI.
-TRACE_RUNS = full quiet skip nmi
+# the same steps. The runs are: the full trace; no trace; a step limit
+# right after the skipped instruction; and a step limit right before the
+# halt.
+TRACE_RUNS = full quiet skip limit
 GENERICS_quiet = -gG_TRACE=false
-OPTS_quiet     = --nmi 5:0x20
 GENERICS_skip  = -gG_MAX_STEPS=4
-OPTS_skip      = -t -n 4 --nmi 5:0x20
-GENERICS_nmi   = -gG_MAX_STEPS=6
-OPTS_nmi       = -t -n 6 --nmi 5:0x20
-OPTS_full      = -t --nmi 5:0x20
+OPTS_skip      = -t -n 4
+GENERICS_limit = -gG_MAX_STEPS=6
+OPTS_limit     = -t -n 6
+OPTS_full      = -t
 
 define check_trace
 	@($(in_rundir) && $(call sim_run,tb_trace,-gG_BIN_FILE=$(abspath $(BUILD)/trace.bin) -gG_TRACE_FILE=trace.out \
@@ -139,10 +139,9 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 	if [ $$? -eq 0 ]; then echo "PASS tb_link $*"; else echo "FAIL tb_link $*"; cat $(RUNDIR)/tb_link.log; exit 1; fi
 
 # tb_core runs a program on the core. Its trace, output, and
-# exit status must equal those of "niceemu -t" on the same program, with the
-# same interrupt requests. The programs are the 2004 examples and wrap from
-# the assembler's tests, the emulator's probes, with the probes' interrupt
-# options from emulator/Makefile, and test/shift.nasm, which runs every shift
+# exit status must equal those of "niceemu -t" on the same program. The
+# programs are the 2004 examples and wrap from the assembler's tests, the
+# emulator's probes, and test/shift.nasm, which runs every shift
 # with the counts that are hard to get right. The memory dumps of the probes
 # are left out, because the trace lists every memory write. The data reads
 # are not in the trace, but the probe reads.nasm counts them with the read
@@ -152,16 +151,12 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # src/perf.vhd. Its registers hold only instruction counts and flags, which
 # do not depend on the cycles an instruction takes. events reads the event
 # counters of src/perf.vhd, which count the same on every core and in the
-# emulator. timer runs the timer,
-# src/timer.vhd, which counts steps here, as the emulator's does. cputest,
-# reads, mpu, mpu64, mpubits, perf, events, and timer run a second time with a memory that
-# stalls in 30% of the cycles. cputest and after run again with random
-# pauses, and cputest and irq with pauses held for a random time, so that
-# requests come while the core is paused. cputest, reads, irq, and
-# test/rtiread.nasm run one step at a time. rtiread returns from an
-# interrupt to instructions with data reads, which a step over RTI must not
-# run. These are G_PAUSE, G_PAUSE_HOLD, and G_SINGLE_STEP of
-# test/tb_core.vhd, and must not change the trace (MICROARCH.md §6.1).
+# emulator. cputest, reads, mpu, mpu64, mpubits, perf, and events run a
+# second time with a memory that stalls in 30% of the cycles. cputest runs
+# again with random pauses, and with pauses held for a random time.
+# cputest and reads run one step at a time. These are G_PAUSE,
+# G_PAUSE_HOLD, and G_SINGLE_STEP of test/tb_core.vhd, and must not change
+# the trace (MICROARCH.md §6).
 # sd uses the SD card controller, src/sd_regs.vhd, with the engine
 # sim/sd_sim.vhd, and runs again on a stalling memory and with held pauses.
 # net reads and writes the network station, src/net_regs.vhd. eth uses the
@@ -170,82 +165,21 @@ $(LINK_RUNS): run/link/%: $(BUILD)/linkecho.bin
 # on a stalling memory and with held pauses. The frames it sends must be
 # the emulator's. bytewin reads and writes through the byte windows of
 # sim/wb_mem.vhd (DEVICES.md §9), and runs again on a stalling memory.
-# wait waits for the timer, an IRQ with E = 0, and an NMI (ISA.md §7.5),
-# and runs again on a stalling memory, with random and held pauses, and
-# one step at a time, so that pauses and steps fall in the waits. Its
-# cycle and time counts are memory in both, as they count differently.
 # fpu, fpustack, fpudec, and fpufunc use the FPU, src/fpu.vhd, and fpu runs again
 # on a stalling memory. fpu reads the time, which is memory in both.
 # fpudec runs again with random pauses, with pauses held for up to 3000
 # cycles, and one step at a time, so that pauses and steps come while
 # the core waits for DIGITS and SCALE10 (DEVICES.md §11.5).
 EXAMPLES = count replicate print wrap
-PROBES = logic dest carry r15 cond rotate vbase selfmod addr irq merge after start cputest \
-  console screen iofetch reads reserved mpu mpu64 mpubits perf events timer input \
-  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin wait conirq \
+PROBES = logic dest carry r15 cond rotate selfmod addr cputest \
+  console screen iofetch reads reserved mpu mpu64 mpubits perf events input \
+  r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin \
   fpu fpustack fpudec fpufunc
-INTR_irq   = --nmi 2:1 --irq 2:2 --nmi 9:1 --irq 17:2 --nmi 17:1 --irq 100:2
-INTR_merge = --nmi 1:1 --nmi 1:2 --irq 1:3 --irq 4:4 --irq 7:5
-INTR_after = --nmi 3:1 --nmi 10:1
-INTR_start = --nmi 0:3
-INTR_perf  = --nmi 3:0x41
-INTR_perf_stall = $(INTR_perf)
-INTR_events = --nmi 12:0x41
-INTR_events_stall = $(INTR_events)
-INTR_irq_step   = $(INTR_irq)
-INTR_irq_hold   = $(INTR_irq)
-INTR_after_pause = $(INTR_after)
-INTR_rtiread_step = --nmi 2:1 --nmi 5:1
-# The program of the interrupt timing diagram, doc/interrupt.tex: a request
-# taken at once, and one that comes just after a data read was issued.
-INTR_irqwave = --irq 2:9 --irq 10:9
-INTR_wait  = --irq 25:0x42 --nmi 40:0x43
-# conirq: the timer's source, raised while the console's request waits,
-# goes first (DEVICES.md §4).
-INTR_conirq = --irq 4:0x41
-INTR_conirq_stall = $(INTR_conirq)
-INTR_conirq_hold  = $(INTR_conirq)
-INTR_wait_stall = $(INTR_wait)
-INTR_wait_pause = $(INTR_wait)
-INTR_wait_hold  = $(INTR_wait)
-INTR_wait_step  = $(INTR_wait)
-# The runs whose program starts the timer, which raises requests too.
-TIMER_timer       = yes
-TIMER_timer_stall = yes
-TIMER_wait        = yes
-TIMER_wait_stall  = yes
-TIMER_wait_pause  = yes
-TIMER_wait_hold   = yes
-TIMER_wait_step   = yes
 # The runs that read the cycle counter or the time: memory in both.
-NOCYCLES_wait       = yes
 NOCYCLES_fpu        = yes
 NOCYCLES_fpu_stall  = yes
-NOCYCLES_wait_stall = yes
-NOCYCLES_wait_pause = yes
-NOCYCLES_wait_hold  = yes
-NOCYCLES_wait_step  = yes
-# The runs whose requests every core takes at the step the emulator
-# does, so that the comparison is exact, and irq_compare.py is not run.
-# It moves each request to the step of its entry, which would end a
-# wait at another step (ISA.md §7.5).
-EXACT_wait       = yes
-EXACT_wait_stall = yes
-EXACT_wait_pause = yes
-EXACT_wait_hold  = yes
-EXACT_wait_step  = yes
-# conirq takes each request right after the instruction that sets E, which
-# no core can take later.
-EXACT_conirq     = yes
-EXACT_conirq_stall = yes
-EXACT_conirq_hold  = yes
-# A run has interrupt requests from the options or from the timer.
-requests = $(INTR_$(1))$(TIMER_$(1))
 # The console input of a run, a file, as the emulator's --input takes it.
 INPUT_input = ../emulator/test/input.txt
-INPUT_conirq = ../emulator/test/input.txt
-INPUT_conirq_stall = $(INPUT_conirq)
-INPUT_conirq_hold  = $(INPUT_conirq)
 # The runs with an SD card in slot 0: sd.img in the run's directory, the
 # image of emulator/test/sd.nasm, for the core, and a copy of it for the
 # emulator, which writes it. sim/sd_sim.vhd writes nothing back.
@@ -259,51 +193,33 @@ ETH_eth_stall = $(ETH_eth)
 ETH_eth_hold = $(ETH_eth)
 SD_IMAGE = $(PYTHON) -c 'import sys; sys.stdout.buffer.write(bytes(o % 251 for o in range(1024)))'
 
-# test/breaks.nasm stops at the breakpoints of BREAKS_breaks, in hex, with
-# the requests of INTR_breaks: in a loop, at an instruction with a data
-# read, at a false condition, at an interrupt routine, after an RTI, and
-# with an IRQ pending at a jump target and at an instruction that the
-# pipelined core holds already (doc/DEBUG.md §6). tb_core's
+# test/breaks.nasm stops at the breakpoints of BREAKS_breaks, in hex: in a
+# loop, at an instruction with a data read, at a false condition, and at
+# a jump target (doc/DEBUG.md §6). tb_core's
 # G_BREAK_AT sets them, and its G_BREAK_LOG lists the stops. check_breaks
 # compares that list with the emulator's, from test/break_stops.py. The
 # run breaks_stall does the same on a stalling memory, and breaks_hold
 # adds pauses held for a random time, which must not change the trace.
 # A pause at a breakpoint is not a stop of the core's own, so that run's
 # list is not compared.
-BREAKS_breaks = 4 5 8 D
+BREAKS_breaks = 4 5 8 C
 BREAKS_breaks_stall = $(BREAKS_breaks)
-INTR_breaks = --irq 6:2 --nmi 8:2 --irq 18:2
-INTR_breaks_stall = $(INTR_breaks)
-INTR_breaks_hold = $(INTR_breaks)
 BREAK_GENERICS = "-gG_BREAK_AT=$(BREAKS_breaks)" -gG_BREAK_LOG=stops.out
-# wait_breaks has a breakpoint after each WAIT of the probe wait, which
-# stops not during the wait, but where a request ends it, unless the entry
-# goes first (doc/DEBUG.md §6): after the RTI of the timer's entry and of
-# the NMI's, where the IRQ ends a wait with E = 0, and after the WAIT that
-# finds that IRQ pending.
-BREAKS_wait_breaks = 9 15 19 1F
-INTR_wait_breaks = $(INTR_wait)
-TIMER_wait_breaks = yes
-NOCYCLES_wait_breaks = yes
-EXACT_wait_breaks = yes
 
 # test/watches.nasm stops after the steps that hit the watchpoints of
-# WATCH_watches, with the requests of INTR_watches: reads and writes in
-# each addressing mode, two reads in one step, a skipped read, a read
-# that must not pass a hit before it, an I/O store, a jump through memory, the vector reads of INT and of IRQ
-# entries, and an IRQ raised right after a hit (doc/DEBUG.md §6). tb_core's
+# WATCH_watches: reads and writes in each addressing mode, two reads in
+# one step, a skipped read, a read that must not pass a hit before it, an
+# I/O store, and a jump through memory (doc/DEBUG.md §6). tb_core's
 # G_WATCH_AT sets them, and check_breaks compares the stops, with the
 # watchpoint and the address of each hit, with the emulator's. The run
 # watches_stall does the same on a stalling memory.
-WATCH_watches = 20rw 102r FFFFFF20w 1Fr
+WATCH_watches = 1Crw 1Dw FFFFFF20w 1Br
 WATCH_watches_stall = $(WATCH_watches)
-INTR_watches = --irq 4:2 --irq 8:2
-INTR_watches_stall = $(INTR_watches)
 WATCH_GENERICS = "-gG_WATCH_AT=$(WATCH_watches)" -gG_BREAK_LOG=stops.out
 
 # $(1) is the name of the run, and $(2) the program.
 define check_breaks
-	@$(PYTHON) test/break_stops.py --emu $(EMU) --watch "$(WATCH_$(1))" $(2) "$(BREAKS_$(1))" -- $(INTR_$(1)) \
+	@$(PYTHON) test/break_stops.py --emu $(EMU) --watch "$(WATCH_$(1))" $(2) "$(BREAKS_$(1))" \
 	  > $(RUNDIR)/stops.expected
 	@if cmp -s $(RUNDIR)/stops.expected $(RUNDIR)/stops.out; then echo "PASS $(CORE) $(1) stops"; \
 	else echo "FAIL $(CORE) $(1) stops"; diff $(RUNDIR)/stops.expected $(RUNDIR)/stops.out; exit 1; fi
@@ -328,14 +244,13 @@ endef
 define check_core
 	@($(in_rundir) && $(if $(SD_$(1)),$(SD_IMAGE) > sd.img && cp sd.img sd_emu.img &&) \
 	  $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(2)) \
-	  -gG_TRACE_FILE=core.out $(if $(INTR_$(1)),"-gG_INTERRUPTS=$(INTR_$(1))") \
-	  $(if $(call requests,$(1)),-gG_INTR_LOG=core.intr) \
+	  -gG_TRACE_FILE=core.out \
 	  $(if $(INPUT_$(1)),-gG_INPUT_FILE=$(abspath $(INPUT_$(1)))) \
 	  $(if $(NOCYCLES_$(1)),-gG_CYCLE_COUNTER=false) \
 	  $(if $(SD_$(1)),-gG_SD0_FILE=sd.img) \
 	  $(if $(ETH_$(1)),-gG_ETH_IN_FILE=$(abspath $(ETH_$(1))) -gG_ETH_OUT_FILE=eth.out) \
 	  $(3)) > core.log 2>&1); echo "exit $$?" >> $(RUNDIR)/core.out
-	@$(EMU) -t $(INTR_$(1)) $(if $(INPUT_$(1)),--input $(INPUT_$(1))) \
+	@$(EMU) -t $(if $(INPUT_$(1)),--input $(INPUT_$(1))) \
 	  $(if $(NOCYCLES_$(1)),--no-cycle-counter) \
 	  $(if $(SD_$(1)),--sd0 $(RUNDIR)/sd_emu.img) \
 	  $(if $(ETH_$(1)),--eth-in $(ETH_$(1)) --eth-out $(RUNDIR)/eth_emu.out) $(2) < /dev/null \
@@ -344,34 +259,12 @@ define check_core
 	$(if $(ETH_$(1)),@if cmp -s $(RUNDIR)/eth_emu.out $(RUNDIR)/eth.out; \
 	then echo "PASS $(CORE) $(1) frames"; \
 	else echo "FAIL $(CORE) $(1) frames"; diff $(RUNDIR)/eth_emu.out $(RUNDIR)/eth.out; exit 1; fi)
-	$(if $(and $(call requests,$(1)),$(IRQ_LATE),$(if $(EXACT_$(1)),,yes)),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; \
+	@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; \
 	then echo "PASS $(CORE) $(1)"; \
 	else echo "FAIL $(CORE) $(1)"; cat $(RUNDIR)/core.log; \
-	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
-	$(if $(and $(call requests,$(1)),$(if $(EXACT_$(1)),,yes)),@$(IRQ_COMPARE) --name $(1) $(2) $(RUNDIR)/core.out $(RUNDIR)/core.intr)
+	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi
 
 endef
-
-# A run with interrupt requests is also compared with test/irq_compare.py,
-# which runs the emulator with the steps where the core took each request,
-# from the core's interrupt log, and checks that none was taken late. On
-# the multi-cycle core it must agree with the comparison above, which uses
-# the steps the requests were raised for (MICROARCH.md §9).
-# The pipelined core may take a request after instructions that had issued
-# a data read when it came (MICROARCH.md §6), so for it the comparison above
-# cannot be exact, and irq_compare.py alone judges the runs with requests.
-IRQ_LATE = $(if $(filter pipeline,$(CORE)),--read-delay)
-# The delays in cycles with which irq_sweep.py raises each request, so that
-# it arrives at different points within an instruction.
-SWEEP_DELAYS_multicycle = 0,3,7
-SWEEP_DELAYS_pipeline = 0,1,2,3
-SWEEP_STRIDE = 16
-# test/fpuirq.nasm is swept the same way, with a request before every
-# SWEEP_STRIDE-th step, and also with delays that reach into the FPU's
-# commands, so that requests come while the core waits for FMOD,
-# SCALE10, and DIGITS (DEVICES.md §11.5).
-FPU_SWEEP_DELAYS = 0,40,400,1500
-IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 
 # The hazard programs of MICROARCH.md §9, step 4: test/hazard.nasm, the
 # programs that test/sidefx_prog.py, test/pcfx_prog.py, and
@@ -381,14 +274,6 @@ IRQ_COMPARE = $(PYTHON) test/irq_compare.py --emu $(EMU) $(IRQ_LATE)
 # ahead. Both check themselves like hazard.nasm.
 # hazard.nasm checks itself, so the emulator's run must end at its last HALT,
 # with R12 = 0 and exit status 0, before the core's trace means anything.
-# test/irq_sweep.py then runs hazard.nasm with an NMI before each of its
-# steps, and with an IRQ before each, on the stalling memory (MICROARCH.md
-# §9, step 5). It runs them in parallel, on all cores. It sweeps
-# irqhazard.nasm and latecount.nasm the same way, without the delays, and
-# the programs of pcfx_prog.py and sidefx_prog.py with a request before
-# every SWEEP_STRIDE-th step in each run, which takes SWEEP_STRIDE runs per
-# kind instead of one per step. make sweep sweeps those two with one
-# request per run instead, on CORE.
 define check_selfcheck
 	@if grep -q '^R12 00000000' $(RUNDIR)/core.expected && \
 	  tail -n 1 $(RUNDIR)/core.expected | grep -qx 'exit 0'; then echo "PASS emulator $(1)"; \
@@ -399,16 +284,10 @@ endef
 
 # In front of a recipe line, $(JOBSERVER) is the "+" that gives a script
 # make's jobserver (test/core_runs.py). A "+" also runs its line under
-# make -n, -q, and -t, where a sweep would take its hours. So under those
-# it is nothing: make -n prints the line, and the script does not run.
+# make -n, -q, and -t, where a run of the programs would take minutes. So
+# under those it is nothing: make -n prints the line, and the script does
+# not run.
 JOBSERVER = $(if $(strip $(foreach o,n q t,$(findstring $(o),$(firstword -$(MAKEFLAGS))))),,+)
-
-# $(1) is the program, in $(BUILD), and $(2) any more options.
-define check_sweep
-	$(JOBSERVER)@$(PYTHON) test/irq_sweep.py --core $(CORE) $(SIM_ARGS) $(IRQ_LATE) $(2) --stall 30 --build $(BUILD) --emu $(EMU) \
-	  $(BUILD)/$(1).bin
-
-endef
 
 # The programs of the third repository review against the operand rules of
 # the re-timed core (doc/review/third-repository-review.md §1.5): the shift
@@ -416,15 +295,12 @@ endef
 # one, R14 and R15 in every field, R0, stores into fetched code from late
 # instructions, the read counter and the instruction counter around them,
 # jumps into constant words, and every shift into R15. Each runs on both
-# cores, plain and on a stalling memory, compared with the emulator, and
-# irqhazard also with a request before each step, through
-# test/irq_sweep.py, without delays. test/samereg_prog.py writes one more,
-# with one register in all three fields of a shift. smcskid came later:
-# stores into an instruction in DECODE's skid register. So did timerwrite:
-# writes to TIMER_PERIOD by instructions with a data read, and reads of
-# TIMER_COUNT after them.
+# cores, plain and on a stalling memory, compared with the emulator.
+# test/samereg_prog.py writes one more, with one register in all three
+# fields of a shift. smcskid came later: stores into an instruction in
+# DECODE's skid register.
 HAZARD_PROGS = latecount twocycle r15mix r14cond r0odd smclate readorder instret_late \
-  jumpwords condlate irqhazard shiftjump smcskid predict timerwrite
+  jumpwords condlate shiftjump smcskid predict
 
 # test/fstats.nasm reads the fetch statistics (MICROARCH.md §8.1), which
 # only the pipelined core has, and checks itself. The emulator has none, so the run
@@ -456,7 +332,7 @@ define check_selfonly
 endef
 
 # Random programs from test/random_prog.py, each run for RANDOM_STEPS steps
-# with random interrupt requests, on a memory that stalls in RANDOM_STALL
+# on a memory that stalls in RANDOM_STALL
 # percent of the cycles, and compared in the same way. A random program
 # may read any address, so the cycle counter, which the core and the
 # emulator count differently, is memory in both: G_CYCLE_COUNTER=false and
@@ -465,7 +341,7 @@ endef
 # --no-screen-mode. So is the FPU, in both, which leaves it to its
 # own tests: G_FPU=false and --no-fpu. The fetch statistics read 0 and
 # ignore writes in both: G_FETCH_STATS=false. random_prog.py writes the
-# program, and prints the requests, which go in random_N.opts. The seeds
+# program. The seeds
 # of PAUSE_SEEDS run again with random pauses, as random_pause_N, and with
 # pauses held for a random time, as random_hold_N (G_PAUSE and
 # G_PAUSE_HOLD of test/tb_core.vhd), which must not change the trace. In check_random, $(2)
@@ -475,24 +351,20 @@ PAUSE_SEEDS = $(shell seq 1 8)
 RANDOM_STEPS = 3000
 RANDOM_STALL = 30
 
-$(BUILD)/random_%.bin $(BUILD)/random_%.opts: test/random_prog.py
+$(BUILD)/random_%.bin: test/random_prog.py
 	@mkdir -p $(BUILD)
-	@$(PYTHON) test/random_prog.py $* $(BUILD)/random_$*.bin > $(BUILD)/random_$*.opts
+	@$(PYTHON) test/random_prog.py $* $@
 
 define check_random
-	@o=$$(cat $(BUILD)/random_$(1).opts); \
-	  ($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
+	@($(in_rundir) && $(call sim_run,tb_core,-gG_CORE=$(CORE) -gG_BIN_FILE=$(abspath $(BUILD)/random_$(1).bin) \
 	  -gG_TRACE_FILE=core.out -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
-	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false -gG_FPU=false $(2) \
-	  $${o:+"-gG_INTERRUPTS=$$o"} -gG_INTR_LOG=core.intr) > core.log 2>&1); \
+	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false -gG_FPU=false $(2)) > core.log 2>&1); \
 	  echo "exit $$?" >> $(RUNDIR)/core.out
-	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter --no-font --no-screen-mode --no-fpu $$(cat $(BUILD)/random_$(1).opts) $(BUILD)/random_$(1).bin \
+	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter --no-font --no-screen-mode --no-fpu $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(RUNDIR)/core.expected; echo "exit $$?" >> $(RUNDIR)/core.expected
-	$(if $(IRQ_LATE),,@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random$(3) $(1)"; \
+	@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random$(3) $(1)"; \
 	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(RUNDIR)/core.log; \
-	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi)
-	@$(IRQ_COMPARE) --name random$(3)_$(1) $(BUILD)/random_$(1).bin $(RUNDIR)/core.out \
-	  $(RUNDIR)/core.intr -- -n $(RANDOM_STEPS) --no-cycle-counter --no-font --no-screen-mode --no-fpu
+	  diff $(RUNDIR)/core.expected $(RUNDIR)/core.out | head -20; exit 1; fi
 
 endef
 
@@ -510,17 +382,6 @@ run/$(1)/$(2): $(filter $(BUILD)/%,$(3))
 
 endef
 
-# The same for a sweep of test/irq_sweep.py, run/CORE/sweep_PROGRAM: $(1)
-# is the core, $(2) the program, in $(BUILD), and $(3) any more options.
-define sweep_run
-RUNS_$(1) += run/$(1)/sweep_$(2)
-.PHONY: run/$(1)/sweep_$(2)
-run/$(1)/sweep_$(2): override CORE = $(1)
-run/$(1)/sweep_$(2): $(BUILD)/$(2).bin
-	$$(call check_sweep,$(2),$(3))
-
-endef
-
 # The same for a random program, run/CORE/randomSUFFIX_SEED, which
 # RANDOM_CORE lists too: $(1) is the core, $(2) the seed, $(3) any more
 # generics, and $(4) the suffix.
@@ -529,7 +390,7 @@ RUNS_$(1) += run/$(1)/random$(4)_$(2)
 RANDOM_$(1) += run/$(1)/random$(4)_$(2)
 .PHONY: run/$(1)/random$(4)_$(2)
 run/$(1)/random$(4)_$(2): override CORE = $(1)
-run/$(1)/random$(4)_$(2): $(BUILD)/random_$(2).bin $(BUILD)/random_$(2).opts
+run/$(1)/random$(4)_$(2): $(BUILD)/random_$(2).bin
 	$$(call check_random,$(2),$(3),$(4))
 
 endef
@@ -540,15 +401,8 @@ endef
 # the host's clock, and the core, on its cycles, have in common, so the
 # runs are compared as the others are. It runs again on a stalling memory.
 
-# The runs of the core $(1). The sweeps take longest, so they come first,
-# and make starts them first.
+# The runs of the core $(1).
 define core_runs
-$(eval $(call sweep_run,$(1),hazard,--delays $$(SWEEP_DELAYS_$(1)) --self-check))
-$(eval $(call sweep_run,$(1),irqhazard))
-$(eval $(call sweep_run,$(1),latecount))
-$(eval $(call sweep_run,$(1),pcfx,--stride $(SWEEP_STRIDE)))
-$(eval $(call sweep_run,$(1),sidefx,--stride $(SWEEP_STRIDE)))
-$(eval $(call sweep_run,$(1),fpuirq,--stride $(SWEEP_STRIDE) --delays $$(FPU_SWEEP_DELAYS)))
 $(foreach t,$(EXAMPLES),$(eval $(call core_run,$(1),$(t),../assembler/test/$(t).bin)))
 $(foreach t,$(PROBES),$(eval $(call core_run,$(1),$(t),../emulator/test/$(t).bin)))
 $(eval $(call core_run,$(1),shift,$(BUILD)/shift.bin))
@@ -563,15 +417,8 @@ $(eval $(call core_run,$(1),fpudec_hold,../emulator/test/fpudec.bin,-gG_PAUSE=2 
 $(eval $(call core_run,$(1),fpudec_step,../emulator/test/fpudec.bin,-gG_SINGLE_STEP=true))
 $(eval $(call core_run,$(1),perf_stall,../emulator/test/perf.bin,-gG_STALL=30 -gG_SEED=9))
 $(eval $(call core_run,$(1),events_stall,../emulator/test/events.bin,-gG_STALL=30 -gG_SEED=13))
-$(eval $(call core_run,$(1),timer_stall,../emulator/test/timer.bin,-gG_STALL=30 -gG_SEED=11))
 $(eval $(call core_run,$(1),sd_stall,../emulator/test/sd.bin,-gG_STALL=30 -gG_SEED=41))
 $(eval $(call core_run,$(1),sd_hold,../emulator/test/sd.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=43))
-$(eval $(call core_run,$(1),wait_stall,../emulator/test/wait.bin,-gG_STALL=30 -gG_SEED=51))
-$(eval $(call core_run,$(1),wait_pause,../emulator/test/wait.bin,-gG_PAUSE=40 -gG_SEED=53))
-$(eval $(call core_run,$(1),wait_hold,../emulator/test/wait.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=55))
-$(eval $(call core_run,$(1),wait_step,../emulator/test/wait.bin,-gG_SINGLE_STEP=true))
-$(eval $(call core_run,$(1),conirq_stall,../emulator/test/conirq.bin,-gG_STALL=30 -gG_SEED=61))
-$(eval $(call core_run,$(1),conirq_hold,../emulator/test/conirq.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=63))
 $(eval $(call core_run,$(1),bytewin_stall,../emulator/test/bytewin.bin,-gG_STALL=30 -gG_SEED=49))
 $(eval $(call core_run,$(1),eth_stall,../emulator/test/eth.bin,-gG_STALL=30 -gG_SEED=45))
 $(eval $(call core_run,$(1),eth_hold,../emulator/test/eth.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=47))
@@ -579,24 +426,17 @@ $(eval $(call core_run,$(1),cputest_pause,../emulator/test/cputest.bin,-gG_PAUSE
 $(eval $(call core_run,$(1),cputest_hold,../emulator/test/cputest.bin,-gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=31))
 $(eval $(call core_run,$(1),cputest_step,../emulator/test/cputest.bin,-gG_SINGLE_STEP=true))
 $(eval $(call core_run,$(1),reads_step,../emulator/test/reads.bin,-gG_SINGLE_STEP=true -gG_STALL=30 -gG_SEED=25))
-$(eval $(call core_run,$(1),irq_step,../emulator/test/irq.bin,-gG_SINGLE_STEP=true))
-$(eval $(call core_run,$(1),irq_hold,../emulator/test/irq.bin,-gG_PAUSE=10 -gG_PAUSE_HOLD=40 -gG_STALL=30 -gG_SEED=33))
-$(eval $(call core_run,$(1),after_pause,../emulator/test/after.bin,-gG_PAUSE=50 -gG_SEED=27))
-$(eval $(call core_run,$(1),rtiread_step,$(BUILD)/rtiread.bin,-gG_SINGLE_STEP=true))
 $(eval $(call core_run,$(1),pausepatch,$(BUILD)/pausepatch.bin,-gG_SINGLE_STEP=true -gG_PATCH_STEP=2 \
   -gG_PATCH_ADDR=5 -gG_PATCH_DATA=00010100,check_expected))
 $(eval $(call core_run,$(1),breaks,$(BUILD)/breaks.bin,$(BREAK_GENERICS),check_core check_breaks))
 $(eval $(call core_run,$(1),breaks_stall,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_STALL=30 -gG_SEED=35,check_core check_breaks))
 $(eval $(call core_run,$(1),breaks_hold,$(BUILD)/breaks.bin,$(BREAK_GENERICS) -gG_PAUSE=5 -gG_PAUSE_HOLD=40 -gG_SEED=37))
-$(eval $(call core_run,$(1),wait_breaks,../emulator/test/wait.bin,"-gG_BREAK_AT=$(BREAKS_wait_breaks)" \
-  -gG_BREAK_LOG=stops.out,check_core check_breaks))
 $(eval $(call core_run,$(1),watches,$(BUILD)/watches.bin,$(WATCH_GENERICS),check_core check_breaks))
 $(eval $(call core_run,$(1),watches_stall,$(BUILD)/watches.bin,$(WATCH_GENERICS) -gG_STALL=30 -gG_SEED=59,check_core check_breaks))
 $(eval $(call core_run,$(1),instret,$(BUILD)/instret.bin))
 $(eval $(call core_run,$(1),todbus,$(BUILD)/todbus.bin))
 $(eval $(call core_run,$(1),todbus_stall,$(BUILD)/todbus.bin,-gG_STALL=30 -gG_SEED=57))
 $(eval $(call core_run,$(1),instret_stall,$(BUILD)/instret.bin,-gG_STALL=30 -gG_SEED=17))
-$(eval $(call core_run,$(1),irqwave,$(BUILD)/irqwave.bin))
 $(eval $(call core_run,$(1),addwave,$(BUILD)/addwave.bin))
 $(eval $(call core_run,$(1),hazard,$(BUILD)/hazard.bin,,check_core check_selfcheck))
 $(eval $(call core_run,$(1),hazard_stall,$(BUILD)/hazard.bin,-gG_STALL=30 -gG_SEED=13))
@@ -650,13 +490,9 @@ jobserver-probe:
 run/budget:
 	@$(PYTHON) test/timing_budget.py --test
 
-# The check of test/irq_compare.py against made-up interrupt logs.
-run/irqcompare: emulator
-	@$(PYTHON) test/irq_compare.py --test --emu $(EMU)
-
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/jobserver run/budget run/irqcompare $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/jobserver run/budget $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
@@ -673,24 +509,6 @@ random-sweep:
 	@for c in $(CORES); do \
 	  $(MAKE) --no-print-directory CORE=$$c RANDOM_SEEDS="$$(seq 1 $(RANDOM_LAST))" random || exit 1; \
 	done
-
-# The programs of pcfx_prog.py and sidefx_prog.py swept with one request
-# per run, on CORE, one after the other, as each uses every CPU. It takes
-# four hours on the pipelined core and two on the multi-cycle one, on 20 CPUs.
-# make slow runs strides instead; this is for a change to the interrupt path.
-sweep: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
-	$(call check_sweep,pcfx)
-	$(call check_sweep,sidefx)
-
-# The same two programs swept on CORE with each stride of SLOW_STRIDES, in
-# SWEEP_JOBS workers. make test sweeps them with SWEEP_STRIDE; 17 and 31
-# shift the requests against those, and 64 leaves most of each run without
-# one, closer to the one request per run of make sweep. make slow runs it.
-SLOW_STRIDES = 17,31,64
-SWEEP_JOBS ?= $(JOBS)
-strides: emulator analyze $(BUILD)/pcfx.bin $(BUILD)/sidefx.bin
-	$(call check_sweep,pcfx,--stride $(SLOW_STRIDES) -j $(SWEEP_JOBS))
-	$(call check_sweep,sidefx,--stride $(SLOW_STRIDES) -j $(SWEEP_JOBS))
 
 # The runtime's and the translator's test programs on the core (MICROARCH.md
 # §9, step 7). runtime/Makefile with KEEP and translator/test/run.py with
@@ -728,11 +546,10 @@ analyze-nvc:
 
 # Checks that GHDL can synthesize both cores, the math unit, the FPU and
 # its arithmetic unit, the performance counters, the clock of the time of
-# day, the timer, the console's receive interrupt, the merge of the IRQ
-# sources, the fetch statistics, the data bus decoder, the debug link, the
-# SD card controller, the network station, and the port for Ethernet
-# frames, with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu fpu_unit fpu perf tod timer console_irq irq_merge fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
+# day, the fetch statistics, the data bus decoder, the debug link, the SD
+# card controller, the network station, and the port for Ethernet frames,
+# with the generics in SYNTH_GENERICS_unit.
+SYNTH = multicycle pipeline mpu fpu_unit fpu perf tod fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -748,11 +565,10 @@ synth: analyze-ghdl
 # is a target formal/FILE/TASK, and they run in parallel, as the runs of
 # make test do. The work directories go in $(BUILD).
 SBY ?= sby
-FORMAL = nice_pkg multicycle timer console_irq irq_merge tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu fpu debug_link sd_regs net_regs eth_regs
+FORMAL = nice_pkg multicycle tod wb_dmux pipe_fetch pipe_decode pipe_prepare pipe_dbus pipe_write pipeline perf fetch_stats mpu fpu debug_link sd_regs net_regs eth_regs
 FORMAL_TASKS = prove cover
 # The pipelined core is checked for a bounded number of cycles only.
 FORMAL_TASKS_pipeline = bmc cover
-FORMAL_TASKS_console_irq = prove bmc cover
 # The FPU's bus is proven for every command, and its stack against a
 # model for the commands of the stack.
 FORMAL_TASKS_fpu = prove prove_stack cover
@@ -856,4 +672,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test seqcheck runs jobserver-probe programs random sweep strides analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean
+.PHONY: test seqcheck runs jobserver-probe programs random analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean

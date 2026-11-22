@@ -22,7 +22,6 @@ import sys
 M = 0xFFFFFFFF
 NAMES = {0xFFFFFF00: "CONSOLE", 0xFFFFFF01: "READ_COUNTER", 0xFFFFFF40: "CYCLE_LO",
          0xFFFFFF41: "CYCLE_HI", 0xFFFFFF42: "INSTR_LO", 0xFFFFFF43: "INSTR_HI",
-         0xFFFFFF10: "TIMER_PERIOD", 0xFFFFFF11: "TIMER_COUNT", 0xFFFFFF12: "TIMER_VECTOR",
          0xFFFFFF60: "FS_CTRL"}
 LINE = re.compile(r"([0-9a-f]{8}) ([0-9a-f]{8})(.*)")
 
@@ -110,10 +109,9 @@ def main() -> None:
             print(f"line {n}: {iw:08x} at {pc:08x} reads {what or 'nothing'}")
             print(f"  expected: {e}\n  actual:   {a}")
             return
-        if m:
-            regs[15] = int(m.group(1), 16) + length(int(m.group(2), 16))
-        elif not re.match(r"(NMI|IRQ) ", e):
+        if not m:
             continue
+        regs[15] = int(m.group(1), 16) + length(int(m.group(2), 16))
         for rn, v in re.findall(r"R(\d+)=([0-9a-f]{8})", e):
             regs[int(rn)] = int(v, 16)
         for ad, v in re.findall(r"\[([0-9a-f]{8})\]=([0-9a-f]{8})", e):

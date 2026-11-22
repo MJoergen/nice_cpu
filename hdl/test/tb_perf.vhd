@@ -13,9 +13,8 @@
 -- * The microsecond counter, at G_CLK_HZ = 1500000, counts 2 microseconds
 --   in 3 cycles, exactly, and also stops while run_i is low.
 -- * The event counters count the data reads and stores that the core's
---   bus accepts, and the skipped instructions, the jumps, and the
---   interrupt entries and INTs of the steps on retire_i, but no step that
---   halts. Each has its snapshot.
+--   bus accepts, and the skipped instructions and the jumps of the steps
+--   on retire_i, but no step that halts. Each has its snapshot.
 -- * The spare words read 0, and writes change nothing.
 -- * Reset sets the counters and the snapshots to G_RESET.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -47,13 +46,13 @@ architecture simulation of tb_perf is
    constant C_STORE_LO : natural := 16#0C#;
    constant C_SKIP_LO  : natural := 16#0E#;
    constant C_JUMP_LO  : natural := 16#10#;
-   constant C_INTR_LO  : natural := 16#12#;
-   constant C_INTR_HI  : natural := 16#13#;
+   constant C_JUMP_HI  : natural := 16#11#;
 
-   -- Instruction words: MOVE R15, R2, a jump; MOVE R1, R2, none; INT 0x40
+   -- Instruction words: MOVE R15, R2, a jump; MOVE R1, R2, none; control
+   -- command 2, reserved, which writes no register
    constant C_JUMP_IW : std_logic_vector(31 downto 0) := X"0003C100";
    constant C_MOVE_IW : std_logic_vector(31 downto 0) := X"00004100";
-   constant C_INT_IW  : std_logic_vector(31 downto 0) := X"0C400040";
+   constant C_CTRL_IW : std_logic_vector(31 downto 0) := X"0C400040";
 
    signal clk : std_logic;
    signal rst : std_logic := '1';
@@ -185,14 +184,12 @@ begin
       -- One step reported on retire_i
       procedure step(iw      : std_logic_vector(31 downto 0);
                      skipped : std_logic := '0';
-                     intr    : std_logic := '0';
                      halt    : t_halt    := HALT_NONE) is
       begin
          retire         <= C_RETIRE_NONE;
          retire.valid   <= '1';
          retire.iw      <= iw;
          retire.skipped <= skipped;
-         retire.intr    <= intr;
          retire.halt    <= halt;
          clocks(1);
          retire <= C_RETIRE_NONE;
@@ -265,9 +262,9 @@ begin
       end if;
 
       -- The event counters: three reads and two stores accepted, one read
-      -- stalled; a skipped instruction, a skipped INT, a jump, a jump that
-      -- halts, an instruction that does not jump, an interrupt entry, and
-      -- an INT. The low words wrap from 0xFFFFFFFF.
+      -- stalled; a skipped instruction, a skipped control command, a jump,
+      -- a jump that halts, an instruction that does not jump, and a control
+      -- command that halts. The low words wrap from 0xFFFFFFFF.
       check(C_READ_LO, X"FFFFFFF0", "no data read yet");
       for i in 1 to 3 loop
          bus_cycle('0', '0');
@@ -276,30 +273,28 @@ begin
       bus_cycle('1', '0');
       bus_cycle('1', '0');
       step(C_MOVE_IW, skipped => '1');
-      step(C_INT_IW, skipped => '1');
+      step(C_CTRL_IW, skipped => '1');
       step(C_JUMP_IW);
       step(C_JUMP_IW, halt => HALT_RESERVED);
       step(C_MOVE_IW);
-      step(X"00000000", intr => '1');
-      step(C_INT_IW);
+      step(C_CTRL_IW, halt => HALT_RESERVED);
       check(C_READ_LO, X"FFFFFFF3", "3 data reads");
       check(C_STORE_LO, X"FFFFFFF2", "2 stores");
       check(C_SKIP_LO, X"FFFFFFF2", "2 skips");
       check(C_JUMP_LO, X"FFFFFFF1", "a jump");
-      check(C_INTR_LO, X"FFFFFFF2", "2 interrupts");
       for i in 1 to 16 loop
          bus_cycle('0', '0');
       end loop;
       check(C_READ_HI, X"00000000", "the read snapshot before the wrap");
       check(C_READ_LO, X"00000003", "19 data reads");
       check(C_READ_HI, X"00000001", "the read snapshot after the wrap");
-      check(C_INTR_HI, X"00000000", "the interrupt snapshot is its own");
+      check(C_JUMP_HI, X"00000000", "the jump snapshot is its own");
 
       -- The spare words read 0, and writes change nothing.
       for i in 6 to 9 loop
          check(i, X"00000000", "a spare word");
       end loop;
-      for i in 16#14# to 31 loop
+      for i in 16#12# to 31 loop
          check(i, X"00000000", "a spare word");
       end loop;
       for i in 0 to 31 loop

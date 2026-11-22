@@ -45,16 +45,15 @@
 -- depend on ready. ready_o depends on ready_i.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
--- a) w_i is WRITE's state, and done_i, flush_i, ready_i, take_nmi_i, and
---    take_irq_i are WRITE's decisions in the same cycle.
+-- a) w_i is WRITE's state, and done_i, flush_i, and ready_i are WRITE's
+--    decisions in the same cycle.
 -- b) tag_cnt_i counts the data bus requests accepted and not acknowledged.
--- c) WRITE neither flushes nor takes an interrupt while the instruction in
---    PREPARE has made a data read.
--- d) st_valid_i is '1' while a store or a vector read of WRITE waits in
---    DBUS, and st_acc_i when the bus accepts it. WRITE queues a store only
---    from a store micro-operation of its own, and a vector read only during
---    an interrupt entry, and either only while no read waits in the request
---    register.
+-- c) WRITE does not flush while the instruction in PREPARE has made a data
+--    read.
+-- d) st_valid_i is '1' while a store of WRITE waits in DBUS, and st_acc_i
+--    when the bus accepts it. WRITE queues a store only from a store
+--    micro-operation of its own, and only while no read waits in the
+--    request register.
 --
 -- RESET
 -- Synchronous. It empties the stage and drops the request.
@@ -86,12 +85,8 @@ entity pipe_prepare is
       done_i       : in  std_logic;
       flush_i      : in  std_logic;
       ready_i      : in  std_logic;   -- WRITE takes uop_o
-      take_nmi_i   : in  std_logic;
-      take_irq_i   : in  std_logic;
 
-      -- The interrupt requests and the pause (MICROARCH.md §5.3, rule 4)
-      nmi_valid_i  : in  std_logic;
-      irq_valid_i  : in  std_logic;
+      -- The pause (MICROARCH.md §5.3, rule 4)
       pause_i      : in  std_logic;
 
       -- A watchpoint is enabled (doc/DEBUG.md §6), from a flip-flop
@@ -106,7 +101,7 @@ entity pipe_prepare is
       -- The data read, held until the bus accepts it
       dbus_stall_i : in  std_logic;
       tag_cnt_i    : in  natural range 0 to C_MAX_OUT;
-      st_valid_i   : in  std_logic;   -- A store or vector read waits in DBUS
+      st_valid_i   : in  std_logic;   -- A store waits in DBUS
       st_acc_i     : in  std_logic;   -- The bus accepts it now
       rd_stb_o     : out std_logic;
       rd_addr_o    : out std_logic_vector(31 downto 0);
@@ -194,13 +189,11 @@ begin
       variable cnt_v     : t_shift_prep;
       variable quiet_v   : boolean;   -- and will not jump, store, or be counted late
       variable older_ok  : boolean;
-      variable intr_ok   : boolean;
       variable bus_ok    : boolean;
       variable store_v   : boolean;   -- WRITE puts a store on the bus now
       variable started_v : boolean;
       variable load_v    : std_logic;
       variable last_v    : boolean;
-      variable irq_v     : boolean;
       variable pause_ok  : boolean;
       variable watch_ok  : boolean;
       variable held_v    : boolean;   -- Only rule 1 or 2 holds a read back
@@ -310,20 +303,13 @@ begin
                   wu_v.counted = '1';
       older_ok := not older_v or (done_i = '1' and flush_i = '0') or quiet_v;
 
-      -- No interrupt may be taken before this instruction (MICROARCH.md
-      -- §5.3, rule 4). None can be if the instruction has made a data read
-      -- or begun to retire, or follows RTI directly.
+      -- No pause may come before this instruction (MICROARCH.md §5.3, rule
+      -- 4, and §6.1), but before the first step after one. None can if the
+      -- instruction has made a data read or begun to retire. A breakpoint
+      -- at the instruction is a pause of the core's own, which WRITE takes when
+      -- it finds the flag here or in its own micro-operation.
       started_v := not older_v and
                    ((wu_v.valid = '1' and wu_v.first = '0') or (wu_v.valid = '0' and w_i.mid = '1'));
-      irq_v     := irq_valid_i = '1' and w_i.in_service = '0' and
-                   (w_i.regs(14)(C_SR_E) = '1' or (wu_v.valid = '1' and wu_v.may_sr = '1'));
-      intr_ok   := started_v or p_committed_r = '1' or (not older_v and w_i.after_rti = '1') or
-                   not ((nmi_valid_i = '1' and w_i.in_service = '0') or irq_v);
-      -- Nor a pause (MICROARCH.md §6.1), but before the first step after
-      -- one. The instruction after RTI is not exempt, as the core pauses
-      -- after RTI too (hdl/ASSUMPTIONS.md, item 19). A breakpoint at the
-      -- instruction is a pause of the core's own, which WRITE takes when
-      -- it finds the flag here or in its own micro-operation.
       pause_ok  := started_v or p_committed_r = '1' or (not older_v and w_i.after_go = '1') or
                    (pause_i = '0' and u_v.inst.brk = '0');
       -- Nor, while a watchpoint is enabled, before an older instruction has
@@ -344,8 +330,8 @@ begin
 
       load_v := '0';
       if u_v.valid = '1' and ck_v = '1' and cv_v = '1' and p_loaded_r < nr_v and
-         older_ok and intr_ok and pause_ok and watch_ok and not busy_v and bus_ok and
-         w_i.mode = RUN_ST and flush_i = '0' and take_nmi_i = '0' and take_irq_i = '0' then
+         older_ok and pause_ok and watch_ok and not busy_v and bus_ok and
+         w_i.mode = RUN_ST and flush_i = '0' then
          load_v := '1';
       end if;
       p_load       <= load_v;
@@ -358,8 +344,8 @@ begin
       -- a store holds it back. Rule 3 still holds a read after a store.
       held_v := u_v.valid = '1' and load_v = '0' and (ck_v = '0' or cv_v = '1') and
                 p_loaded_r < nr_v and (not older_v or done_i = '1' or wu_v.store = '0') and
-                intr_ok and pause_ok and watch_ok and not busy_v and bus_ok and
-                w_i.mode = RUN_ST and flush_i = '0' and take_nmi_i = '0' and take_irq_i = '0';
+                pause_ok and watch_ok and not busy_v and bus_ok and
+                w_i.mode = RUN_ST and flush_i = '0';
       p_wait_sr <= '1' when held_v and ck_v = '0' else '0';
       p_wait_wr <= '1' when held_v and ck_v = '1' else '0';
 
@@ -374,7 +360,7 @@ begin
 
       -- Why it does not go on: a register it needs, the first of its two
       -- reads loaded now, its read stalled on the bus, the bus (rule 3, or
-      -- the room for requests), or else rules 1, 2, and 4 and a pause.
+      -- the room for requests), or else rules 1, 2, and 4.
       if u_v.valid = '0' then
          why_o <= P_EMPTY;
       elsif go_v then
@@ -472,12 +458,12 @@ begin
    --   and WRITE's condition of the instruction only
    --   while it holds an instruction's first, or else to the condition
    --   of the micro-operation it holds, if PREPARE knew it. WRITE leaves
-   --   RUN_ST only with a flush or an interrupt.
-   -- - WRITE neither flushes nor takes an interrupt while PREPARE holds an
-   --   instruction that has made a data read (contract c), or has a read
-   --   on the bus or about to be loaded.
+   --   RUN_ST only with a flush.
+   -- - WRITE does not flush while PREPARE holds an instruction that has
+   --   made a data read (contract c), or has a read on the bus or about to
+   --   be loaded.
    -- - The data bus requests in flight grow only by PREPARE's read, or the
-   --   store or vector read that waits in DBUS, when there is room.
+   --   store that waits in DBUS, when there is room.
    -- The assertions say that the read request keeps to the bus (held
    -- while stalled, and never with C_MAX_OUT requests in flight), that a
    -- micro-operation makes no more reads than it has, and all of them
@@ -503,7 +489,7 @@ begin
       signal f_tag       : natural range 0 to C_MAX_OUT + 1;
       signal f_rd_stall  : std_logic;          -- and was stalled
       signal f_rd_addr   : std_logic_vector(31 downto 0);
-      signal f_st_may    : std_logic := '0';   -- An access may wait in DBUS now
+      signal f_st_may    : std_logic := '0';   -- A store may wait in DBUS now
       signal f_open      : std_logic := '0';   -- DECODE is in an instruction
       signal f_inst      : t_inst;             -- and this one
       signal f_kind      : t_kind;             -- The kind of its last micro-operation
@@ -526,28 +512,26 @@ begin
             end if;
 
             f_sr        <= w_i.regs(14);
-            f_sr_free   <= rst_i or flush_i or take_nmi_i or take_irq_i or
+            f_sr_free   <= rst_i or flush_i or
                            (w_i.uop.valid and w_i.uop.may_sr) or to_sl(w_i.mode = PAUSED_ST);
             f_cond      <= w_i.cond;
-            f_cond_free <= rst_i or flush_i or take_nmi_i or take_irq_i or
-                           (w_i.uop.valid and w_i.uop.first);
+            f_cond_free <= rst_i or flush_i or (w_i.uop.valid and w_i.uop.first);
             f_cond_set  <= w_i.uop.valid and w_i.uop.cond_known;
             f_cond_val  <= w_i.uop.cond_val;
             f_mode      <= w_i.mode;
-            f_mode_free <= rst_i or flush_i or take_nmi_i or take_irq_i;
+            f_mode_free <= rst_i or flush_i;
 
             f_rd_stall <= rd_stb_r and dbus_stall_i and not rst_i;
             f_rd_addr  <= rd_addr_r;
-            -- PREPARE's read, or else, when there is room, the store or
-            -- vector read that waits in DBUS
+            -- PREPARE's read, or else, when there is room, the store
+            -- that waits in DBUS
             f_tag      <= tag_cnt_i + to_nat((rd_stb_r = '1' and dbus_stall_i = '0') or
                                              (rd_stb_r = '0' and tag_cnt_i < C_MAX_OUT and
                                                 st_valid_i = '1'));
-            -- The access that waits, and has not been accepted, or a store
-            -- or vector read that WRITE queues now
+            -- The store that waits, and has not been accepted, or one that
+            -- WRITE queues now
             f_st_may   <= not rst_i and ((st_valid_i and not st_acc_i) or
-                                         (w_i.uop.valid and w_i.uop.store and not rd_stb_r) or
-                                         (to_sl(w_i.mode = VEC_ST) and not rd_stb_r));
+                                         (w_i.uop.valid and w_i.uop.store and not rd_stb_r));
 
             if seq_emit = '1' then
                f_open <= not uop_i.last;
@@ -576,8 +560,7 @@ begin
       -- psl f_decoded : assume always seq_emit -> decoded_ok(uop_i);
 
       -- WRITE. formal/formal_pipe_write.vhd proves the first four of WRITE,
-      -- with the same model. Outside RUN_ST, WRITE may keep the micro-
-      -- operation of INT, which the flush of its entry leaves.
+      -- with the same model.
       -- psl f_takes : assume always (f_first = '0' and w_i.mode = RUN_ST) ->
       --    (w_i.uop.valid = f_uop.valid and (f_uop.valid = '0' or w_i.uop = f_uop));
       -- psl f_sr_stable : assume always (f_first = '0' and f_sr_free = '0') -> w_i.regs(14) = f_sr;
@@ -585,8 +568,8 @@ begin
       --    (w_i.cond = f_cond or (f_cond_set = '1' and w_i.cond = f_cond_val));
       -- psl f_run : assume always (f_first = '0' and f_mode_free = '0' and f_mode = RUN_ST) ->
       --    w_i.mode = RUN_ST;
-      -- psl f_keep : assume always (flush_i or take_nmi_i or take_irq_i) -> not p_committed_r;
-      -- psl f_keep_read : assume always (flush_i or take_nmi_i or take_irq_i) -> not (rd_stb_r or p_load);
+      -- psl f_keep : assume always flush_i -> not p_committed_r;
+      -- psl f_keep_read : assume always flush_i -> not (rd_stb_r or p_load);
       -- psl f_accept : assume always ready_i -> not flush_i;
 
       -- DBUS: requests in flight, PREPARE's read among them, and the store

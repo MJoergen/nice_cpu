@@ -141,16 +141,15 @@ package pipe_pkg is
    -- retires one, waits for read data that has no ACK yet, waits a cycle
    -- for read data from DBUS's FIFO, reduces a shift count, writes an
    -- adjusted register or a computed jump in a second cycle, waits with a
-   -- store, runs an interrupt entry or INT, or anything else.
-   type t_wwhy is (W_EMPTY, W_RETIRE, W_READ, W_LATE, W_SHIFT, W_ADJUST, W_STORE, W_INTR, W_OTHER);
+   -- store, or anything else.
+   type t_wwhy is (W_EMPTY, W_RETIRE, W_READ, W_LATE, W_SHIFT, W_ADJUST, W_STORE, W_OTHER);
 
    -- The causes of a flush by WRITE (MICROARCH.md §8.1), FS_FLUSH + n
    constant C_FLUSH_JUMP  : natural := 0;   -- A jump that DECODE did not redirect for
    constant C_FLUSH_SKIP  : natural := 1;   -- A predicted jump that is skipped
    constant C_FLUSH_STORE : natural := 2;   -- A store into fetched code
-   constant C_FLUSH_INTR  : natural := 3;   -- INT, RTI, or an interrupt entry
-   constant C_FLUSH_OTHER : natural := 4;   -- A halt, a pause, or the go on after one
-   constant C_FLUSHES     : natural := 5;
+   constant C_FLUSH_OTHER : natural := 3;   -- A halt, a pause, or the go on after one
+   constant C_FLUSHES     : natural := 4;
 
    -- The cause of a cycle (MICROARCH.md §8.1), FS_CAUSE + n
    constant C_CAUSE_RETIRE : natural := 0;
@@ -166,9 +165,8 @@ package pipe_pkg is
    constant C_CAUSE_SHIFT  : natural := 10;
    constant C_CAUSE_ADJUST : natural := 11;
    constant C_CAUSE_STORE  : natural := 12;
-   constant C_CAUSE_INTR   : natural := 13;
-   constant C_CAUSE_OTHER  : natural := 14;
-   constant C_CAUSES       : natural := 15;
+   constant C_CAUSE_OTHER  : natural := 13;
+   constant C_CAUSES       : natural := 14;
 
    -- What the pipelined core did in one cycle, for the fetch statistics,
    -- src/fetch_stats.vhd (MICROARCH.md §8.1), and the waits and moves of
@@ -265,37 +263,28 @@ package pipe_pkg is
 
    type t_words is array (natural range <>) of std_logic_vector(31 downto 0);
 
-   type t_wmode is (RUN_ST, VEC_ST, HALTED_ST, PAUSED_ST, WAIT_ST);
+   type t_wmode is (RUN_ST, HALTED_ST, PAUSED_ST);
 
    -- The state of WRITE
    type t_write is record
-      uop        : t_uop;
-      mode       : t_wmode;
-      regs       : t_regs;
-      in_service : std_logic;
-      after_rti  : std_logic;
-      after_go   : std_logic;                       -- The first step after a pause
-      waiting    : std_logic;                       -- After WAIT, until a request (ISA.md §7.5)
-      brk_wait   : std_logic;                       -- Paused at a breakpoint, before pause_i
-      saved_pc   : std_logic_vector(31 downto 0);
-      saved_sr   : std_logic_vector(31 downto 0);
-      halt       : t_halt;
-      cond       : std_logic;                       -- The condition of the instruction
-      mid        : std_logic;                       -- Part of an instruction has retired
-      jump       : std_logic;                       -- The instruction has written R15
-      s0val      : std_logic_vector(31 downto 0);   -- s0, from S0 or S1
-      s1val      : std_logic_vector(31 downto 0);   -- s1, from S1
-      busy       : std_logic;                       -- An I/O store waits on the bus
-      last       : std_logic_vector(31 downto 0);   -- The value written last (MICROARCH.md §7.4)
-      cnt_step   : natural range 0 to 2;            -- How far the shift count is prepared
-      m33sum     : natural range 0 to 255;          -- Its digit sum, for the count mod 33
-      exec_done  : std_logic;                       -- The result is written; the retire is next
-      cnt        : t_shift_prep;                    -- The shift count WRITE prepared itself
-      vec        : std_logic_vector(7 downto 0);    -- In VEC_ST: the vector
-      vec_intr   : std_logic;                       -- An interrupt, not INT
-      vec_nmi    : std_logic;
-      vec_issued : std_logic;                       -- The vector read is on its way
-      commits    : natural range 0 to 3;            -- Committed instructions in flight
+      uop       : t_uop;
+      mode      : t_wmode;
+      regs      : t_regs;
+      after_go  : std_logic;                       -- The first step after a pause
+      brk_wait  : std_logic;                       -- Paused at a breakpoint, before pause_i
+      halt      : t_halt;
+      cond      : std_logic;                       -- The condition of the instruction
+      mid       : std_logic;                       -- Part of an instruction has retired
+      jump      : std_logic;                       -- The instruction has written R15
+      s0val     : std_logic_vector(31 downto 0);   -- s0, from S0 or S1
+      s1val     : std_logic_vector(31 downto 0);   -- s1, from S1
+      busy      : std_logic;                       -- An I/O store waits on the bus
+      last      : std_logic_vector(31 downto 0);   -- The value written last (MICROARCH.md §7.4)
+      cnt_step  : natural range 0 to 2;            -- How far the shift count is prepared
+      m33sum    : natural range 0 to 255;          -- Its digit sum, for the count mod 33
+      exec_done : std_logic;                       -- The result is written; the retire is next
+      cnt       : t_shift_prep;                    -- The shift count WRITE prepared itself
+      commits   : natural range 0 to 3;            -- Committed instructions in flight
       -- The watchpoints that the step hit, and the address of its instruction
       wch     : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
       wch_any : std_logic;                       -- wch has a bit set, a register of its own for speed

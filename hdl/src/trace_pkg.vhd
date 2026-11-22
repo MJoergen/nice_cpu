@@ -2,8 +2,7 @@
 --
 -- THEORY OF OPERATION
 -- The core reports each step as it retires it, in a t_retire. A step is one
--- instruction, skipped or not, or the entry into an interrupt (ISA.md §7.2),
--- as in the emulator. The report carries the register values after the step,
+-- instruction, skipped or not, as in the emulator. The report carries the register values after the step,
 -- not the register writes. The trace writer keeps the values of the step
 -- before and prints the registers whose values differ, which is what
 -- "niceemu --trace" prints. So the core need not count or order its register
@@ -11,7 +10,6 @@
 -- emulator.
 --
 -- A step makes at most one memory write: the destination of an instruction.
--- An interrupt entry saves PC and SR in hidden registers, not in memory.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the core:
 -- a) valid is '1' for one cycle per step, in program order.
@@ -21,9 +19,7 @@
 --    R15 at the address after the instruction's constant words. mem_we is
 --    '0' and halt is HALT_NONE. The trace writer prints any departure, so
 --    that the comparison with the emulator fails.
--- d) For an interrupt entry, addr, iw, skipped, the memory write, and halt are
---    not used.
--- e) A store to the console is accepted on the data bus no later than the
+-- d) A store to the console is accepted on the data bus no later than the
 --    cycle its instruction is reported, so that its byte comes before its
 --    trace line, as in the emulator.
 --
@@ -42,9 +38,7 @@ package trace_pkg is
    type t_halt is (
       HALT_NONE,
       HALT_HALT,
-      HALT_RESERVED,
-      HALT_NESTED_INT,
-      HALT_RTI_OUTSIDE_ISR
+      HALT_RESERVED
    );
 
    type t_regs is array (0 to 15) of std_logic_vector(31 downto 0);
@@ -65,9 +59,6 @@ package trace_pkg is
 
    type t_retire is record
       valid    : std_logic;
-      intr     : std_logic;                       -- An interrupt entry, not an instruction
-      nmi      : std_logic;                       -- For an interrupt: NMI, not IRQ
-      vector   : std_logic_vector(7 downto 0);    -- For an interrupt
       addr     : std_logic_vector(31 downto 0);   -- Address of the instruction word
       iw       : std_logic_vector(31 downto 0);   -- The instruction word
       skipped  : std_logic;                       -- The condition was false
@@ -83,9 +74,6 @@ package trace_pkg is
 
    constant C_RETIRE_NONE : t_retire := (
       valid    => '0',
-      intr     => '0',
-      nmi      => '0',
-      vector   => (others => '0'),
       addr     => (others => '0'),
       iw       => (others => '0'),
       skipped  => '0',
@@ -100,7 +88,8 @@ package trace_pkg is
    function halt_text(halt : t_halt) return string;
 
    -- The code of each reason in the halt reason register of DEBUG.md §6,
-   -- 0 for HALT_NONE. Code 5, the emulator's step limit, has no value here.
+   -- 0 for HALT_NONE. Code 5, the emulator's step limit, has no value here,
+   -- and the codes 3 and 4 no longer occur.
    function halt_code(halt : t_halt) return std_logic_vector;
 
 end package trace_pkg;
@@ -110,22 +99,18 @@ package body trace_pkg is
    function halt_text(halt : t_halt) return string is
    begin
       case halt is
-         when HALT_NONE            => return "running";
-         when HALT_HALT            => return "HALT";
-         when HALT_RESERVED        => return "reserved control instruction";
-         when HALT_NESTED_INT      => return "INT inside an interrupt routine";
-         when HALT_RTI_OUTSIDE_ISR => return "RTI outside an interrupt routine";
+         when HALT_NONE     => return "running";
+         when HALT_HALT     => return "HALT";
+         when HALT_RESERVED => return "reserved control instruction";
       end case;
    end function halt_text;
 
    function halt_code(halt : t_halt) return std_logic_vector is
    begin
       case halt is
-         when HALT_NONE            => return "000";
-         when HALT_HALT            => return "001";
-         when HALT_RESERVED        => return "010";
-         when HALT_NESTED_INT      => return "011";
-         when HALT_RTI_OUTSIDE_ISR => return "100";
+         when HALT_NONE     => return "000";
+         when HALT_HALT     => return "001";
+         when HALT_RESERVED => return "010";
       end case;
    end function halt_code;
 

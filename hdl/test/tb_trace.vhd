@@ -1,17 +1,17 @@
 -- A test of the trace writer and the memory model, before there is a core.
 --
 -- THEORY OF OPERATION
--- The process p_core stands in for the core and runs test/trace.nasm, with
--- an NMI at step 5. For each step it fetches the instruction word through
+-- The process p_core stands in for the core and runs test/trace.nasm. For
+-- each step it fetches the instruction word through
 -- the instruction bus, makes the step's data accesses on the data bus, and
 -- reports the step to sim/trace.vhd. The register values and memory writes
 -- of each step are written out by hand below, from the comments in
--- trace.nasm. The Makefile compares the output with that of
--- "niceemu --nmi 5:0x20" on the same program, with and without -t, and
--- with the step limits that G_MAX_STEPS sets.
+-- trace.nasm. The Makefile compares the output with that of niceemu on
+-- the same program, with and without -t, and with the step limits that
+-- G_MAX_STEPS sets.
 --
--- So the instruction words, the console bytes, and the vector come from the
--- memory model, and the format comes from the trace writer. Only the effects
+-- So the instruction words and the console bytes come from the memory
+-- model, and the format comes from the trace writer. Only the effects
 -- of each instruction are given here.
 
 library ieee;
@@ -220,25 +220,13 @@ begin
       regs_v(15) := X"0000000C";
       instruction(X"0000000B");
 
-      -- 5: NMI 0x20. Entry reads the vector at VBASE * 256 + 0x20 on the data
-      -- bus, sets I, and jumps (ISA.md §7.2).
-      access_data('0', X"00000020", X"00000000");
-      regs_v(14) := X"97000000";
-      regs_v(15) := data_v;
-      step_v        := C_RETIRE_NONE;
-      step_v.intr   := '1';
-      step_v.nmi    := '1';
-      step_v.vector := X"20";
-      step_v.regs   := regs_v;
-      report_step(step_v);
+      -- 5: MOVE @CONSOLE, 10
+      regs_v(15) := X"0000000F";
+      instruction(X"0000000C", mem_we => '1', mem_addr => X"FFFFFF00", mem_data => X"0000000A");
 
-      -- 6: MOVE @CONSOLE, 10
-      regs_v(15) := X"00000024";
-      instruction(X"00000021", mem_we => '1', mem_addr => X"FFFFFF00", mem_data => X"0000000A");
-
-      -- 7: INT 0, inside the NMI routine
-      regs_v(15) := X"00000025";
-      instruction(X"00000024", halt => HALT_NESTED_INT);
+      -- 6: control command 31, reserved
+      regs_v(15) := X"00000010";
+      instruction(X"0000000F", halt => HALT_RESERVED);
       wait;
    end process p_core;
 

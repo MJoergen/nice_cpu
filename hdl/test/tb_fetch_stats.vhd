@@ -279,7 +279,7 @@ begin
       -- of 0.
       run <= '0';
       write_word(C_CTRL, 1);
-      cycle(C_CAUSE_FETCH, istall => '1', jump => '1', flush => '1', fwhy => C_FLUSH_INTR);
+      cycle(C_CAUSE_FETCH, istall => '1', jump => '1', flush => '1', fwhy => C_FLUSH_SKIP);
       cycle(C_CAUSE_FETCH, dstall => '1');
       events <= C_FETCH_EVENTS_NONE;
       clocks(5);
@@ -288,7 +288,7 @@ begin
       check(C_ISTALL, 3, "run_i low");
       check(C_DSTALL, 1, "run_i low");
       check(C_JUMPS, 1, "run_i low");
-      check(C_FLUSH + C_FLUSH_INTR, 0, "run_i low");
+      check(C_FLUSH + C_FLUSH_SKIP, 0, "run_i low");
       check(C_CAUSE + C_CAUSE_FETCH, 0, "run_i low");
       run <= '1';
       clocks(2);

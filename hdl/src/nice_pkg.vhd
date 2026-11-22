@@ -20,9 +20,8 @@ library ieee;
 
 package nice_pkg is
 
-   -- SR bits (ISA.md §1.3)
-   constant C_SR_I   : natural := 31;
-   constant C_SR_E   : natural := 30;
+   -- SR bits (ISA.md §1.3). F1, F0, and U, bits 31, 30, and 23..0, are
+   -- storage, which the hardware never writes on its own.
    constant C_SR_V   : natural := 29;
    constant C_SR_N   : natural := 28;
    constant C_SR_Z   : natural := 27;
@@ -46,8 +45,8 @@ package nice_pkg is
    function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean;
 
    -- Whether the instruction writes R15 when it runs, for the jump counter
-   -- of DEVICES.md §3: RTI, or a field of register 15 in a mode that writes
-   -- the register, the destination in mode 000, 001, 010, 101, or 110, and
+   -- of DEVICES.md §3: a field of register 15 in a mode that writes the
+   -- register, the destination in mode 000, 001, 010, 101, or 110, and
    -- a source in mode 001, 010, 101, or 110 (ISA.md §4).
    function writes_r15(iw : std_logic_vector(31 downto 0)) return boolean;
 
@@ -179,9 +178,7 @@ package body nice_pkg is
       variable f_v   : std_logic_vector(6 downto 0);
       variable res_v : boolean := false;
    begin
-      if is_ctrl(iw) then
-         res_v := iw(25 downto 21) = "00001";
-      else
+      if not is_ctrl(iw) then
          for i in 0 to 2 loop
             f_v := field(iw, i);
             if f_v(3 downto 0) = "1111" then

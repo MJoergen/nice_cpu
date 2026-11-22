@@ -1,26 +1,4 @@
-; With vector tables for every VBASE it uses, for runs with an NMI (vector
-; 8) or an IRQ (vector 9) before each step, which test/irq_sweep.py makes;
-; E = 1 at every step but those of the R14 section, so every request is
-; taken.
-                JMP     start
-                .ORG    8
-                .DAT    nmi, irq
-                .ORG    0x108
-                .DAT    nmi, irq
-                .ORG    0x208
-                .DAT    nmi, irq
-                .ORG    0x308
-                .DAT    nmi, irq
-                .ORG    0x408
-                .DAT    nmi, irq
-                .ORG    0x500
-nmi             ADD[M]  @nmis, @nmis, 1
-                RTI
-irq             SUB[M]  @irqs, @irqs, 1
-                RTI
-nmis            .DAT    0
-irqs            .DAT    0
-start           MOVE    R14, 0x40000000
+                MOVE    R14, 0x40000000
 ; Shift counts PREPARE cannot reduce (MICROARCH.md §7.3): the count register
 ; written by the instruction before (SRC_LAST), by a two-cycle destination,
 ; by a late shift; counts through adders and memory on a register just
@@ -127,10 +105,10 @@ start           MOVE    R14, 0x40000000
                 HALT
                 CMP     R0, 1           ; C = 1
                 C<C[M]  R3, R14, R14    ; s0 = SR, count = SR
-                C<C[M]  R14, R0, 1      ; dest R14 register-direct: no flags; VBASE = 0 or 1
+                C<C[M]  R14, R0, 1      ; dest R14 register-direct: no flags; U = 0 or 1
         ?C      MOVE    R4, 0xC1
         ?!C     MOVE    R4, 0xC0
-                MOVE    R14, 0x41000000  ; E = 1 again, so that a request before any step is taken
+                MOVE    R14, 0x41000000
 ; the C of one late shift feeds the next
                 CMP     R0, 1           ; C = 1
                 MOVE    R2, 1

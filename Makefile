@@ -17,10 +17,9 @@ help:
 	@echo "  make typecheck   mypy --strict on the Python tools"
 	@echo "  make lint        vsg style check of the VHDL (pip install vsg)"
 	@echo "  make formal      SymbiYosys checks of the cores, their stages, the devices, and the shared functions"
-	@echo "  make slow        the benchmark, Dhrystone, CoreMark, the float benchmark, and the"
-	@echo "                   interrupt sweeps with more strides, on each core of CORES (default both),"
-	@echo "                   the FPU's long vectors, and the fuzz of the C library (clang), in"
-	@echo "                   parallel, in nvc (5 minutes on 20 CPUs), or SIM=ghdl (33 minutes)"
+	@echo "  make slow        the benchmark, Dhrystone, CoreMark, and the float benchmark on each"
+	@echo "                   core of CORES (default both), the FPU's long vectors, and the fuzz of"
+	@echo "                   the C library (clang), in parallel, in nvc, or SIM=ghdl"
 	@echo "  make release-check  the gates of RELEASE.md, then a stamp for release.py tag (about an hour)"
 	@echo "  make hazards     count the pipeline hazards in the benchmark"
 	@echo "  make wasmcheck   rebuild the checked-in .wasm files and compare them (clang, zig, rustc)"
@@ -64,24 +63,21 @@ formal:
 	$(MAKE) -C hdl formal
 
 # make slow: on each core of CORES, the benchmark's two programs,
-# Dhrystone, CoreMark, the float benchmark with and without --inline-fpu,
-# and the interrupt sweeps with more strides, and beside them the FPU's
-# vectors with a million random accesses and the fuzz of the C library,
-# which needs clang, all at once. The emulator, the VHDL, and the programs are built first, and the
-# runs are told so with PREBUILT=1, as two builds at once would race. Each single
-# simulation takes a CPU, and the sweeps of each core share the rest. SIM
-# is the simulator (hdl/sim.mk): nvc, which takes minutes where GHDL takes
-# more than half an hour, or ghdl.
+# Dhrystone, CoreMark, and the float benchmark with and without
+# --inline-fpu, and beside them the FPU's vectors with a million random
+# accesses and the fuzz of the C library, which needs clang, all at once.
+# The emulator, the VHDL, and the programs are built first, and the runs
+# are told so with PREBUILT=1, as two builds at once would race. Each
+# simulation takes a CPU. SIM is the simulator (hdl/sim.mk): nvc, which
+# takes minutes where GHDL takes more than half an hour, or ghdl.
 CORES ?= pipeline multicycle
 SIM ?= nvc
-SLOW_RUNS = $(foreach c,$(CORES),$(foreach r,bench hand dhry coremark float strides,slow/$(c)/$(r))) \
+SLOW_RUNS = $(foreach c,$(CORES),$(foreach r,bench hand dhry coremark float,slow/$(c)/$(r))) \
   slow/fpu-long slow/fuzz
-SWEEP_JOBS = $(shell n=$$(( ($(JOBS) - 2 - 5 * $(words $(CORES))) / $(words $(CORES)) )); \
-  echo $$(( n > 0 ? n : 1 )))
 
 slow:
 	$(MAKE) -C emulator build
-	$(MAKE) -C hdl analyze build/pcfx.bin build/sidefx.bin SIM=$(SIM)
+	$(MAKE) -C hdl analyze SIM=$(SIM)
 	$(MAKE) -C bench build/bench.bin build/hand.bin build/dhry.bin build/coremark.bin build/float.bin \
 	  build/float_inline.bin
 	$(MAKE) -C runtime/libc libc.a
@@ -101,8 +97,6 @@ slow/fpu-long:
 	@$(MAKE) --no-print-directory -C emulator fpu-long
 slow/fuzz:
 	@$(MAKE) --no-print-directory -C runtime/libc fuzz
-slow/%/strides:
-	@$(MAKE) --no-print-directory -C hdl strides CORE=$* PREBUILT=1 SWEEP_JOBS=$(SWEEP_JOBS) SIM=$(SIM)
 
 hazards:
 	$(MAKE) -C bench hazards
@@ -140,11 +134,11 @@ pdfcheck:
 # macros of doc/timing.sty, and their values are read off a simulation by
 # hand, as each header says: render them again only after reading them
 # again.
-DIAGRAMS = doc/pipeline doc/interrupt doc/flow
+DIAGRAMS = doc/pipeline doc/flow
 
 diagrams: $(addsuffix .png,$(DIAGRAMS))
 
-doc/interrupt.png doc/flow.png: doc/timing.sty
+doc/flow.png: doc/timing.sty
 
 %.png: %.tex
 	TEXINPUTS=doc: pdflatex -interaction=nonstopmode -halt-on-error -output-directory=$(dir $@) $<

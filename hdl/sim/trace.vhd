@@ -10,9 +10,8 @@
 -- byte while it runs the storing instruction, and its trace line after.
 --
 -- The writer keeps the register values of the step before, and a trace line
--- lists R0-R14 where they differ. R15 is listed after an interrupt entry, and
--- after an instruction only when it is not the address after the
--- instruction's constant words. The writer works that address out from the
+-- lists R0-R14 where they differ. R15 is listed only when it is not the
+-- address after the instruction's constant words. The writer works that address out from the
 -- instruction word itself, as the emulator does, rather than trusting the
 -- core's.
 --
@@ -24,29 +23,16 @@
 -- comparison. The registers printed at the end of the run are therefore
 -- always the core's own.
 --
--- A wait step on wstep_i (ISA.md §7.5) counts as a step, as in the
--- emulator, but prints no line.
---
 -- When a step halts the processor, or the step count reaches G_MAX_STEPS,
 -- the writer prints the "Halted" or "Stopped" line and the registers, as the
 -- emulator does at the end of a run. Then it closes the file, raises done_o,
 -- and sets status_o to the emulator's exit status: 0 after HALT, 2 after the
 -- other halts, and 3 at the step limit.
 --
--- After the "Halted" or "Stopped" line it prints a "Pending:" line for the
--- interrupt requests that were never taken, as the emulator does. They are
--- the requests that the pending inputs show in the cycle of the last step.
---
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) retire_i follows the contracts in src/trace_pkg.vhd.
 -- b) console_valid_i is '1' for one cycle per byte, in the cycle the data
 --    bus accepts the store (sim/wb_mem.vhd).
--- c) nmi_pending_i and irq_pending_i are '1' while a request of that kind is
---    held and not yet taken, with its vector on nmi_vector_i or irq_vector_i.
---    irq_pending_i is the IRQ of the timer's source, and con_pending_i,
---    with con_vector_i, that of the console's, which the line lists after
---    it (DEVICES.md §4).
--- d) wstep_i is '1' for one cycle per wait step, never with retire_i.valid.
 --
 -- RESET
 -- Nothing is written while rst_i is '1'. Reset does not clear the step count
@@ -74,15 +60,6 @@ entity trace is
       retire_i        : in  t_retire;
       console_valid_i : in  std_logic;
       console_data_i  : in  std_logic_vector(7 downto 0);
-      nmi_pending_i   : in  std_logic                    := '0';
-      nmi_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
-      irq_pending_i   : in  std_logic                    := '0';
-      irq_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
-      con_pending_i   : in  std_logic                    := '0';
-      con_vector_i    : in  std_logic_vector(7 downto 0) := X"00";
-      -- A wait step of the core (ISA.md §7.5), which counts as a step,
-      -- but has no trace line
-      wstep_i         : in  std_logic                    := '0';
       done_o          : out std_logic := '0';
       status_o        : out natural   := 0
    );
@@ -152,20 +129,9 @@ begin
             steps_v := steps_v + 1;
             halt_v  := HALT_NONE;
 
-            if retire_i.intr = '1' then
-               if retire_i.nmi = '1' then
-                  write(step_l, string'("NMI "));
-               else
-                  write(step_l, string'("IRQ "));
-               end if;
-               -- Padded to the width of "pppppppp iiiiiiii", so that the
-               -- changes line up with those of the instruction lines.
-               write(step_l, hex(retire_i.vector) & "           ");
-            else
-               write(step_l, hex(retire_i.addr) & " " & hex(retire_i.iw));
-            end if;
+            write(step_l, hex(retire_i.addr) & " " & hex(retire_i.iw));
 
-            if retire_i.intr = '0' and retire_i.skipped = '1' then
+            if retire_i.skipped = '1' then
                -- A skipped instruction changes nothing but R15 (ISA.md §3).
                -- Any other change is printed after "skipped", where the
                -- emulator prints nothing, so that the comparison fails.
@@ -194,18 +160,15 @@ begin
                   end if;
                end loop;
 
-               if retire_i.intr = '1' or
-                  retire_i.regs(15) /= next_pc(retire_i.addr, retire_i.iw) then
+               if retire_i.regs(15) /= next_pc(retire_i.addr, retire_i.iw) then
                   write(step_l, " R15=" & hex(retire_i.regs(15)));
                end if;
 
-               if retire_i.intr = '0' and retire_i.mem_we = '1' then
+               if retire_i.mem_we = '1' then
                   write(step_l, " [" & hex(retire_i.mem_addr) & "]=" & hex(retire_i.mem_data));
                end if;
 
-               if retire_i.intr = '0' then
-                  halt_v := retire_i.halt;
-               end if;
+               halt_v := retire_i.halt;
                if halt_v /= HALT_NONE then
                   write(step_l, " " & halt_text(halt_v));
                end if;
@@ -232,33 +195,9 @@ begin
                exit main_loop;
             end if;
          end if;
-
-         if rst_i = '0' and wstep_i = '1' then
-            steps_v := steps_v + 1;
-            if steps_v = G_MAX_STEPS then
-               write(l, "Stopped at the step limit after " & integer'image(steps_v) &
-                        " steps, PC=" & hex(before_v(15)));
-               status_v := 3;
-               exit main_loop;
-            end if;
-         end if;
       end loop main_loop;
 
       writeline(tf, l);
-
-      if nmi_pending_i = '1' or irq_pending_i = '1' or con_pending_i = '1' then
-         write(l, string'("Pending:"));
-         if nmi_pending_i = '1' then
-            write(l, " NMI " & hex(nmi_vector_i));
-         end if;
-         if irq_pending_i = '1' then
-            write(l, " IRQ " & hex(irq_vector_i));
-         end if;
-         if con_pending_i = '1' then
-            write(l, " IRQ " & hex(con_vector_i));
-         end if;
-         writeline(tf, l);
-      end if;
 
       for i in 0 to 15 loop
          write(l, "R" & integer'image(i));

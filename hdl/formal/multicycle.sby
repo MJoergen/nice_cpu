@@ -1,4 +1,4 @@
-# The bus and interrupt ports of the multi-cycle core (formal_multicycle.vhd).
+# The bus ports of the multi-cycle core (formal_multicycle.vhd).
 # "prove" proves the assertions for every cycle by k-induction, and "cover"
 # reaches each cover statement.
 
@@ -17,7 +17,7 @@ smtbmc yices
 
 [script]
 plugin -i ghdl
-ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd multicycle.vhd wb_master_check.vhd handshake_check.vhd core_check.vhd formal_multicycle.vhd -e formal_multicycle
+ghdl --std=08 -fpsl nice_pkg.vhd trace_pkg.vhd multicycle.vhd wb_master_check.vhd core_check.vhd formal_multicycle.vhd -e formal_multicycle
 prep -top formal_multicycle
 
 [files]
@@ -25,6 +25,5 @@ prep -top formal_multicycle
 ../src/trace_pkg.vhd
 ../src/multicycle.vhd
 wb_master_check.vhd
-handshake_check.vhd
 core_check.vhd
 formal_multicycle.vhd

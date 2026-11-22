@@ -23,13 +23,12 @@ FS_FLUSH        .EQU    0xFFFFFF68      ; + the cause of the flush
 FS_F_JUMP       .EQU    0xFFFFFF68
 FS_F_SKIP       .EQU    0xFFFFFF69
 FS_F_STORE      .EQU    0xFFFFFF6A
-FS_F_INTR       .EQU    0xFFFFFF6B
-FS_F_OTHER      .EQU    0xFFFFFF6C
+FS_F_OTHER      .EQU    0xFFFFFF6B
 FS_CAUSE        .EQU    0xFFFFFF70      ; + the cause of the cycle
 FS_RETIRE       .EQU    0xFFFFFF70
 FS_REFILL       .EQU    0xFFFFFF71
 FS_BUBBLE       .EQU    0xFFFFFF72
-CAUSES          .EQU    15
+CAUSES          .EQU    14
 PC              .EQU    R15
 LOOPS           .EQU    20
 LOOPS_1         .EQU    19              ; LOOPS - 1
@@ -81,8 +80,6 @@ UOPS            .EQU    57              ; 3 * (LOOPS - 1)
                 TST     @FS_F_SKIP
         ?!Z     JMP     fail
                 TST     @FS_F_STORE
-        ?!Z     JMP     fail
-                TST     @FS_F_INTR
         ?!Z     JMP     fail
                 TST     @FS_F_OTHER
         ?!Z     JMP     fail

@@ -1,31 +1,25 @@
 -- WRITE of the pipelined core, for SymbiYosys. Every input is free, so the
--- solver plays every PREPARE, data bus, and interrupt source, whether or not
--- they keep to the interface contracts of src/pipe_write.vhd: the
+-- solver plays every PREPARE and data bus, whether or not they keep to the interface contracts of src/pipe_write.vhd: the
 -- properties here need none of them, but that the micro-operation PREPARE
 -- moves on agrees with its instruction word, as PREPARE's proof asserts
 -- (f_out_decoded in src/pipe_prepare.vhd).
 --
 -- THEORY OF OPERATION
--- A halted WRITE stays halted until reset, and makes no store, vector
--- read, interrupt entry, or micro-operation accept in the meantime. With
+-- A halted WRITE stays halted until reset, and makes no store or
+-- micro-operation accept in the meantime. With
 -- the properties of PREPARE (f_rd_run) and the definition of halted_o in
 -- src/pipeline.vhd, which waits until no bus cycle is open, that is why
 -- a halted core makes no data access, for every cycle and not only for the
 -- first ones of pipeline.sby. A paused WRITE makes none of them either,
 -- for every pause, as pause_i is free. And once it leaves PAUSED_ST, it
--- reports a step on retire_o, or makes a wait step on wstep_o, before it
--- pauses again (MICROARCH.md §6.1), since it does not pause while
--- w_r.after_go is '1', and only a report or a wait step clears that.
--- While it waits after WAIT, in WAIT_ST, it holds no micro-operation and
--- makes no data access, and a wait step comes only with no request. WRITE pauses without pause_i only on the breakpoint flag
+-- reports a step on retire_o before it pauses again (MICROARCH.md §6.1),
+-- since it does not pause while w_r.after_go is '1', and only a report
+-- clears that. WRITE pauses without pause_i only on the breakpoint flag
 -- of the next instruction, in its own micro-operation or, while it holds
 -- none, in PREPARE's, or after a step that hit a watchpoint, with free
 -- addresses and enable bits; and it then stays paused until pause_i has
 -- been '1' (doc/DEBUG.md §6). The hits hold while it is paused, and the
--- go on clears them. It takes an interrupt only when one is
--- requested, never in a reset, and never two at once, which is what
--- handshake_check asserts of the core's ready outputs in formal_pipeline,
--- here for every cycle. The record inputs are free signals here (anyseq),
+-- go on clears them. The record inputs are free signals here (anyseq),
 -- since the top level has only plain ports.
 --
 -- A taken register write, in PAUSED_ST with pause_i at '1' (doc/DEBUG.md
@@ -36,15 +30,15 @@
 -- with its model registers, with the same model: while WRITE runs, it
 -- holds what PREPARE moved on, until it retires it or flushes; SR changes
 -- only while WRITE holds a micro-operation that may change it, or with a
--- flush, an interrupt entry, or a reset, or in PAUSED_ST, where a register
+-- flush or a reset, or in PAUSED_ST, where a register
 -- write may set R14; WRITE's condition likewise, while
 -- it holds an instruction's first, or else to the condition of the one it
--- holds, as PREPARE found it; and WRITE leaves RUN_ST only with a flush,
--- an interrupt entry, or a reset. Each change can come in a cycle before
+-- holds, as PREPARE found it; and WRITE leaves RUN_ST only with a flush
+-- or a reset. Each change can come in a cycle before
 -- the micro-operation retires: a micro-operation that takes two cycles
 -- writes its result and its condition in the first. And WRITE clears only
--- the valid bit of a micro-operation it drops, and keeps the one of INT
--- through VEC_ST, so the first holds only in RUN_ST.
+-- the valid bit of a micro-operation it drops, so the first holds only in
+-- RUN_ST.
 --
 -- RESET
 -- The first cycle is a reset.
@@ -69,10 +63,6 @@ entity formal_pipe_write is
       dbus_data_i  : in  std_logic_vector(31 downto 0);
       st_valid_i   : in  std_logic;
       st_acc_i     : in  std_logic;
-      nmi_valid_i  : in  std_logic;
-      nmi_vector_i : in  std_logic_vector(7 downto 0);
-      irq_valid_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0);
       f_addr_i     : in  std_logic_vector(31 downto 0);
       f_blk_i      : in  std_logic_vector(31 downto 5);
       pause_i      : in  std_logic;
@@ -95,17 +85,13 @@ architecture synthesis of formal_pipe_write is
    signal ready    : std_logic;
    signal pop      : natural range 0 to 2;
    signal st       : std_logic;
-   signal st_we    : std_logic;
    signal st_addr  : std_logic_vector(31 downto 0);
    signal st_data  : std_logic_vector(31 downto 0);
-   signal take_nmi : std_logic;
-   signal take_irq : std_logic;
    signal w        : t_write;
    signal done     : std_logic;
    signal flush    : std_logic;
    signal target   : std_logic_vector(31 downto 0);
    signal instret  : std_logic;
-   signal wstep    : std_logic;
    signal retire   : t_retire;
 
    -- The cycle before: whether WRITE was halted, and whether it was reset
@@ -165,42 +151,20 @@ begin
    -- PREPARE's f_out_decoded
    -- psl f_decoded : assume always (rst_i = '0' and valid_i = '1') -> decoded_ok(uop);
 
-   -- Halted WRITE makes no access to the data bus, takes no interrupt, and
-   -- accepts no micro-operation.
-   -- psl f_halt_quiet : assert always w.mode = HALTED_ST ->
-   --    (st = '0' and take_nmi = '0' and take_irq = '0' and ready = '0');
+   -- Halted WRITE makes no access to the data bus, and accepts no
+   -- micro-operation.
+   -- psl f_halt_quiet : assert always w.mode = HALTED_ST -> (st = '0' and ready = '0');
 
-   -- Nothing leaves the halt but a reset: not an interrupt, not a bus
-   -- reply, not a micro-operation from PREPARE.
+   -- Nothing leaves the halt but a reset: not a bus reply, not a
+   -- micro-operation from PREPARE.
    -- psl f_halt_sticky : assert always (halted_d = '1' and rst_d = '0') -> w.mode = HALTED_ST;
 
-   -- A paused WRITE makes no access to the data bus, takes no interrupt,
-   -- and accepts no micro-operation either.
-   -- psl f_pause_quiet : assert always w.mode = PAUSED_ST ->
-   --    (st = '0' and take_nmi = '0' and take_irq = '0' and ready = '0');
+   -- A paused WRITE makes no access to the data bus, and accepts no
+   -- micro-operation either.
+   -- psl f_pause_quiet : assert always w.mode = PAUSED_ST -> (st = '0' and ready = '0');
 
-   -- WRITE takes an interrupt only when it is requested, and one at a time,
-   -- never in a reset. take_nmi_o and take_irq_o are the ready outputs of
-   -- the pipelined core, so these are the assertions of
-   -- formal/handshake_check.vhd, for every cycle.
-   -- psl f_take_nmi : assert always take_nmi -> (nmi_valid_i = '1' and rst_i = '0');
-   -- psl f_take_irq : assert always take_irq -> (irq_valid_i = '1' and rst_i = '0');
-   -- psl f_take_one : assert always not (take_nmi and take_irq);
-
-   -- A waiting WRITE makes no access to the data bus and accepts no
-   -- micro-operation. It waits in WAIT_ST, or paused, until a request
-   -- ends the wait, and a wait step is a cycle of WAIT_ST with none.
-   -- psl f_wait_quiet : assert always w.mode = WAIT_ST ->
-   --    (st = '0' and ready = '0' and done = '0');
-   -- psl f_wait_mode : assert always rst_i = '0' ->
-   --    ((w.mode = WAIT_ST) -> w.waiting = '1') and
-   --    ((w.waiting = '1') -> (w.mode = WAIT_ST or w.mode = PAUSED_ST));
-   -- psl f_wstep : assert always wstep = '1' ->
-   --    (rst_i = '0' and w.mode = WAIT_ST and nmi_valid_i = '0' and irq_valid_i = '0' and
-   --     retire.valid = '0');
-
-   -- Once WRITE leaves PAUSED_ST, it reports a step, or makes a wait
-   -- step, before it pauses again. f_go_owed and f_go_paused make it inductive.
+   -- Once WRITE leaves PAUSED_ST, it reports a step before it pauses
+   -- again. f_go_owed and f_go_paused make it inductive.
    -- psl f_go_report : assert always (rst_i = '0' and owed_r = '1') -> w.mode /= PAUSED_ST;
    -- psl f_go_owed : assert always (rst_i = '0' and owed_r = '1') -> w.after_go = '1';
    -- psl f_go_paused : assert always (rst_i = '0' and w.mode = PAUSED_ST) -> w.after_go = '0';
@@ -237,24 +201,17 @@ begin
    -- psl f_exec : assert always (rst_i = '0' and w.exec_done = '1') ->
    --    (w.uop.valid = '1' and w.uop.kind = UOP_OP and w.mode = RUN_ST and
    --     (w.uop.inst.m(0) = "000" or w.uop.inst.m(0) = "001" or w.uop.inst.m(0) = "010"));
-   -- psl f_idle : assert always (rst_i = '0' and (w.mode = PAUSED_ST or w.mode = HALTED_ST or
-   --                                             w.mode = WAIT_ST)) ->
+   -- psl f_idle : assert always (rst_i = '0' and (w.mode = PAUSED_ST or w.mode = HALTED_ST)) ->
    --    w.uop.valid = '0';
 
-   -- How deep the proof must see a halt, a store, a vector read, a pause,
-   -- and a step after a pause, two wait steps, the end of a wait, and a go
-   -- on into one, and that INT's micro-operation stays through VEC_ST.
+   -- How deep the proof must see a halt, a store, a pause, and a step
+   -- after a pause.
    -- psl c_halt : cover {w.mode = HALTED_ST and rst_i = '0'};
-   -- psl c_store : cover {st = '1' and st_we = '1' and rst_i = '0'};
-   -- psl c_vector : cover {st = '1' and st_we = '0' and rst_i = '0'};
+   -- psl c_store : cover {st = '1' and rst_i = '0'};
    -- psl c_pause : cover {w.mode = PAUSED_ST and rst_i = '0'};
-   -- psl c_wait : cover {wstep = '1'; wstep = '1'};
-   -- psl c_wake : cover {w.mode = WAIT_ST and rst_i = '0'; w.mode = RUN_ST and rst_i = '0'};
-   -- psl c_wait_go : cover {w.mode = PAUSED_ST and w.waiting = '1' and rst_i = '0'; w.mode = WAIT_ST};
    -- psl c_go_step : cover {owed_r = '1' and retire.valid = '1' and rst_i = '0'};
    -- psl c_brk : cover {enters = '1' and pause_d = '0' and rst_i = '0'};
    -- psl c_wch : cover {enters = '1' and pause_d = '0' and wch_d /= "0000" and rst_i = '0'};
-   -- psl c_int_keep : cover {w.mode = VEC_ST and w.uop.valid = '1' and rst_i = '0'};
    -- psl c_brk_go : cover {enters = '1' and pause_d = '0' and rst_i = '0';
    --    (w.mode = PAUSED_ST)[*]; w.mode = RUN_ST and rst_i = '0'};
    -- psl c_reg_go : cover {taken = '1'; (w.mode = PAUSED_ST)[*];
@@ -284,15 +241,8 @@ begin
          st_valid_i   => st_valid_i,
          st_acc_i     => st_acc_i,
          st_o         => st,
-         st_we_o      => st_we,
          st_addr_o    => st_addr,
          st_data_o    => st_data,
-         nmi_valid_i  => nmi_valid_i,
-         nmi_vector_i => nmi_vector_i,
-         irq_valid_i  => irq_valid_i,
-         irq_vector_i => irq_vector_i,
-         take_nmi_o   => take_nmi,
-         take_irq_o   => take_irq,
          pause_i      => pause_i,
          reg_we_i     => reg_we_i,
          reg_idx_i    => reg_idx_i,
@@ -304,7 +254,6 @@ begin
          flush_o      => flush,
          target_o     => target,
          instret_o    => instret,
-         wstep_o      => wstep,
          retire_o     => retire
       ); -- i_pipe_write
 
@@ -330,7 +279,7 @@ begin
          if taken = '1' then
             regs_w(to_integer(reg_idx_i)) <= regval(to_integer(reg_idx_i), reg_data_i);
          end if;
-         if retire.valid = '1' or wstep = '1' then
+         if retire.valid = '1' then
             owed_r <= '0';
          elsif left = '1' then
             owed_r <= '1';
@@ -348,15 +297,14 @@ begin
             f_uop <= C_UOP_NONE;
          end if;
          f_sr        <= w.regs(14);
-         f_sr_free   <= rst_i or flush or take_nmi or take_irq or
+         f_sr_free   <= rst_i or flush or
                         (w.uop.valid and w.uop.may_sr) or to_sl(w.mode = PAUSED_ST);
          f_cond      <= w.cond;
-         f_cond_free <= rst_i or flush or take_nmi or take_irq or
-                        (w.uop.valid and w.uop.first);
+         f_cond_free <= rst_i or flush or (w.uop.valid and w.uop.first);
          f_cond_set  <= w.uop.valid and w.uop.cond_known;
          f_cond_val  <= w.uop.cond_val;
          f_mode      <= w.mode;
-         f_mode_free <= rst_i or flush or take_nmi or take_irq;
+         f_mode_free <= rst_i or flush;
          if rst_i = '1' then
             f_uop <= C_UOP_NONE;
          end if;

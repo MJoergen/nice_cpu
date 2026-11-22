@@ -2,9 +2,9 @@
 -- of what the pipelined core does in each cycle, so that a programmer can
 -- see where the cycles of a program go.
 --
---   0x00  FS_CTRL      0x03  FS_DSTALL    0x08-0x0C  FS_FLUSH + n   0x1F  reads 0
---   0x01  FS_CYCLES    0x04  FS_JUMPS     0x10-0x1E  FS_CAUSE + n
---   0x02  FS_ISTALL    0x05-0x07, 0x0D-0x0F  read 0
+--   0x00  FS_CTRL      0x03  FS_DSTALL    0x08-0x0B  FS_FLUSH + n   0x1E-0x1F  read 0
+--   0x01  FS_CYCLES    0x04  FS_JUMPS     0x10-0x1D  FS_CAUSE + n
+--   0x02  FS_ISTALL    0x05-0x07, 0x0C-0x0F  read 0
 --
 -- THEORY OF OPERATION
 -- The counters count in the cycles in which the run bit of FS_CTRL is 1

@@ -3,7 +3,7 @@
 -- port and drives nothing.
 --
 -- THEORY OF OPERATION
--- The devices with registers only (the timer, the performance counters,
+-- The devices with registers only (the performance counters
 -- and the fetch statistics) answer every request in the cycle after it.
 -- The checker asserts that the port never stalls, that ACK is high exactly
 -- in the cycle after one with CYC and STB high, and that it is low after a

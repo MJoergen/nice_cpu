@@ -26,25 +26,17 @@ address too. The program does not check itself. The makefile compares the
 core's trace with the emulator's, which shows every register and memory
 write. R15 is left out: its side effects are jumps, and
 test/pcfx_prog.py covers them.
-
-The program runs with E = 1, for test/irq_sweep.py, and has vector table
-entries for NMI and IRQ at VBASE 0 and at each VBASE that the side
-effects on R14 reach from R14_BASE. A SUB with R14 as a register
-destination writes it with any value, so E and VBASE too, and the sweep
-leaves out a request that would find no vector table there.
 """
 
 import sys
 
-# The data region, DATA to DATA + 15, above the program. Its addresses,
-# and the vector tables at VBASE << 8 for the VBASEs near BASE, stay below
-# the byte windows of DEVICES.md §9.
+# The data region, DATA to DATA + 15, above the program. Its addresses stay
+# below the byte windows of DEVICES.md §9.
 DATA = 0x80000
 BASE = DATA + 8  # Each case starts with the register here
-# The same for R14, with I and E = 1, above the windows, and bit 24 always 1
+# The same for R14, with F1 and F0 = 1, above the windows, and bit 24
+# always 1
 R14_BASE = 0xC1000000 | BASE
-NMI, IRQ = 8, 9  # The vectors of test/irq_sweep.py
-REACH = 6  # How far R14 moves from R14_BASE through side effects alone
 
 # The operand of each mode for register r, with the constant c for the
 # modes that take one. Index: mode.
@@ -117,12 +109,7 @@ def program() -> list[str]:
     lines = [
         "; Written by test/sidefx_prog.py. Every pair of side effects on one",
         "; register, within one instruction and in two.",
-        "                MOVE    R15, start",
-        f"                .ORG    {NMI}",
-        "                .DAT    nmi, irq",
-        "nmi     RTI",
-        "irq     RTI",
-        "start           MOVE    R14, 0x40000000  ; E = 1, VBASE = 0",
+        "                MOVE    R14, 0x40000000  ; F0 = 1, U = 0",
         f"                MOVE    R3, 0x{DATA + 4:X}",
     ]
     lines += single("R2", False)
@@ -135,8 +122,6 @@ def program() -> list[str]:
         f"                .ORG    0x{DATA:X}",
         "                .DAT    " + ", ".join(f"0x{0x100 + i:X}" for i in range(16)),
     ]
-    for vbase in range(BASE - REACH, BASE + REACH + 1):
-        lines += [f"                .ORG    0x{vbase << 8 | NMI:X}", "                .DAT    nmi, irq"]
     return lines
 
 

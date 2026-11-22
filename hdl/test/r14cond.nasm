@@ -1,15 +1,13 @@
 ; SR written by side effects and two-cycle destinations, then conditional
-; instructions and conditional reads; RTI and INT with conditions; R14 as
-; the source and the destination of shifts.
+; instructions and conditional reads; R14 as the source and the
+; destination of shifts.
 COUNT           .EQU    0xFFFFFF01
                 JMP     start
-                .ORG    4
-                .DAT    isr
                 .ORG    0x100
 start           MOVE    R10, scratch
                 MOVE    R11, COUNT
                 MOVE    @R11, 0
-                MOVE    R14, 0x48FFFFFF  ; Z = 1, VBASE all ones
+                MOVE    R14, 0x48FFFFFF  ; Z = 1, U all ones
                 MOVE    R1, R14++       ; R14 = 0x49000000: Z still 1
         ?Z      MOVE    R2, 1
         ?Z      MOVE    R3, @R10        ; a conditional read after a side-effect write of SR
@@ -42,17 +40,6 @@ start           MOVE    R10, scratch
                 ADD     R1, R14++, R14  ; s0 = SR, R14 + 1, s1 = new SR
         ?!N     MOVE    R2, 0xBAD
                 MOVE    R14, 0x41000000  ; E = 1
-; INT and RTI with conditions
-                CMP     R0, R0          ; Z = 1
-        ?Z      INT     4               ; the routine clears Z, RTI restores it
-        ?Z      MOVE    R3, @R10        ; a conditional read right after RTI
-        ?!Z     MOVE    R2, 0xBAD
-                ADD[M]  R0, R0, 1       ; Z = 0
-        ?!Z     INT     4               ; the routine sets Z
-        ?Z      MOVE    R2, 0xBAD
-        ?I      MOVE    R2, 0xBAD       ; I restored to 0 by RTI
-                INT     4
-        ?I      MOVE    R2, 0xBAD
 ; signed comparison with a read after it
                 MOVE    R1, 0x80000000
                 MOVE    R2, 1
@@ -87,9 +74,6 @@ start           MOVE    R10, scratch
                 CMP     R0, R0          ; Z = 1
         ?Z      HALT                    ; stops here
                 HALT
-isr     ?Z      ADD[M]  R7, R7, 1       ; Z = 0 if it was 1
-        ?!Z     SUB[M]  R7, R7, R7      ; Z = 1 if it was 0
-                RTI
 cnt             .DAT    5
                 .ORG    0x1000
 scratch         .DAT    0x111, 0x222

@@ -24,10 +24,6 @@ entity formal_pipe_prepare is
       done_i       : in  std_logic;
       flush_i      : in  std_logic;
       ready_i      : in  std_logic;
-      take_nmi_i   : in  std_logic;
-      take_irq_i   : in  std_logic;
-      nmi_valid_i  : in  std_logic;
-      irq_valid_i  : in  std_logic;
       pause_i      : in  std_logic;
       wch_on_i     : in  std_logic;
       dbus_stall_i : in  std_logic;
@@ -75,10 +71,6 @@ begin
          done_i       => done_i,
          flush_i      => flush_i,
          ready_i      => ready_i,
-         take_nmi_i   => take_nmi_i,
-         take_irq_i   => take_irq_i,
-         nmi_valid_i  => nmi_valid_i,
-         irq_valid_i  => irq_valid_i,
          pause_i      => pause_i,
          wch_on_i     => wch_on_i,
          valid_o      => valid,

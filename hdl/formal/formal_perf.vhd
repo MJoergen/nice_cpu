@@ -13,8 +13,8 @@
 -- also checks the arithmetic of perf's, which subtracts 1500000 from
 -- 2000000 and from 1500000 in turn. The model counts the events of
 -- DEVICES.md §3 too: the data reads and stores that the core's bus accepts,
--- and of the steps reported that do not halt, the skipped ones, those that
--- write R15, and the interrupt entries and INTs. Its rule for a jump is
+-- and of the steps reported that do not halt, the skipped ones and those
+-- that write R15. Its rule for a jump is
 -- spelled out from the bits of the instruction word, apart from
 -- writes_r15 of nice_pkg, which perf uses. f_expect is what a
 -- read accepted in this cycle must return: the low word of a counter, the
@@ -48,7 +48,6 @@ entity formal_perf is
       run_i     : in  std_logic;
       -- A step reported on retire_i, and one that halts
       r_valid_i : in  std_logic;
-      r_intr_i  : in  std_logic;
       r_skip_i  : in  std_logic;
       r_halt_i  : in  std_logic;
       r_iw_i    : in  std_logic_vector(31 downto 0);
@@ -81,10 +80,10 @@ architecture synthesis of formal_perf is
    signal f_micros   : std_logic_vector(63 downto 0) := G_RESET;
    signal f_mic_snap : std_logic_vector(63 downto 0) := G_RESET;
 
-   -- The events: data reads, stores, skips, jumps, and interrupts
-   type t_events is array (0 to 4) of std_logic_vector(63 downto 0);
+   -- The events: data reads, stores, skips, and jumps
+   type t_events is array (0 to 3) of std_logic_vector(63 downto 0);
 
-   signal f_ev      : std_logic_vector(0 to 4);
+   signal f_ev      : std_logic_vector(0 to 3);
    signal f_ev_cnt  : t_events := (others => G_RESET);
    signal f_ev_snap : t_events := (others => G_RESET);
    signal retire    : t_retire;
@@ -102,13 +101,12 @@ begin
 
    -- The events of this cycle, from the bits of the instruction word
    p_ev : process (all)
-      variable ctrl_v : boolean;
       variable jump_v : boolean;
       variable step_v : boolean;
    begin
-      ctrl_v := r_iw_i(27 downto 26) = "11";
-      if ctrl_v then
-         jump_v := r_iw_i(25 downto 21) = "00001";
+      -- A control instruction writes no register.
+      if r_iw_i(27 downto 26) = "11" then
+         jump_v := false;
       else
          -- dest in mode 000, 001, 010, 101, or 110; s0 or s1 in mode 001,
          -- 010, 101, or 110; register 15 in each
@@ -125,19 +123,15 @@ begin
       end if;
       step_v := r_valid_i = '1' and r_halt_i = '0';
 
-      f_ev    <= "00000";
+      f_ev    <= "0000";
       f_ev(0) <= d_stb_i and not d_stall_i and not d_we_i;
       f_ev(1) <= d_stb_i and not d_stall_i and d_we_i;
-      if step_v and r_intr_i = '0' then
+      if step_v then
          if r_skip_i = '1' then
             f_ev(2) <= '1';
          elsif jump_v then
             f_ev(3) <= '1';
          end if;
-      end if;
-      if step_v and (r_intr_i = '1' or
-                     (r_skip_i = '0' and ctrl_v and r_iw_i(25 downto 21) = "00010")) then
-         f_ev(4) <= '1';
       end if;
    end process p_ev;
 
@@ -146,7 +140,6 @@ begin
    begin
       retire         <= C_RETIRE_NONE;
       retire.valid   <= r_valid_i;
-      retire.intr    <= r_intr_i;
       retire.skipped <= r_skip_i;
       retire.iw      <= r_iw_i;
       if r_halt_i = '1' then
@@ -169,8 +162,6 @@ begin
       f_ev_snap(2)(63 downto 32) when "01111",
       f_ev_cnt(3)(31 downto 0) when "10000",
       f_ev_snap(3)(63 downto 32) when "10001",
-      f_ev_cnt(4)(31 downto 0) when "10010",
-      f_ev_snap(4)(63 downto 32) when "10011",
       X"00000000" when others;
 
 
@@ -189,7 +180,7 @@ begin
          if instret_i = '1' then
             f_instrs <= f_instrs + 1;
          end if;
-         for i in 0 to 4 loop
+         for i in 0 to 3 loop
             if f_ev(i) = '1' then
                f_ev_cnt(i) <= f_ev_cnt(i) + 1;
             end if;
@@ -210,7 +201,7 @@ begin
             if wb_addr_i = "00100" then
                f_mic_snap <= f_micros;
             end if;
-            for i in 0 to 4 loop
+            for i in 0 to 3 loop
                if to_integer(wb_addr_i) = 10 + 2 * i then
                   f_ev_snap(i) <= f_ev_cnt(i);
                end if;
@@ -246,7 +237,6 @@ begin
    -- psl c_store_hi : cover {f_read = '1' and wb_addr_i = "01101" and f_ev_snap(1) /= G_RESET};
    -- psl c_skip_hi : cover {f_read = '1' and wb_addr_i = "01111" and f_ev_snap(2) /= G_RESET};
    -- psl c_jump_hi : cover {f_read = '1' and wb_addr_i = "10001" and f_ev_snap(3) /= G_RESET};
-   -- psl c_intr_hi : cover {f_read = '1' and wb_addr_i = "10011" and f_ev_snap(4) /= G_RESET};
    -- psl c_wrap : cover {f_read = '1' and wb_addr_i = "00001" and f_wrap_r = '1' and
    --    f_cyc_snap(31 downto 0) /= X"00000000"};
 

@@ -1,5 +1,4 @@
-"""Runs programs on the core and on the emulator, for irq_sweep.py and
-programs.py.
+"""Runs programs on the core and on the emulator, for programs.py.
 
 A run on the core is a run of tb_core in the simulator, GHDL's
 --elab-run or nvc's elaboration in memory, with the VHDL analyzed in BUILD
@@ -191,34 +190,23 @@ class Core:
     def run(self, binfile: str, generics: list[str]) -> str:
         """The trace and the output of the core, in the form of
         run_emulator's. generics are more -gNAME=VALUE options."""
-        return self.run_logged(binfile, generics)[0]
-
-    def run_logged(self, binfile: str, generics: list[str]) -> tuple[str, str]:
-        """The same, and the interrupt log of tb_core's G_INTR_LOG,
-        which is empty when no request was raised."""
         d = self.directory()
         trace = os.path.join(d, "core.out")
-        log = os.path.join(d, "intr.log")
         cmd = sim_command(self.sim, self.tool, self.build, "tb_core", [
             "-gG_CORE=" + self.core, "-gG_BIN_FILE=" + os.path.abspath(binfile),
-            "-gG_TRACE_FILE=" + trace, "-gG_INTR_LOG=" + log, *generics,
+            "-gG_TRACE_FILE=" + trace, *generics,
         ])
-        for path in (trace, log):
-            if os.path.exists(path):
-                os.remove(path)
+        if os.path.exists(trace):
+            os.remove(trace)
         with JOBSERVER.slot():
             r = subprocess.run(cmd, cwd=d, stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if not os.path.exists(trace):
-            return f"no trace from {self.sim}, exit {r.returncode}\n" + r.stdout + r.stderr, ""
+            return f"no trace from {self.sim}, exit {r.returncode}\n" + r.stdout + r.stderr
         with open(trace, errors="replace") as f:
             out = f.read()
         if r.returncode not in (0, 2, 3):
             out += r.stdout + r.stderr
-        intr = ""
-        if os.path.exists(log):
-            with open(log) as f:
-                intr = f.read()
-        return out + f"exit {r.returncode}\n", intr
+        return out + f"exit {r.returncode}\n"
 
     def clean(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)

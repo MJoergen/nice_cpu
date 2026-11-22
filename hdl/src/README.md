@@ -20,9 +20,6 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [fpu_unit.vhd](fpu_unit.vhd) | The arithmetic unit of the FPU of DEVICES.md §11: one operation at a time, on a binary format whose widths are generics. |
 | [perf.vhd](perf.vhd) | The performance counters of DEVICES.md §3, a Wishbone slave. |
 | [tod.vhd](tod.vhd) | The clock of the time of day of DEVICES.md §10, a Wishbone slave that its own reset, the system's, alone sets to 0. |
-| [timer.vhd](timer.vhd) | The timer of DEVICES.md §4, a Wishbone slave with an interrupt request port. |
-| [console_irq.vhd](console_irq.vhd) | The console's receive interrupt of DEVICES.md §1.9, a Wishbone slave of one word with an interrupt request port, told of the console's input by its system. |
-| [irq_merge.vhd](irq_merge.vhd) | The merge of the timer's and the console's IRQ into the core's one IRQ port, the timer's first (DEVICES.md §4). |
 | [sd_regs.vhd](sd_regs.vhd) | The registers and the buffer of the SD card controller of DEVICES.md §5, a Wishbone slave with a port to a protocol engine. |
 | [net_regs.vhd](net_regs.vhd) | The registers of the network station of DEVICES.md §6, a Wishbone slave with the addresses as outputs and the counts and status as inputs. |
 | [eth_regs.vhd](eth_regs.vhd) | The port for Ethernet frames of DEVICES.md §7: the registers, the queue of 4 frames, and the send buffer, a Wishbone slave with a port to the station. |

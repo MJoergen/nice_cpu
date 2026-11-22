@@ -3,7 +3,7 @@
 The pipelined core, `src/pipeline.vhd`, follows
 [doc/MICROARCH.md](../doc/MICROARCH.md). Where the note left a question
 open, or where the core first did something else, this file says what the
-core does and why. MICROARCH.md has since taken up items 1, 9, 10, 15, and 17 to 22. ISA.md is not changed. Items that need a
+core does and why. MICROARCH.md has since taken up items 1, 9, 10, and 12 to 15. ISA.md is not changed. Items that need a
 change outside `hdl/` are marked **Outside hdl/**, and are also
 [issues](https://github.com/MJoergen/nice_cpu/issues).
 
@@ -67,8 +67,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
    not a `MOVE`'s source, and a shift whose count PREPARE could not
    reduce, which takes three for a rotation through C. `w_r.exec_done`
    marks the second cycle of the first two, and `w_r.cnt_step`, 0 to 2,
-   the progress of the count. No interrupt is taken between the cycles:
-   `bound_v` in `src/pipe_write.vhd` waits for both to be clear.
+   the progress of the count. The core does not pause between the
+   cycles: `pbound_v` in `src/pipe_write.vhd` waits for both to be clear.
 
 ## The data bus
 
@@ -79,10 +79,8 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
    ALU to the bus (MICROARCH.md §5.3). A store into memory retires when it
    goes into the register. A store into the I/O range retires in the cycle
    the bus accepts it, as the trace writer's contract asks for the console
-   (`src/trace_pkg.vhd`, e), and the timer for its count of steps. It
-   costs a cycle more, but the I/O range is not memory, and its stores are
-   rare. WRITE's vector reads go through the same register, so an
-   interrupt entry takes a cycle more. They come once per interrupt.
+   (`src/trace_pkg.vhd`, d). It costs a cycle more, but the I/O range is
+   not memory, and its stores are rare.
 
    Read data takes the other way. WRITE takes it from DBUS's FIFO, a cycle
    after its ACK, unless it only goes into a register (MICROARCH.md
@@ -105,53 +103,13 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
    for another slave's ACK, so the count cannot be tied to the cycle
    PREPARE loads the read; `test/instret.nasm` checks this.
 
-## Interrupts
-
-10. **Rule 4 of MICROARCH.md §5.3 exempts an instruction that has issued a
-   data read.** As written, the rule would stop the second read of an
-   instruction such as `ADD R1, @R2, @R3` if a request came after the
-   first. But the first read committed the core to the instruction, so
-   the request cannot be taken before it, and the core would wait for
-   ever. An instruction that has made a read, or whose first
-   micro-operation has retired, is exempt, as the instruction after `RTI`
-   is. MICROARCH.md §5.3 says so.
-11. **The report of a step is combinational**, in the cycle the step
-    retires, with the registers it leaves. `tb_core` raises a request for
-    step S when it sees step S - 1 reported, so the request reaches the
-    core at the boundary before step S. The core is then late only when
-    step S had already issued a data read, as MICROARCH.md §6 allows.
-12. **`irq_compare.py --read-delay`** checks exactly that: a request may be
-    taken late by a run of steps that are instructions with a data read,
-    from the first step where the emulator would take it, and from the
-    end of that run on, as the emulator takes it. That may be later
-    still, after an NMI, its `RTI`, and the instruction after the `RTI`. `make test` on the pipelined core, `make sweep`, and
-    `irq_sweep.py` use it, and skip the exact diff
-    against the emulator for runs with requests, which cannot hold
-    (MICROARCH.md §9).
-13. **The timer in `tb_core` ticks with `instret_o`**, the report of
-    each interrupt entry, and each wait step on `wstep_o`, not with the
-    report of each step. A read of
-    `TIMER_COUNT` then sees the ticks of every older instruction, as in
-    the emulator, whose timer counts steps. The pipelined core counts an
-    instruction with a data read before its store. When that store
-    writes `TIMER_PERIOD`, `tb_core` gives the timer the instruction's
-    tick again, so that the new count sees it, as in the emulator. The
-    tick on the old count before the store can raise a request that the
-    emulator would not. `irq_compare.py` takes it as any other request.
-14. **A timer request may be taken late too**, like any other. `tb_core`
-    logs the timer's requests as IRQs, and `irq_compare.py` runs the
-    emulator with its option `--no-timer-irq`, which keeps the timer
-    counting but drops its requests, so that the log's requests stand in
-    for them (**Outside hdl/:** the option is new in the emulator).
-
 ## Formal checks
 
-15. **FETCH, DECODE, PREPARE, and DBUS are proven, the rest of the core
+10. **FETCH, DECODE, PREPARE, and DBUS are proven, the rest of the core
     is checked for 12 cycles.** `formal/pipe_fetch.sby`, `pipe_decode.sby`,
     `pipe_prepare.sby`, and `pipe_dbus.sby` prove the four for every
     cycle, and `pipe_write.sby` proves WRITE's halt: it stays halted
-    until reset and makes no store, vector read, interrupt entry, or
-    accept. It proves the same of WRITE's pause, and that WRITE reports a
+    until reset and makes no store or accept. It proves the same of WRITE's pause, and that WRITE reports a
     step after it leaves `PAUSED_ST` before it pauses again, and what
     PREPARE's proof assumes of WRITE. Together with PREPARE's `f_rd_run` and the definition of
     `halted_o`, that is why a halted core makes no data access, for every
@@ -167,10 +125,9 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     `formal/pipeline.sby` checks its ports and its own assertions for the
     first 12 cycles after reset. The simulation tests check the same
     assertions on every run.
-16. **Some registers have no reset, on purpose.** WRITE's `saved_pc`,
-    `saved_sr`, `s0val`, `s1val`, `last`, `m33sum`, `cnt`, `vec`,
-    `vec_intr`, and `vec_nmi`, PREPARE's `rd_addr_r`, DBUS's `tags_r`,
-    `rq_r`, `st_we_r`, `st_addr_r`, and `st_data_r`, and FETCH's `ring_r`
+11. **Some registers have no reset, on purpose.** WRITE's `s0val`,
+    `s1val`, `last`, `m33sum`, and `cnt`, PREPARE's `rd_addr_r`, DBUS's
+    `tags_r`, `rq_r`, `st_addr_r`, and `st_data_r`, and FETCH's `ring_r`
     are not reset. Every use is gated by a valid bit or a count, which
     are reset, so the unreset value is never used. The outputs follow:
     `dbus_addr_o`, for one, is 'U' in simulation until the first request,
@@ -178,32 +135,24 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
 
 ## The pause
 
-17. **A pause goes ahead of an interrupt** at the same boundary (MICROARCH.md
-    §6.1). WRITE's step boundary is the one where it checks for an
-    interrupt, without the conditions of ISA.md §7.1, so that the core
-    can pause inside an interrupt routine and after `RTI`. A request that
-    is pending then is taken when the core goes on, as the first step.
-18. **`after_go` marks the first step after a pause.** WRITE sets it when it
-    leaves `PAUSED_ST`, and clears it when it reports a step: an
-    instruction or an interrupt entry. While it is 1, WRITE does not pause,
+12. **Rule 4 of MICROARCH.md §5.3 exempts an instruction that has issued
+    a data read.** As written, the rule would stop the second read of an
+    instruction such as `ADD R1, @R2, @R3` if `pause_i` rose after the
+    first. But the first read committed the core to the instruction, so
+    the core cannot pause before it, and would wait for ever. An
+    instruction that has made a read, or whose first micro-operation has
+    retired, is exempt, and so is the first step after a pause: `pause_ok`
+    in PREPARE. MICROARCH.md §5.3 says so.
+13. **`after_go` marks the first step after a pause.** WRITE sets it when it
+    leaves `PAUSED_ST`, and clears it when it reports a step. While it is 1, WRITE does not pause,
     so that one cycle of `pause_i` = 0 runs exactly one step. WRITE leaves
     `PAUSED_ST` when `pause_i` is 0 whether or not `paused_o` had risen,
     so a fall while the core still waits for its ACKs runs one step too.
     It leaves with a flush to R15, so that FETCH fetches again what a
     system may have written meanwhile.
-19. **The pause term of rule 4 is separate** from the term of the requests,
-    `pause_ok` beside `intr_ok` in PREPARE. The first step after a pause
-    is exempt from it, but not from the requests, or a request that comes
-    just after the core goes on could be taken late. The instruction after
-    `RTI` is not exempt from it. That exemption could not show anyway:
-    when no older instruction is in WRITE, WRITE is at a step boundary,
-    and pauses and flushes in the cycle that PREPARE would issue the
-    read. So giving the term the exemption changes no run, and only the
-    mutation that drops the term fails `cputest_step` and `reads_step`.
-
 ## The breakpoints
 
-20. **DECODE compares the breakpoints** with the address of each
+14. **DECODE compares the breakpoints** with the address of each
     instruction it takes, and the flag `brk` goes with the instruction
     (MICROARCH.md §6.1). The compare runs from FETCH's address and the
     breakpoint inputs into `dec_r` and `dec_q`, off WRITE's paths. A
@@ -211,23 +160,15 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     instructions that DECODE holds already, as DEBUG.md §6 allows. While
     the core is paused, the pipeline is empty, so a breakpoint written
     then is exact.
-21. **WRITE takes the flag from PREPARE when it holds no micro-op.**
+15. **WRITE takes the flag from PREPARE when it holds no micro-op.**
     PREPARE holds back the data read of a flagged instruction, so such an
     instruction never reaches WRITE, and WRITE would wait for ever. While
     WRITE is empty, `prep_r` holds the oldest instruction in flight, if
     any, so its flag is that of the next step. `prep_r` is a register.
     Dropping this fails `breaks` and `breaks_stall`.
-22. **An interrupt entry goes before a breakpoint**, as in niceemu. WRITE
-    pauses on the flag only when it takes no interrupt in that cycle.
-    Stopping first would match niceemu only with R15 compared in WRITE,
-    since at a boundary right after a jump neither WRITE nor PREPARE holds
-    the next instruction yet. The IRQ before step 18 of `test/breaks.nasm`
-    comes with the flagged instruction already in the pipeline, and a
-    core that stops first fails `breaks`.
-
 ## The register writes
 
-23. **A register write goes in only while paused**, in WRITE's arm of
+16. **A register write goes in only while paused**, in WRITE's arm of
     `PAUSED_ST` with `pause_i` = 1 (DEBUG.md §6). The pipeline is empty
     there, FETCH waits at R15 with no request, and the go on flushes to
     `w_r.regs(15)`, so the write needs no path to FETCH, DECODE, PREPARE,
@@ -239,30 +180,11 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     prove. PREPARE's model lets SR change in `PAUSED_ST`, where a write
     may set R14.
 
-## The wait
-
-24. **WRITE waits in a mode of its own, `WAIT_ST`**, with the pipeline
-    empty, as in `PAUSED_ST` (MICROARCH.md §6.2). `WAIT` retires and
-    flushes, and FETCH stops while the mode is not `RUN_ST`. So the wait
-    needs no new path into FETCH, DECODE, or PREPARE, and a request ends
-    it with a flush to `w_r.regs(15)`, as a go on after a pause does.
-    The flush costs a refill after each wait.
-25. **A wait step counts as the first step after a pause.** It clears
-    `after_go`, as a report does, so a step of a waiting core is one wait
-    step, and the debug link's step does not hang. The go on from a pause
-    in a wait returns to `WAIT_ST`, and `waiting` stays 1 through the
-    pause, as the link does not change it (DEBUG.md §6).
-26. **The cores report wait steps on `wstep_o`**, which no system needs:
-    its timer ticks every cycle. The tests count steps, as the emulator
-    does, so `tb_core`'s timer, its requests, and the trace writer count
-    `wstep_o` too, or a run with a wait could not be compared with the
-    emulator's.
-
 ## The watchpoints
 
-27. **WRITE checks the watchpoints, as it runs each micro-op**, against
-    the addresses of its reads that PREPARE formed, its store, and the
-    vector read in `VEC_ST` (MICROARCH.md §6.1). Only there is it known
+17. **WRITE checks the watchpoints, as it runs each micro-op**, against
+    the addresses of its reads that PREPARE formed, and its store
+    (MICROARCH.md §6.1). Only there is it known
     that the access belongs to a step that runs: PREPARE's reads are
     committed, but a skipped instruction makes none. The inputs are
     registered in `pipeline.vhd`, so the compares start at flip-flops,
@@ -271,7 +193,7 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     until the first hit, so that no compare drives the enable of its 32
     flip-flops. With the compares on an enable, the worst slack of
     `make timing` fell from 0.42 ns to 0.21 ns.
-28. **PREPARE holds back the next instruction's reads while a watchpoint
+18. **PREPARE holds back the next instruction's reads while a watchpoint
     is enabled.** A hit stops the core after its step, so no read of the
     next instruction may be on the bus by then, as a read of the I/O
     range has side effects. While any enable bit is set, PREPARE issues
@@ -279,11 +201,9 @@ change outside `hdl/` are marked **Outside hdl/**, and are also
     while `w_r.wch` has a bit set. The cost is a cycle or more for each
     instruction with a data read, and only while a watchpoint is
     enabled. Dropping the term fails `watches`.
-29. **A hit goes before a pause request and an interrupt**, and the first
-    step after a go on is not exempt (DEBUG.md §6). The hit is of the
-    step just ended, and its stop is what niceemu reports, whatever else
-    is pending. The IRQ before step 8 of `test/watches.nasm` comes right
-    after a hit, and a core that takes it first fails `watches`. WRITE
+19. **A hit goes before a pause request**, and the first step after a go
+    on is not exempt (DEBUG.md §6). The hit is of the step just ended,
+    and its stop is what niceemu reports, whatever else is pending. WRITE
     treats `w_r.wch_any` as if `pause_i` were 1, in the one term
     `rpause_v`, so the hit adds no term to the paths from the pause to
     `done_o` and `instret_o`. A term of its own cost `instret_o` 0.9 ns

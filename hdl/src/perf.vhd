@@ -1,11 +1,11 @@
 -- The performance counters of DEVICES.md §3: 32 words of I/O with a 64-bit
 -- cycle counter, a 64-bit instruction counter, a 64-bit counter of
--- microseconds, and the 64-bit counters of five events of the program.
+-- microseconds, and the 64-bit counters of four events of the program.
 --
 --   0  CYCLE_LO   2  INSTR_LO   4  TIME_LO    0A  READ_LO    0C  STORE_LO
 --   1  CYCLE_HI   3  INSTR_HI   5  TIME_HI    0B  READ_HI    0D  STORE_HI
---   0E  SKIP_LO   10  JUMP_LO   12  INTR_LO   6-9, 14-1F  read 0
---   0F  SKIP_HI   11  JUMP_HI   13  INTR_HI
+--   0E  SKIP_LO   10  JUMP_LO   6-9, 12-1F  read 0
+--   0F  SKIP_HI   11  JUMP_HI
 --
 -- THEORY OF OPERATION
 -- The cycle counter counts the clock cycles after reset in which run_i is
@@ -24,10 +24,9 @@
 --
 -- The event counters count what the program does. The read counter and the
 -- store counter count the data reads and the stores that the core's data
--- bus accepts. The skip, jump, and interrupt counters count the steps that
--- the core reports on retire_i: a skipped instruction, one that writes R15
--- (writes_r15 of nice_pkg), and an interrupt entry or INT, but no step
--- that halts. A core reports a step no later than the cycle in which it
+-- bus accepts. The skip and jump counters count the steps that the core
+-- reports on retire_i: a skipped instruction, and one that writes R15
+-- (writes_r15 of nice_pkg), but no step that halts. A core reports a step no later than the cycle in which it
 -- counts its instruction on instret_i, and issues no read of a younger
 -- instruction before then, so a read of a counter counts what came before
 -- it, as a read of INSTR_LO does.
@@ -104,15 +103,15 @@ end entity perf;
 architecture synthesis of perf is
 
    -- The counters, in the order of their low words: cycles, instructions,
-   -- microseconds, data reads, stores, skips, jumps, and interrupts
-   constant C_COUNTERS : natural := 8;
+   -- microseconds, data reads, stores, skips, and jumps
+   constant C_COUNTERS : natural := 7;
 
    type t_counters is array (0 to C_COUNTERS - 1) of std_logic_vector(63 downto 0);
    type t_snaps is array (0 to C_COUNTERS - 1) of std_logic_vector(31 downto 0);
 
    -- The address of each counter's low word
    type     t_addrs is array (0 to C_COUNTERS - 1) of natural;
-   constant C_ADDR : t_addrs := (16#00#, 16#02#, 16#04#, 16#0A#, 16#0C#, 16#0E#, 16#10#, 16#12#);
+   constant C_ADDR : t_addrs := (16#00#, 16#02#, 16#04#, 16#0A#, 16#0C#, 16#0E#, 16#10#);
 
    constant C_CYCLES : natural := 0;
    constant C_INSTRS : natural := 1;
@@ -121,7 +120,6 @@ architecture synthesis of perf is
    constant C_STORES : natural := 4;
    constant C_SKIPS  : natural := 5;
    constant C_JUMPS  : natural := 6;
-   constant C_INTRS  : natural := 7;
 
    signal count_r : t_counters := (others => G_RESET);
    signal snap_r  : t_snaps    := (others => G_RESET(63 downto 32));
@@ -133,7 +131,7 @@ architecture synthesis of perf is
    signal frac_r : natural range 0 to G_CLK_HZ - 1 := 0;
 
    signal accept : std_logic;
-   signal events : std_logic_vector(C_READS to C_INTRS);
+   signal events : std_logic_vector(C_READS to C_JUMPS);
 
 begin
 
@@ -145,20 +143,16 @@ begin
    -- The events of this cycle
    p_events : process (all)
       variable step_v : boolean;
-      variable int_v  : boolean;
    begin
       step_v := retire_i.valid = '1' and retire_i.halt = HALT_NONE;
-      int_v  := retire_i.skipped = '0' and is_ctrl(retire_i.iw) and
-                retire_i.iw(25 downto 21) = "00010";
 
       events          <= (others => '0');
       events(C_READS) <= dbus_stb_i and not dbus_stall_i and not dbus_we_i;
       events(C_STORES) <= dbus_stb_i and not dbus_stall_i and dbus_we_i;
-      if step_v and retire_i.intr = '0' then
+      if step_v then
          events(C_SKIPS) <= retire_i.skipped;
          events(C_JUMPS) <= to_sl(retire_i.skipped = '0' and writes_r15(retire_i.iw));
       end if;
-      events(C_INTRS) <= to_sl(step_v and (retire_i.intr = '1' or int_v));
    end process p_events;
 
 
@@ -179,7 +173,7 @@ begin
          if instret_i = '1' then
             count_r(C_INSTRS) <= count_r(C_INSTRS) + 1;
          end if;
-         for i in C_READS to C_INTRS loop
+         for i in C_READS to C_JUMPS loop
             if events(i) = '1' then
                count_r(i) <= count_r(i) + 1;
             end if;

@@ -24,17 +24,10 @@ ADD PC, R12, start. A jump into the top 16 words runs the NOPs that an
 instruction fetch from the I/O range reads (ISA.md §8.3), and wraps to
 address 0. Reset starts at address 0 too, with R12 = 0.
 
-The program runs with E = 1 and VBASE = 0, for test/irq_sweep.py. Words
-8 and 9 are the vector table entries for NMI and IRQ. They point to
-routines at 14 and 15, each an RTI, and as instructions they are
-MOVE R0, R0, R14 and MOVE R0, R0, R15, which only write R0, so a jump
-that runs through them still reaches the trampoline:
+The low words:
 
     0       NOP, ..., NOP
-    8       14, 15                      ; vectors 8 and 9
     10      ADD     PC, R12, start      ; the trampoline
-    14      RTI
-    15      RTI
 
 The instruction reads the words around it and its own words, and it may
 store into a word that runs next, so its operation, its constants, and
@@ -57,7 +50,6 @@ import sys
 from typing import Callable, Iterator
 
 MASK = 0xFFFFFFFF
-NMI, IRQ = 8, 9  # The vectors of test/irq_sweep.py
 TRAMPOLINE = 10  # ADD PC, R12, start: two words
 START = 0x10
 BASE = 0x100  # The first block
@@ -255,14 +247,10 @@ def program() -> list[str]:
         "; instruction, all on R15. R1 counts the blocks, and R12 is 0 at the",
         "; end only if every block ran once.",
         "                .ORG    0",
-        f"                .DAT    {', '.join(['0'] * NMI)}",
-        "                .DAT    nmi, irq",
+        f"                .DAT    {', '.join(['0'] * TRAMPOLINE)}",
         "                ADD     R15, R12, start",
-        "                .ORG    14",
-        "nmi     RTI",
-        "irq     RTI",
         f"                .ORG    0x{START:X}",
-        "start           MOVE    R14, 0x40000000  ; E = 1, VBASE = 0",
+        "start           MOVE    R14, 0x40000000  ; F0 = 1, U = 0",
         "                MOVE    R1, 0",
         "                MOVE    R15, b0",
     ]

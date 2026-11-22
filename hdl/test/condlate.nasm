@@ -1,10 +1,8 @@
 ; Conditional late shifts whose condition PREPARE cannot know, two-cycle
-; destinations in R14 with late counts, HALT and INT right after two-cycle
-; flag writes, never-executed instructions with every hazard, and a few
+; destinations in R14 with late counts, HALT right after two-cycle flag
+; writes, never-executed instructions with every hazard, and a few
 ; more R15 forms.
                 JMP     start
-                .ORG    4
-                .DAT    isr
                 .ORG    0x100
 start           MOVE    R1, 0x9ABCDEF1
                 MOVE    R10, scratch
@@ -34,17 +32,13 @@ start           MOVE    R1, 0x9ABCDEF1
                 C>C     R2++, R2++, R2++  ; everything on R2
                 ADD[M]  R5++, R0, R0    ; Z = 1 from r = 0, R5 = 1
         ?!Z     HALT                    ; skipped
-        ?Z      INT     4               ; taken: the routine clears Z, RTI restores it
         ?Z      MOVE    R6, 1
                 ADD[M]  R5--, R0, 1     ; Z = 0, R5 = 0
         ?Z      HALT
-        ?Z      INT     4               ; skipped
         ?!Z     MOVE    R6, 2
         ?!1     C<C     R2++, @R2++, @--R2  ; never: no reads, no side effects, no two cycles
         ?!1     0<0     R15, R1, @R10
         ?!1     MOVE    R14++, 0
-        ?!1     INT     4
-        ?!1     RTI
         ?!1     HALT
                 MOVE    R7, R2
                 MOVE    R15++, R15      ; R15 = next, then next + 1
@@ -78,7 +72,5 @@ j9              MOVE    R1++, 1
                 HALT
                 MOVE    R9, 0x300
                 HALT
-isr             ADD[M]  R0, R0, 1
-                RTI
                 .ORG    0x1000
 scratch         .DAT    0x111, 0x222

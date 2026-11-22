@@ -2,9 +2,8 @@
 --
 -- THEORY OF OPERATION
 -- Two stages make data accesses: PREPARE its reads, from a request
--- register that holds each until the bus accepts it; and WRITE its stores
--- and its vector reads, through the register st_r here. WRITE puts an
--- access into st_r, which drives the bus from the next cycle on, until the
+-- register that holds each until the bus accepts it; and WRITE its stores,
+-- through the register st_r here. WRITE puts a store into st_r, which drives the bus from the next cycle on, until the
 -- bus accepts it (MICROARCH.md §5.3). So no path runs from WRITE's
 -- decisions to the bus. The two never compete (see src/pipeline.vhd). The
 -- bus is pipelined Wishbone, and the ACKs come
@@ -20,14 +19,14 @@
 -- as wb_master_check asks.
 --
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
--- a) rd_stb_i is never '1' while an access waits in st_r (st_valid_o).
+-- a) rd_stb_i is never '1' while a store waits in st_r (st_valid_o).
 -- b) WRITE pops no more data than has come, and makes no read when
 --    C_MAX_OUT are in flight; PREPARE neither.
 -- c) A read is accepted only when the read data not used yet and the reads
 --    owed, less what WRITE pops in that cycle, are fewer than C_MAX_OUT.
 --    Else its data would find no room.
--- d) WRITE queues an access, st_i, only when st_r is empty or the bus
---    accepts its access in that cycle (st_acc_o).
+-- d) WRITE queues a store, st_i, only when st_r is empty or the bus
+--    accepts its store in that cycle (st_acc_o).
 --
 -- RESET
 -- Synchronous. It empties the FIFOs and st_r.
@@ -56,13 +55,11 @@ entity pipe_dbus is
       -- The read data that WRITE uses now
       w_pop_i      : in  natural range 0 to 2;
 
-      -- The store or vector read of WRITE, which waits in st_r until the
-      -- bus accepts it
+      -- The store of WRITE, which waits in st_r until the bus accepts it
       st_i         : in  std_logic;
-      st_we_i      : in  std_logic;   -- '1' for a store, '0' for a vector read
       st_addr_i    : in  std_logic_vector(31 downto 0);
       st_data_i    : in  std_logic_vector(31 downto 0);
-      st_valid_o   : out std_logic;   -- An access waits in st_r
+      st_valid_o   : out std_logic;   -- A store waits in st_r
       st_acc_o     : out std_logic;   -- The bus accepts it now
 
       -- The read data that WRITE has not used yet, oldest first
@@ -95,8 +92,7 @@ architecture synthesis of pipe_dbus is
    signal accept     : std_logic;
    signal ack_read   : std_logic;
    signal reads_owed : natural range 0 to C_MAX_OUT;
-   signal st_valid_r : std_logic;                              -- st_r: an access waits
-   signal st_we_r    : std_logic;                              -- and is a store
+   signal st_valid_r : std_logic;                              -- st_r: a store waits
    signal st_addr_r  : std_logic_vector(31 downto 0);
    signal st_data_r  : std_logic_vector(31 downto 0);
    signal st_out     : std_logic;                              -- It is on the bus
@@ -110,7 +106,7 @@ begin
    tag_cnt_o    <= tag_cnt_r;
    reads_owed_o <= reads_owed;
 
-   -- The access in st_r goes on the bus when fewer than C_MAX_OUT are in
+   -- The store in st_r goes on the bus when fewer than C_MAX_OUT are in
    -- flight.
    st_out     <= '1' when st_valid_r = '1' and tag_cnt_r < C_MAX_OUT else '0';
    st_acc     <= st_out and not dbus_stall_i;
@@ -120,9 +116,9 @@ begin
    dbus_stb    <= rd_stb_i or st_out;
    dbus_stb_o  <= dbus_stb;
    dbus_cyc_o  <= '1' when dbus_stb = '1' or tag_cnt_r > 0 else '0';
-   dbus_we_o   <= st_out and st_we_r;
+   dbus_we_o   <= st_out;
    dbus_addr_o <= st_addr_r when st_out = '1' else rd_addr_i;
-   dbus_data_o <= st_data_r when st_out = '1' and st_we_r = '1' else (others => '0');
+   dbus_data_o <= st_data_r when st_out = '1' else (others => '0');
    accept      <= dbus_stb and not dbus_stall_i;
    ack_read    <= dbus_ack_i and not tags_r(0);
 
@@ -142,7 +138,7 @@ begin
             tcnt_v := tcnt_v - 1;
          end if;
          if accept = '1' then
-            tags_v(tcnt_v) := st_out and st_we_r;
+            tags_v(tcnt_v) := st_out;
             tcnt_v         := tcnt_v + 1;
          end if;
          tags_r    <= tags_v(0 to C_MAX_OUT - 1);
@@ -168,13 +164,12 @@ begin
          rq_r     <= rq_v(0 to C_MAX_OUT - 1);
          rq_cnt_r <= rcnt_v;
 
-         -- The access of WRITE, until the bus accepts it
+         -- The store of WRITE, until the bus accepts it
          if st_acc = '1' then
             st_valid_r <= '0';
          end if;
          if st_i = '1' then
             st_valid_r <= '1';
-            st_we_r    <= st_we_i;
             st_addr_r  <= st_addr_i;
             st_data_r  <= st_data_i;
          end if;
@@ -233,7 +228,7 @@ begin
       attribute anyconst of f_n : signal is true;
       attribute anyconst of f_v : signal is true;
    begin
-      f_read <= accept and not (st_out and st_we_r);
+      f_read <= accept and not st_out;
 
 
       p_count : process (clk_i)
@@ -242,7 +237,7 @@ begin
             if accept = '1' then
                f_acc <= f_acc + 1;
                if f_acc = f_r then
-                  f_we <= st_out and st_we_r;
+                  f_we <= st_out;
                end if;
             end if;
             if f_read = '1' then

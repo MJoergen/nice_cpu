@@ -19,8 +19,8 @@
 --             to w_r.uop.
 --   WRITE     src/pipe_write.vhd. Runs the micro-operation in w_r.uop:
 --             computes the result, writes the registers, issues the
---             store, and updates the flags. Takes interrupts, runs the
---             control instructions, and flushes the pipeline.
+--             store, and updates the flags. Runs the control
+--             instructions, and flushes the pipeline.
 --   DBUS      src/pipe_dbus.vhd. The data bus port, with the tags and the
 --             read data of the requests in flight.
 --
@@ -60,23 +60,22 @@
 -- data read into a request register, rd_stb_r and rd_addr_r, only when the
 -- instruction is certain to run: its condition is true; the older
 -- micro-operation in WRITE, if any, will not jump, halt, or store into
--- fetched code, and has issued its store; no interrupt may be taken before
--- the instruction; every older instruction has been counted on
--- instret_o; and no store will wait in DBUS in the next cycle. WRITE puts
--- its stores and its vector reads into DBUS's register, which drives the
--- bus from the next cycle on, until the bus accepts them. A store into
+-- fetched code, and has issued its store; no pause may come before the
+-- instruction; every older instruction has been counted on instret_o; and
+-- no store will wait in DBUS in the next cycle. WRITE puts its stores into
+-- DBUS's register, which drives the bus from the next cycle on, until the
+-- bus accepts them. A store into
 -- memory retires when it goes into the register, and one into the I/O
--- range when the bus accepts it. The two never compete: WRITE issues an
--- access only when every read that PREPARE loaded is on the bus or done.
+-- range when the bus accepts it. The two never compete: WRITE issues a
+-- store only when every read that PREPARE loaded is on the bus or done.
 -- The ACKs come back in order. A FIFO of tags tells
 -- reads from writes, and a FIFO holds the data of reads that WRITE has not
 -- used yet. FETCH makes no new request while a store waits in DBUS that
 -- WRITE's check of fetched code (MICROARCH.md §5.5) did not cover.
 --
 -- CONTROL FLOW (MICROARCH.md §5.4). WRITE flushes every younger stage and
--- redirects FETCH after an instruction that wrote R15, after RTI, at the
--- start and end of an interrupt entry or INT, after a halt, and after a
--- store into a word that is fetched but not retired (MICROARCH.md §5.5).
+-- redirects FETCH after an instruction that wrote R15, after a halt, and
+-- after a store into a word that is fetched but not retired (MICROARCH.md §5.5).
 -- Those words are the 16 that pipe_fetch holds from its addr_o on and the
 -- instructions in dec_r, dec_q, skid_r, and prep_r. DECODE redirects
 -- FETCH itself for "MOVE R15, c" and "ADD R15, R15, c" with condition
@@ -85,26 +84,19 @@
 -- false. WRITE's redirect reaches FETCH a cycle after its flush, from
 -- w_redir_r and w_target_r. DECODE drops what it takes in that cycle.
 --
--- INTERRUPTS (MICROARCH.md §6) are taken in WRITE before an instruction,
--- as soon as ISA.md §7.1 allows: before the instruction's first
--- micro-operation runs, if no data read of it is issued yet. PREPARE
--- issues no read while a request is pending that could be taken first.
---
 -- PAUSE (MICROARCH.md §6.1). While pause_i is '1', WRITE stops at the next
--- step boundary, where it would check for an interrupt, whatever in_service
--- and after_rti are, and ahead of an interrupt. It flushes the pipeline
--- there, so that FETCH waits at R15 with no request. PREPARE issues no
+-- step boundary: before an instruction's first micro-operation runs, if
+-- no data read of it is issued yet. It flushes the pipeline there, so that FETCH waits at R15 with no request. PREPARE issues no
 -- first data read of a new instruction while pause_i is '1', but for the
 -- first step after a pause. When pause_i is '0' in PAUSED_ST, the core
--- goes on, and runs one step, which may be an interrupt entry, whatever
--- pause_i is then: w_r.after_go marks it until it is reported.
+-- goes on, and runs one step, whatever pause_i is then: w_r.after_go marks it until it is reported.
 --
 -- BREAKPOINTS (doc/DEBUG.md §6). DECODE compares the address of each
 -- instruction it takes with the enabled breakpoints, and marks a hit in
 -- the instruction's record. The mark acts as a pause request of the
 -- core's own, for that instruction alone: PREPARE issues no first data
--- read of it, and WRITE pauses before it, below an interrupt, where the
--- core would pause on pause_i, with the same exemption of the first step
+-- read of it, and WRITE pauses before it, where the core would pause on
+-- pause_i, with the same exemption of the first step
 -- after a pause. WRITE finds the mark in its own micro-operation, or,
 -- while it holds none, in PREPARE's, since PREPARE does not pass on a
 -- marked instruction with a data read. The core then stays paused until
@@ -116,9 +108,9 @@
 -- and enable bits, a cycle late, so that no path runs from its inputs to
 -- the compares. WRITE checks the data accesses of each micro-operation as
 -- it runs it: its reads, at the addresses that PREPARE formed and passed
--- on, its store, and the vector read of an entry. A hit sets a bit of
--- w_r.wch and the address of the step, w_r.wch_pc. At the next step
--- boundary, WRITE pauses on its own, ahead of an interrupt, with brk_wait
+-- on, and its store. A hit sets a bit of w_r.wch and the address of the
+-- step, w_r.wch_pc. At the next step boundary, WRITE pauses on its own,
+-- with brk_wait
 -- as at a breakpoint, and the go on clears w_r.wch. While a watchpoint is
 -- enabled, PREPARE issues no first data read of an instruction while an
 -- older one is in WRITE, nor while w_r.wch has a bit set, so that no read
@@ -131,8 +123,8 @@
 -- REGISTER WRITES (doc/DEBUG.md §6). In PAUSED_ST, in a cycle with pause_i
 -- and reg_we_i at '1', WRITE writes reg_data_i into the register
 -- reg_idx_i through regval, as a register-direct write of an instruction
--- does: R0 is unchanged, and R14 gets bit 24. No flags are computed, and
--- the hidden state stays. The pipeline is empty then, and the go on
+-- does: R0 is unchanged, and R14 gets bit 24. No flags are computed. The
+-- pipeline is empty then, and the go on
 -- flushes to w_r.regs(15), so FETCH starts at the new R15. In every other
 -- cycle reg_we_i changes nothing.
 --
@@ -152,21 +144,14 @@
 -- a) The bus slaves acknowledge every request, in order. On the data bus, a
 --    write accepted in one cycle is seen by an instruction fetch accepted
 --    in a later cycle.
--- b) A device holds nmi_valid_i or irq_valid_i until the core raises the
---    matching ready, and the NMI vector stable with it. The IRQ vector may
---    change meanwhile, as the merge of src/irq_merge.vhd changes it; the
---    core takes the vector of the cycle in which it raises ready.
--- c) nmi_ready_o and irq_ready_o depend combinationally on nmi_valid_i and
---    irq_valid_i, so a device must not make valid depend combinationally on
---    ready.
--- d) pause_i comes from a flip-flop, and does not depend combinationally on
---    the core's outputs: it feeds the flush, nmi_ready_o, and irq_ready_o.
--- e) A system that raises pause_i waits for paused_o or halted_o, as the
+-- b) pause_i comes from a flip-flop, and does not depend combinationally on
+--    the core's outputs: it feeds the flush.
+-- c) A system that raises pause_i waits for paused_o or halted_o, as the
 --    core may halt before it pauses.
--- f) brk_addr_i and brk_en_i come from flip-flops. A system that enables
+-- d) brk_addr_i and brk_en_i come from flip-flops. A system that enables
 --    breakpoints raises pause_i once paused_o rises without it, and lowers
 --    it to go on.
--- g) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops, and
+-- e) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops, and
 --    reg_we_i is '1' only while paused_o and pause_i are '1'.
 --
 -- RESET
@@ -212,14 +197,6 @@ entity pipeline is
       dbus_data_o   : out std_logic_vector(31 downto 0);
       dbus_data_i   : in  std_logic_vector(31 downto 0);
 
-      -- Interrupt requests
-      nmi_valid_i   : in  std_logic;
-      nmi_ready_o   : out std_logic;
-      nmi_vector_i  : in  std_logic_vector(7 downto 0);
-      irq_valid_i   : in  std_logic;
-      irq_ready_o   : out std_logic;
-      irq_vector_i  : in  std_logic_vector(7 downto 0);
-
       -- Pause before the next step, and '1' while paused (MICROARCH.md §6.1)
       pause_i       : in  std_logic;
       paused_o      : out std_logic;
@@ -241,37 +218,20 @@ entity pipeline is
       reg_idx_i     : in  std_logic_vector(3 downto 0)  := (others => '0');
       reg_data_i    : in  std_logic_vector(31 downto 0) := (others => '0');
 
-      -- '1' while the core waits for an interrupt after WAIT, also while
-      -- paused, until a request is valid (ISA.md §7.5), for bit 6 of the
-      -- debug link's control register (doc/DEBUG.md §6)
-      waiting_o     : out std_logic;
-
       -- '1' once the core has halted, and no bus cycle is open (ISA.md §1.4)
       halted_o      : out std_logic;
 
       -- Why the core halted, while halted_o is '1' (ISA.md §1.4)
       halt_reason_o : out t_halt;
 
-      -- '1' for one cycle for each completed instruction, but not for an
-      -- interrupt entry, for the instruction counter (DEVICES.md §3)
+      -- '1' for one cycle for each completed instruction, for the
+      -- instruction counter (DEVICES.md §3)
       instret_o     : out std_logic;
-
-      -- '1' for one cycle for each wait step (ISA.md §7.5), which a timer
-      -- that counts steps, as the tests' does, counts as a step
-      wstep_o       : out std_logic;
 
       -- R0-R15 as the core holds them, from registers, for a monitor that
       -- shows them. In the cycle after a step is reported on retire_o, they
       -- are the registers of that report.
       regs_o        : out t_regs;
-
-      -- The hidden state of ISA.md §1.4, from registers, as regs_o, for
-      -- bits 7 and 8 and the words 0xFFFFFFD0 and 0xFFFFFFD1 of the debug
-      -- link (doc/DEBUG.md §6)
-      in_service_o  : out std_logic;
-      after_rti_o   : out std_logic;
-      saved_pc_o    : out std_logic_vector(31 downto 0);
-      saved_sr_o    : out std_logic_vector(31 downto 0);
 
       -- One report per step, for sim/trace.vhd
       retire_o      : out t_retire;
@@ -349,17 +309,13 @@ architecture synthesis of pipeline is
    signal w_target  : std_logic_vector(31 downto 0);
    signal w_ready   : std_logic;   -- WRITE is free for the micro-operation in PREPARE
    signal w_pop     : natural range 0 to 2;
-   signal w_st      : std_logic;   -- WRITE puts a store or a vector read into DBUS
-   signal w_st_we   : std_logic;   -- A store
+   signal w_st      : std_logic;   -- WRITE puts a store into DBUS
    signal w_st_addr : std_logic_vector(31 downto 0);
    signal w_st_data : std_logic_vector(31 downto 0);
    signal w_instret : std_logic;
-   signal w_wstep   : std_logic;
    signal w_why     : t_wwhy;
    signal w_fwhy    : natural range 0 to C_FLUSHES - 1;
    signal w_rd_late : std_logic;
-   signal take_nmi  : std_logic;
-   signal take_irq  : std_logic;
    signal quiet     : std_logic;   -- No bus cycle is open
 
    -- The fetch statistics: what the parts did, why PREPARE held its
@@ -419,8 +375,7 @@ begin
    -- redirect in the cycle the store was queued, the one before, or the
    -- one after, for WRITE's own flush, which the check did not see. A
    -- request that the bus stalls stays on it: it was in FETCH's range when
-   -- WRITE checked the store. A vector read in the register holds FETCH
-   -- too, but FETCH is stopped during an interrupt entry anyway.
+   -- WRITE checked the store.
    f_block    <= f_hold_r and st_valid and not f_held_r;
    ibus_stb_o <= f_stb and not f_block;
    f_stall    <= ibus_stall_i or f_block;
@@ -505,10 +460,6 @@ begin
          done_i       => w_done,
          flush_i      => w_flush,
          ready_i      => w_ready,
-         take_nmi_i   => take_nmi,
-         take_irq_i   => take_irq,
-         nmi_valid_i  => nmi_valid_i,
-         irq_valid_i  => irq_valid_i,
          pause_i      => pause_i,
          wch_on_i     => wch_on_r,
          valid_o      => p_valid,
@@ -537,7 +488,6 @@ begin
          rd_addr_i    => rd_addr_r,
          w_pop_i      => w_pop,
          st_i         => w_st,
-         st_we_i      => w_st_we,
          st_addr_i    => w_st_addr,
          st_data_i    => w_st_data,
          st_valid_o   => st_valid,
@@ -581,15 +531,8 @@ begin
          st_valid_i   => st_valid,
          st_acc_i     => st_acc,
          st_o         => w_st,
-         st_we_o      => w_st_we,
          st_addr_o    => w_st_addr,
          st_data_o    => w_st_data,
-         nmi_valid_i  => nmi_valid_i,
-         nmi_vector_i => nmi_vector_i,
-         irq_valid_i  => irq_valid_i,
-         irq_vector_i => irq_vector_i,
-         take_nmi_o   => take_nmi,
-         take_irq_o   => take_irq,
          pause_i      => pause_i,
          reg_we_i     => reg_we_i,
          reg_idx_i    => reg_idx_i,
@@ -601,7 +544,6 @@ begin
          flush_o      => w_flush,
          target_o     => w_target,
          instret_o    => w_instret,
-         wstep_o      => w_wstep,
          retire_o     => retire_o,
          why_o        => w_why,
          fwhy_o       => w_fwhy,
@@ -609,8 +551,6 @@ begin
       ); -- i_pipe_write
 
 
-   nmi_ready_o <= take_nmi;
-   irq_ready_o <= take_irq;
    -- Once no bus cycle is open (QUIET above). FETCH may make a request in
    -- the cycle WRITE halts or pauses, before WRITE's redirect reaches it,
    -- its wait for a store in DBUS may hold one back, and the ACKs of
@@ -618,15 +558,9 @@ begin
    quiet         <= '1' when ibus_cyc_o = '0' and dbus_cyc_o = '0' else '0';
    halted_o      <= '1' when w_r.mode = HALTED_ST and quiet = '1' else '0';
    paused_o      <= '1' when w_r.mode = PAUSED_ST and quiet = '1' else '0';
-   waiting_o     <= w_r.waiting and not nmi_valid_i and not irq_valid_i;
    halt_reason_o <= w_r.halt when halted_o = '1' else HALT_NONE;
    instret_o     <= rd_count or w_instret;
-   wstep_o       <= w_wstep;
    regs_o        <= w_r.regs;
-   in_service_o  <= w_r.in_service;
-   after_rti_o   <= w_r.after_rti;
-   saved_pc_o    <= w_r.saved_pc;
-   saved_sr_o    <= w_r.saved_sr;
    wch_hit_o     <= w_r.wch;
    wch_pc_o      <= w_r.wch_pc;
 
@@ -723,7 +657,6 @@ begin
             when W_SHIFT  => stats_v.cause := C_CAUSE_SHIFT;
             when W_ADJUST => stats_v.cause := C_CAUSE_ADJUST;
             when W_STORE  => stats_v.cause := C_CAUSE_STORE;
-            when W_INTR   => stats_v.cause := C_CAUSE_INTR;
             when W_OTHER  => stats_v.cause := C_CAUSE_OTHER;
             when W_READ =>
                -- Its read may still wait on the bus.
@@ -774,7 +707,7 @@ begin
 
    -- The invariants that the theory of operation above relies on.
    p_check : process (clk_i)
-      variable st_may_v : std_logic := '0';   -- An access could wait in DBUS now
+      variable st_may_v : std_logic := '0';   -- A store could wait in DBUS now
    begin
       if rising_edge(clk_i) then
          if rst_i = '0' then
@@ -785,25 +718,23 @@ begin
                report "pipeline: DECODE's fields disagree with the instruction word"
                severity failure;
             assert not (st_valid = '1' and rd_stb_r = '1')
-               report "pipeline: a read of PREPARE and an access of WRITE on the bus at once"
+               report "pipeline: a read of PREPARE and a store of WRITE on the bus at once"
                severity failure;
             assert not (w_st = '1' and st_valid = '1' and st_acc = '0')
-               report "pipeline: an access queued while DBUS's register is full"
+               report "pipeline: a store queued while DBUS's register is full"
                severity failure;
-            -- No flush or interrupt drops an instruction in PREPARE that has
-            -- made a data read (src/pipe_prepare.vhd, c).
-            assert not ((w_flush = '1' or take_nmi = '1' or take_irq = '1') and
-                        prep_r.valid = '1' and p_out.committed = '1')
-               report "pipeline: a flush or interrupt drops an instruction with a data read"
+            -- No flush drops an instruction in PREPARE that has made a data
+            -- read (src/pipe_prepare.vhd, c).
+            assert not (w_flush = '1' and prep_r.valid = '1' and p_out.committed = '1')
+               report "pipeline: a flush drops an instruction with a data read"
                severity failure;
             -- The data of a read finds room in DBUS (src/pipe_dbus.vhd, c).
             assert not (dbus_stb_o = '1' and dbus_we_o = '0' and dbus_stall_i = '0' and
                         rq_cnt_r + reads_owed >= C_MAX_OUT + w_pop)
                report "pipeline: a read accepted without room for its data"
                severity failure;
-            assert not ((w_flush = '1' or take_nmi = '1' or take_irq = '1') and
-                        (rd_stb_r = '1' or p_load = '1'))
-               report "pipeline: a flush or interrupt while a data read is waiting to be issued"
+            assert not (w_flush = '1' and (rd_stb_r = '1' or p_load = '1'))
+               report "pipeline: a flush while a data read is waiting to be issued"
                severity failure;
             -- The ids tell an older instruction in WRITE from an earlier
             -- micro-operation of the one in PREPARE (src/pipe_prepare.vhd):
@@ -826,14 +757,13 @@ begin
             assert not (w_ready = '1' and w_flush = '1')
                report "pipeline: WRITE takes a micro-operation and flushes at once"
                severity failure;
-            -- An access waits in DBUS only if one was queued or held a cycle ago
+            -- A store waits in DBUS only if one was queued or held a cycle ago
             assert not (st_valid = '1' and st_may_v = '0')
-               report "pipeline: an access waits in DBUS that nothing queued"
+               report "pipeline: a store waits in DBUS that nothing queued"
                severity failure;
          end if;
          st_may_v := not rst_i and ((st_valid and not st_acc) or
-                                    (w_r.uop.valid and w_r.uop.store and not rd_stb_r) or
-                                    (to_sl(w_r.mode = VEC_ST) and not rd_stb_r));
+                                    (w_r.uop.valid and w_r.uop.store and not rd_stb_r));
       end if;
    end process p_check;
 

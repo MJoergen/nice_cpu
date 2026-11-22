@@ -9,9 +9,8 @@
 -- The core runs on the memory model, sim/wb_mem.vhd, which loads G_BIN_FILE.
 -- Its console reads the bytes of G_INPUT_FILE, as the emulator's --input
 -- does, or none if it is "".
--- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF10-0xFFFFFF1F to
--- the timer, src/timer.vhd (DEVICES.md §4), 0xFFFFFF20-0xFFFFFF3F to the
--- math unit, src/mpu.vhd (DEVICES.md §2), 0xFFFFFF40-0xFFFFFF5F to the
+-- The data bus decoder, src/wb_dmux.vhd, sends 0xFFFFFF20-0xFFFFFF3F to
+-- the math unit, src/mpu.vhd (DEVICES.md §2), 0xFFFFFF40-0xFFFFFF5F to the
 -- performance counters, src/perf.vhd (DEVICES.md §3), but for
 -- 0xFFFFFF46-0xFFFFFF49, the clock of the time of day, src/tod.vhd
 -- (DEVICES.md §10), 0xFFFFFF60-0xFFFFFF7F
@@ -20,11 +19,8 @@
 -- 0xFFFFFFA0-0xFFFFFFAF to the SD card controller, src/sd_regs.vhd
 -- (DEVICES.md §5), 0xFFFFFFB0-0xFFFFFFBF to the network station,
 -- src/net_regs.vhd (DEVICES.md §6), 0xFFFFFFC0-0xFFFFFFCF to the port for
--- Ethernet frames, src/eth_regs.vhd (DEVICES.md §7), 0xFFFFFF02 to the
--- console's receive interrupt, src/console_irq.vhd (DEVICES.md §1.9), and
--- the rest to the memory model. The memory model's console tells the
--- interrupt when a read takes a byte, and a byte or the end always waits
--- there. The station has no link over TCP, so its counts and status
+-- Ethernet frames, src/eth_regs.vhd (DEVICES.md §7), and the rest to the
+-- memory model. The station has no link over TCP, so its counts and status
 -- read 0, as in the emulator without --link. The port's station is
 -- sim/eth_sim.vhd, with the frames of G_ETH_IN_FILE, and the frames sent
 -- written to G_ETH_OUT_FILE, as the emulator's --eth-in and --eth-out, or
@@ -41,8 +37,8 @@
 -- output the cycles from reset, and the cycles in which a data read
 -- waited only for its condition (S) or for an older micro-operation (W)
 -- (src/pipe_prepare.vhd). It charges them to the micro-operation in
--- PREPARE, and when that goes on to WRITE, or is dropped by a flush or an
--- interrupt, to one of two sums: "Read waits: C cycles; went on: S for
+-- PREPARE, and when that goes on to WRITE, or is dropped by a flush, to
+-- one of two sums: "Read waits: C cycles; went on: S for
 -- the condition, W for an older micro-operation; dropped: S, W". Only the
 -- waits of those that went on could be saved by reading early.
 --
@@ -61,75 +57,24 @@
 -- depends on the memory's stalls, so a program that reads it or the time
 -- could not be compared with the emulator otherwise.
 --
--- G_INTERRUPTS takes the emulator's interrupt options, for example
--- "--nmi 2:1 --irq 2:2", and the interrupt source p_intr raises the same
--- requests. A request for step S is raised once S steps have been reported,
--- that is, before step S, as in the emulator. A request of the same kind
--- that is raised while one is pending merges with it and leaves its vector,
--- as the emulator merges them (ISA.md §7.1). The multi-cycle core takes requests only
--- between steps, so its trace matches the emulator's exactly.
---
--- With G_INTR_DELAY = N, each request is raised N cycles later instead, so
--- that a sweep can make it arrive anywhere within an instruction. The core
--- may then take it a step later than the emulator, and only
--- test/irq_compare.py, which reads the log below, can judge the run. The
--- step it is logged for is then the one after the last reported, since
--- the core may have begun that one.
---
--- With G_INTR_LOG, p_intr writes a line to that file for each request it
--- raises, "raised S nmi V" or "raised S irq V", where S is the number of
--- steps reported before, and V the vector in hex. When the core takes its
--- request, with ready, it writes "accepted nmi" or "accepted irq". That
--- takes every request of the kind raised before, as they merge. When the
--- core then reports the interrupt entry, it writes "taken S nmi V" or
--- "taken S irq V", where S is the number of that step, counting from 0, as
--- the trace does. The timer's requests are in the log too, as IRQs: each
--- one that it raises while none of its own waits, with S the number of
--- ticks before, which is the step the emulator's timer raises it for, and
--- V the vector the core will take with it. test/irq_compare.py then runs
--- the emulator with --no-timer-irq, so that its timer raises none itself.
--- test/irq_compare.py reads the log, for cores that take a request later
--- than the step it was raised for (MICROARCH.md §9).
---
 -- With G_RETIRE_LOG, p_retire_log writes a line to that file for each
 -- step the core reports: the cycle it is reported in, counting from the
--- first cycle after reset, and the address of the instruction in hex, or
--- "intr" for an interrupt entry. A third field gives the cycles since the
--- line before, one letter each, from the core's stats_o: the cause of the
--- cycle (MICROARCH.md §8.1), "a" for cause 0 to "o" for cause 14, and after
--- it an upper-case letter, "A" for cause 0 to "E" for cause 4, when the
--- cycle flushes. stats_o reports a cycle two cycles late, so the letters
--- of a line lag its cycles by two. The multi-cycle core reports cause 14,
--- OTHER, in every cycle. bench/pipecycles.py --retires compares the cycles
--- with its model's, step by step, and --against sums the causes of each
--- phase of the benchmark.
---
--- A wait step of the core, on wstep_o (ISA.md §7.5), is a step that is
--- not reported. The emulator counts it, so p_intr, p_pause, the trace
--- writer, the timer, and the watchdog count it as a step too.
---
--- The timer counts the steps, as the emulator's does: its tick is the
--- core's instret_o, the report of each interrupt entry, and wstep_o. A data read of
--- TIMER_COUNT must see the ticks of every older instruction, and the
--- pipelined core raises instret_o in time for that, but may report a step
--- later (src/pipeline.vhd). It counts an instruction with a data read
--- before its store, so a write of that store to TIMER_PERIOD gets the
--- instruction's tick again, below. Its request and the IRQ of p_intr
--- reach the core as one request, with the vector of the one raised first
--- (p_intr's, when both are raised in the same cycle), and the core's
--- ready takes both. That is how the emulator merges a request of the
--- timer with one from --irq. That request, the timer's source, and the
--- console's go to the core through src/irq_merge.vhd, the timer's first
--- (DEVICES.md §4). The console's requests are not in the log of
--- G_INTR_LOG, as the emulator raises them itself.
+-- first cycle after reset, and the address of the instruction in hex. A
+-- third field gives the cycles since the line before, one letter each,
+-- from the core's stats_o: the cause of the cycle (MICROARCH.md §8.1), "a"
+-- for cause 0 to "n" for cause 13, and after it an upper-case letter, "A"
+-- for cause 0 to "D" for cause 3, when the cycle flushes. stats_o reports
+-- a cycle two cycles late, so the letters of a line lag its cycles by two.
+-- The multi-cycle core reports cause 13, OTHER, in every cycle.
+-- bench/pipecycles.py --retires compares the cycles with its model's, step
+-- by step, and --against sums the causes of each phase of the benchmark.
 --
 -- With G_PAUSE = P, p_pause raises pause_i (MICROARCH.md §6.1) in a random
 -- P percent of the cycles, from G_SEED, so that the core pauses and goes
 -- on at random boundaries, and often runs a single step. With
 -- G_PAUSE_HOLD = H > 0 as well, a pause starts in a random P percent of
 -- the cycles, and pause_i stays '1' until the core has paused, and then
--- for a random 0 to H - 1 cycles more. So interrupt requests come during a
--- real pause, and are taken when the core goes on. A pause must not change
+-- for a random 0 to H - 1 cycles more. A pause must not change
 -- what the core does, so the trace stays that of the emulator. The core's
 -- cycle count does change, so such a run needs G_CYCLE_COUNTER false or a
 -- program that does not read it.
@@ -200,11 +145,7 @@ entity tb_core is
       G_ETH_OUT_FILE  : string   := "";
       G_TRACE         : boolean  := true;
       G_MAX_STEPS     : positive := 100_000_000;
-      G_INTERRUPTS    : string   := "";
-      G_INTR_LOG      : string   := "";
       G_RETIRE_LOG    : string   := "";
-      -- Each request is raised this many cycles after its step allows.
-      G_INTR_DELAY    : natural  := 0;
       G_CYCLE_COUNTER : boolean  := true;
       G_FETCH_STATS   : boolean  := true;
       G_FPU           : boolean  := true;
@@ -231,88 +172,6 @@ architecture simulation of tb_core is
    -- A step takes far fewer cycles than this, even one that waits for the
    -- FPU, whose longest command, DIGITS, takes some 3400 cycles.
    constant C_STEP_TIMEOUT : natural := 10000;
-
-   type t_request is record
-      step   : natural;
-      nmi    : boolean;
-      vector : std_logic_vector(7 downto 0);
-   end record t_request;
-
-   type t_requests is array (natural range <>) of t_request;
-
-   -- Parses the emulator's options "--irq STEP:VEC" and "--nmi STEP:VEC".
-   -- Numbers are decimal, or hex after 0x.
-   function parse(s : string) return t_requests is
-      variable res_v    : t_requests(0 to 1023);
-      variable count_v  : natural  := 0;
-      variable pos_v    : positive := s'low;
-      variable number_v : natural;
-
-      procedure skip_blanks is
-      begin
-         while pos_v <= s'high and s(pos_v) = ' ' loop
-            pos_v := pos_v + 1;
-         end loop;
-      end procedure skip_blanks;
-
-      procedure read_number(value : out natural) is
-         variable base_v  : natural := 10;
-         variable value_v : natural := 0;
-         variable digit_v : natural;
-         variable start_v : positive;
-      begin
-         if pos_v + 1 <= s'high and s(pos_v to pos_v + 1) = "0x" then
-            base_v := 16;
-            pos_v  := pos_v + 2;
-         end if;
-         start_v := pos_v;
-         while pos_v <= s'high loop
-            case s(pos_v) is
-               when '0' to '9' => digit_v := character'pos(s(pos_v)) - character'pos('0');
-               when 'a' to 'f' => digit_v := character'pos(s(pos_v)) - character'pos('a') + 10;
-               when 'A' to 'F' => digit_v := character'pos(s(pos_v)) - character'pos('A') + 10;
-               when others     => exit;
-            end case;
-            assert digit_v < base_v
-               report "tb_core: bad number in G_INTERRUPTS"
-               severity failure;
-            value_v := value_v * base_v + digit_v;
-            pos_v   := pos_v + 1;
-         end loop;
-         assert pos_v > start_v
-            report "tb_core: missing number in G_INTERRUPTS"
-            severity failure;
-         value := value_v;
-      end procedure read_number;
-
-   begin
-      skip_blanks;
-      while pos_v <= s'high loop
-         assert pos_v + 5 <= s'high and
-                (s(pos_v to pos_v + 5) = "--nmi " or s(pos_v to pos_v + 5) = "--irq ")
-            report "tb_core: G_INTERRUPTS wants --nmi STEP:VEC or --irq STEP:VEC"
-            severity failure;
-         assert count_v <= res_v'high
-            report "tb_core: more than 1024 requests in G_INTERRUPTS"
-            severity failure;
-         res_v(count_v).nmi := s(pos_v to pos_v + 5) = "--nmi ";
-         pos_v := pos_v + 6;
-         skip_blanks;
-         read_number(number_v);
-         res_v(count_v).step := number_v;
-         assert pos_v <= s'high and s(pos_v) = ':'
-            report "tb_core: G_INTERRUPTS wants STEP:VEC"
-            severity failure;
-         pos_v := pos_v + 1;
-         read_number(number_v);
-         res_v(count_v).vector := to_slv(number_v, 8);
-         count_v := count_v + 1;
-         skip_blanks;
-      end loop;
-      return res_v(0 to count_v - 1);
-   end function parse;
-
-   constant C_REQUESTS : t_requests := parse(G_INTERRUPTS);
 
    -- A word in hex, for G_PATCH_DATA
    function hex_word(s : string) return std_logic_vector is
@@ -449,15 +308,13 @@ architecture simulation of tb_core is
    constant C_MEM    : natural := 0;
    constant C_MPU    : natural := 1;
    constant C_PERF   : natural := 2;
-   constant C_TIMER  : natural := 3;
-   constant C_STATS  : natural := 4;
-   constant C_SD     : natural := 5;
-   constant C_NET    : natural := 6;
-   constant C_ETH    : natural := 7;
-   constant C_TOD    : natural := 8;
-   constant C_CONIRQ : natural := 9;
-   constant C_FPU    : natural := 10;
-   constant C_SLAVES : natural := 11;
+   constant C_STATS  : natural := 3;
+   constant C_SD     : natural := 4;
+   constant C_NET    : natural := 5;
+   constant C_ETH    : natural := 6;
+   constant C_TOD    : natural := 7;
+   constant C_FPU    : natural := 8;
+   constant C_SLAVES : natural := 9;
 
    signal dbus_sel    : natural range 0 to C_SLAVES - 1;
    signal slave_stb   : std_logic_vector(C_SLAVES - 1 downto 0);
@@ -465,8 +322,6 @@ architecture simulation of tb_core is
    signal slave_ack   : std_logic_vector(C_SLAVES - 1 downto 0);
    signal slave_data  : std_logic_vector(32 * C_SLAVES - 1 downto 0);
 
-   signal timer_valid  : std_logic;
-   signal timer_vector : std_logic_vector(7 downto 0);
    signal instret      : std_logic;
    signal fetch_events : t_fetch_events := C_FETCH_EVENTS_NONE;
 
@@ -505,25 +360,6 @@ architecture simulation of tb_core is
    signal sd_buf_wdata : std_logic_vector(7 downto 0);
    signal sd_buf_rdata : std_logic_vector(7 downto 0);
 
-   signal nmi_valid  : std_logic                    := '0';
-   signal nmi_ready  : std_logic;
-   signal nmi_vector : std_logic_vector(7 downto 0) := X"00";
-   signal irq_valid  : std_logic                    := '0';
-   signal irq_ready  : std_logic;   -- The ready of the timer's source
-   signal irq_vector : std_logic_vector(7 downto 0) := X"00";
-
-   -- The timer's source, the timer's request and p_intr's IRQ, the
-   -- console's, and the core's port after the merge
-   signal timer_src_valid  : std_logic;
-   signal timer_src_vector : std_logic_vector(7 downto 0);
-   signal con_valid        : std_logic;
-   signal con_ready        : std_logic;
-   signal con_vector       : std_logic_vector(7 downto 0);
-   signal console_took     : std_logic;
-   signal core_irq_valid   : std_logic;
-   signal core_irq_ready   : std_logic;
-   signal core_irq_vector  : std_logic_vector(7 downto 0);
-
    signal console_valid : std_logic;
    signal console_data  : std_logic_vector(7 downto 0);
 
@@ -534,12 +370,7 @@ architecture simulation of tb_core is
    signal halt_reason : t_halt;
    signal retire      : t_retire;
    signal regs        : t_regs;
-   signal tick        : std_logic;
-   signal waiting     : std_logic;
-   signal wstep       : std_logic;   -- A wait step, a step not reported
    signal early       : natural;     -- Instructions counted, not yet reported
-   signal period_we   : std_logic;   -- A write to TIMER_PERIOD is accepted now
-   signal timer_tick  : std_logic;
    signal done        : std_logic;
    signal status      : natural;
 
@@ -596,15 +427,8 @@ begin
             dbus_addr_o   => core_addr,
             dbus_data_o   => core_data_out,
             dbus_data_i   => dbus_data_in,
-            nmi_valid_i   => nmi_valid,
-            nmi_ready_o   => nmi_ready,
-            nmi_vector_i  => nmi_vector,
-            irq_valid_i   => core_irq_valid,
-            irq_ready_o   => core_irq_ready,
-            irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
-            waiting_o     => waiting,
             brk_addr_i    => C_BREAKS.addrs,
             brk_en_i      => (others => '1'),
             wch_addr_i    => C_WATCHES.addrs,
@@ -614,7 +438,6 @@ begin
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
-            wstep_o       => wstep,
             regs_o        => regs,
             retire_o      => retire
          ); -- i_multicycle
@@ -643,15 +466,8 @@ begin
             dbus_addr_o   => core_addr,
             dbus_data_o   => core_data_out,
             dbus_data_i   => dbus_data_in,
-            nmi_valid_i   => nmi_valid,
-            nmi_ready_o   => nmi_ready,
-            nmi_vector_i  => nmi_vector,
-            irq_valid_i   => core_irq_valid,
-            irq_ready_o   => core_irq_ready,
-            irq_vector_i  => core_irq_vector,
             pause_i       => pause,
             paused_o      => paused,
-            waiting_o     => waiting,
             brk_addr_i    => C_BREAKS.addrs,
             brk_en_i      => (others => '1'),
             wch_addr_i    => C_WATCHES.addrs,
@@ -661,7 +477,6 @@ begin
             halted_o      => halted,
             halt_reason_o => halt_reason,
             instret_o     => instret,
-            wstep_o       => wstep,
             regs_o        => regs,
             retire_o      => retire,
             stats_o       => fetch_events
@@ -694,12 +509,10 @@ begin
                                                 dbus_addr(4 downto 1) /= "0010" and
                                                 dbus_addr(4 downto 1) /= "0011" and
                                                 dbus_addr(4 downto 1) /= "0100")) else
-               C_TIMER when dbus_addr(31 downto 4) = X"FFFFFF1" else
                C_SD when dbus_addr(31 downto 4) = X"FFFFFFA" else
                C_NET when dbus_addr(31 downto 4) = X"FFFFFFB" else
                C_ETH when dbus_addr(31 downto 4) = X"FFFFFFC" else
                C_STATS when dbus_addr(31 downto 5) = X"FFFFFF" & "011" else
-               C_CONIRQ when dbus_addr = X"FFFFFF02" else
                C_FPU when G_FPU and dbus_addr(31 downto 3) = X"FFFFFF8" & '1' else
                C_MEM;
 
@@ -726,24 +539,11 @@ begin
 
    run <= not paused and not halted;
 
-   tick <= instret or (retire.valid and retire.intr) or wstep;
-
-   -- The tick of an instruction that wrote TIMER_PERIOD comes after the
-   -- write, as in the emulator. The pipelined core counts an instruction
-   -- with a data read on instret_o when the bus accepts its last read, which
-   -- is before its store (src/pipeline.vhd), and reports it when the store
-   -- is accepted. early counts such instructions, and when the store of one
-   -- is a write to TIMER_PERIOD, the timer gets its tick again in that
-   -- cycle, so that the new count sees it. Older instructions are reported
-   -- before it, and no younger one issues a read before its store, so early
-   -- is not 0 then only if it counted that instruction.
-   period_we <= dbus_cyc and slave_stb(C_TIMER) and not slave_stall(C_TIMER) and
-                dbus_we and not patch_cyc when dbus_addr(3 downto 0) = X"0" else
-                '0';
-
-   timer_tick <= '1' when tick = '1' or (period_we = '1' and early > 0) else
-                 '0';
-
+   -- The pipelined core counts an instruction with a data read on
+   -- instret_o when the bus accepts its last read, which is before its
+   -- store (src/pipeline.vhd), and reports it when the store is accepted.
+   -- early counts such instructions, and none is reported before it is
+   -- counted.
    p_early : process (clk)
       variable early_v : integer;
    begin
@@ -752,15 +552,11 @@ begin
          if instret = '1' then
             early_v := early_v + 1;
          end if;
-         if retire.valid = '1' and retire.intr = '0' then
+         if retire.valid = '1' then
             early_v := early_v - 1;
          end if;
          assert early_v >= 0
             report "an instruction is reported that was not counted"
-            severity failure;
-         assert period_we = '0' or early = 0 or
-                (retire.valid = '1' and retire.intr = '0' and instret = '0')
-            report "a write to TIMER_PERIOD by an instruction counted early, not reported with it"
             severity failure;
          early <= early_v;
          if rst = '1' then
@@ -768,44 +564,6 @@ begin
          end if;
       end if;
    end process p_early;
-
-   timer_src_valid  <= irq_valid or timer_valid;
-   timer_src_vector <= irq_vector when irq_valid = '1' else
-                       timer_vector;
-
-
-   i_irq_merge : entity work.irq_merge
-      port map (
-         first_valid_i   => timer_src_valid,
-         first_ready_o   => irq_ready,
-         first_vector_i  => timer_src_vector,
-         second_valid_i  => con_valid,
-         second_ready_o  => con_ready,
-         second_vector_i => con_vector,
-         irq_valid_o     => core_irq_valid,
-         irq_ready_i     => core_irq_ready,
-         irq_vector_o    => core_irq_vector
-      ); -- i_irq_merge
-
-
-   i_console_irq : entity work.console_irq
-      port map (
-         clk_i        => clk,
-         rst_i        => rst,
-         entered_i    => console_took,
-         waits_i      => '1',
-         wb_cyc_i     => dbus_cyc,
-         wb_stb_i     => slave_stb(C_CONIRQ),
-         wb_stall_o   => slave_stall(C_CONIRQ),
-         wb_ack_o     => slave_ack(C_CONIRQ),
-         wb_we_i      => dbus_we,
-         wb_data_i    => dbus_data_out,
-         wb_data_o    => slave_data(32 * C_CONIRQ + 31 downto 32 * C_CONIRQ),
-         irq_valid_o  => con_valid,
-         irq_ready_i  => con_ready,
-         irq_vector_o => con_vector
-      ); -- i_console_irq
-
 
    i_wb_mem : entity work.wb_mem
       generic map (
@@ -832,8 +590,7 @@ begin
          dbus_data_i     => dbus_data_out,
          dbus_data_o     => slave_data(32 * C_MEM + 31 downto 32 * C_MEM),
          console_valid_o => console_valid,
-         console_data_o  => console_data,
-         console_took_o  => console_took
+         console_data_o  => console_data
       ); -- i_wb_mem
 
 
@@ -903,25 +660,6 @@ begin
          wb_data_i  => dbus_data_out,
          wb_data_o  => slave_data(32 * C_TOD + 31 downto 32 * C_TOD)
       ); -- i_tod
-
-
-   i_timer : entity work.timer
-      port map (
-         clk_i        => clk,
-         rst_i        => rst,
-         tick_i       => timer_tick,
-         wb_cyc_i     => dbus_cyc,
-         wb_stb_i     => slave_stb(C_TIMER),
-         wb_stall_o   => slave_stall(C_TIMER),
-         wb_ack_o     => slave_ack(C_TIMER),
-         wb_we_i      => dbus_we,
-         wb_addr_i    => dbus_addr(3 downto 0),
-         wb_data_i    => dbus_data_out,
-         wb_data_o    => slave_data(32 * C_TIMER + 31 downto 32 * C_TIMER),
-         irq_valid_o  => timer_valid,
-         irq_ready_i  => irq_ready,
-         irq_vector_o => timer_vector
-      ); -- i_timer
 
 
    i_fetch_stats : entity work.fetch_stats
@@ -1098,152 +836,9 @@ begin
          retire_i        => retire,
          console_valid_i => console_valid,
          console_data_i  => console_data,
-         nmi_pending_i   => nmi_valid,
-         nmi_vector_i    => nmi_vector,
-         irq_pending_i   => timer_src_valid,
-         wstep_i         => wstep,
-         irq_vector_i    => timer_src_vector,
-         con_pending_i   => con_valid,
-         con_vector_i    => con_vector,
          done_o          => done,
          status_o        => status
       ); -- i_trace
-
-
-   -- The requests for step 0 are raised during reset, so that the core sees
-   -- them before its first step.
-   p_intr : process (clk)
-      file     log_f      : text;
-      variable log_open_v : boolean := false;
-      variable steps_v    : natural := 0;
-      -- One of p_intr's requests was taken, and its entry is not reported yet.
-      variable nmi_taken_v : boolean := false;
-      variable irq_taken_v : boolean := false;
-      -- The cycles until each request is raised, or -1
-      type     t_waits is array (C_REQUESTS'range) of integer;
-      variable wait_v : t_waits := (others => -1);
-      -- A request of this kind was raised in this cycle already
-      variable nmi_set_v : boolean;
-      variable irq_set_v : boolean;
-      -- The timer's ticks, and whether its last request still waits
-      variable ticks_v       : natural := 0;
-      variable timer_waits_v : boolean := false;
-
-      procedure log(text : string) is
-         variable l : line;
-      begin
-         if G_INTR_LOG = "" then
-            return;
-         end if;
-         if not log_open_v then
-            file_open(log_f, G_INTR_LOG, write_mode);
-            log_open_v := true;
-         end if;
-         write(l, text);
-         writeline(log_f, l);
-         flush(log_f);
-      end procedure log;
-
-      procedure log(what   : string;
-                    step   : natural;
-                    nmi    : boolean;
-                    vector : std_logic_vector(7 downto 0)) is
-      begin
-         if nmi then
-            log(what & " " & integer'image(step) & " nmi " & to_hstring(vector));
-         else
-            log(what & " " & integer'image(step) & " irq " & to_hstring(vector));
-         end if;
-      end procedure log;
-
-   begin
-      if rising_edge(clk) then
-         if nmi_ready = '1' then
-            if nmi_valid = '1' then
-               log("accepted nmi");
-               nmi_taken_v := true;
-            end if;
-            nmi_valid <= '0';
-         end if;
-         -- A new request of the timer. It merges with one of p_intr that
-         -- waits, and the core then takes that one's vector, since that
-         -- one was raised first.
-         if timer_valid = '1' and not timer_waits_v then
-            if irq_valid = '1' then
-               log("raised", ticks_v, false, irq_vector);
-            else
-               log("raised", ticks_v, false, timer_vector);
-            end if;
-         end if;
-         timer_waits_v := timer_valid = '1' and irq_ready = '0';
-         if tick = '1' then
-            ticks_v := ticks_v + 1;
-         end if;
-
-         if irq_ready = '1' then
-            if irq_valid = '1' or timer_valid = '1' then
-               log("accepted irq");
-               irq_taken_v := true;
-            end if;
-            irq_valid <= '0';
-         end if;
-
-         if rst = '0' and retire.valid = '1' then
-            if retire.intr = '1' and retire.nmi = '1' and nmi_taken_v then
-               log("taken", steps_v, true, retire.vector);
-               nmi_taken_v := false;
-            elsif retire.intr = '1' and retire.nmi = '0' and irq_taken_v then
-               log("taken", steps_v, false, retire.vector);
-               irq_taken_v := false;
-            end if;
-            steps_v := steps_v + 1;
-         end if;
-         if rst = '0' and wstep = '1' then
-            steps_v := steps_v + 1;
-         end if;
-
-         nmi_set_v := false;
-         irq_set_v := false;
-         for i in C_REQUESTS'range loop
-            if wait_v(i) > 0 then
-               wait_v(i) := wait_v(i) - 1;
-            end if;
-            if C_REQUESTS(i).step = steps_v and
-               (rst = '1' or retire.valid = '1' or wstep = '1') then
-               wait_v(i) := G_INTR_DELAY;
-            end if;
-            -- No request after the end of the run, which the trace has
-            -- printed already.
-            if wait_v(i) = 0 and done = '0' then
-               wait_v(i) := -1;
-               -- A request that comes late may find step steps_v begun, so
-               -- it is raised for the step after.
-               if G_INTR_DELAY = 0 then
-                  log("raised", steps_v, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
-               else
-                  log("raised", steps_v + 1, C_REQUESTS(i).nmi, C_REQUESTS(i).vector);
-               end if;
-               -- A request that finds one of its kind pending merges with it
-               -- and leaves its vector. The timer's request is one of the
-               -- IRQs.
-               if C_REQUESTS(i).nmi then
-                  if not nmi_set_v and (nmi_valid = '0' or nmi_ready = '1') then
-                     nmi_valid  <= '1';
-                     nmi_vector <= C_REQUESTS(i).vector;
-                  end if;
-                  nmi_set_v := true;
-               else
-                  if not irq_set_v and (irq_valid = '0' or irq_ready = '1') and
-                     (timer_valid = '0' or irq_ready = '1') then
-                     irq_valid  <= '1';
-                     irq_vector <= C_REQUESTS(i).vector;
-                  end if;
-                  irq_set_v := true;
-               end if;
-            end if;
-         end loop;
-      end if;
-   end process p_intr;
 
 
    p_pause : process (clk)
@@ -1262,7 +857,7 @@ begin
       variable l         : line;
    begin
       if rising_edge(clk) then
-         if retire.valid = '1' or wstep = '1' then
+         if retire.valid = '1' then
             steps_v := steps_v + 1;
             since_v := since_v + 1;
          end if;
@@ -1432,12 +1027,7 @@ begin
                file_open(log_f, G_RETIRE_LOG, write_mode);
                log_open_v := true;
             end if;
-            write(l, integer'image(cycle_v) & " ");
-            if retire.intr = '1' then
-               write(l, string'("intr"));
-            else
-               write(l, to_hstring(retire.addr));
-            end if;
+            write(l, integer'image(cycle_v) & " " & to_hstring(retire.addr));
             write(l, string'(" ") & causes_v.all);
             deallocate(causes_v);
             writeline(log_f, l);
@@ -1462,8 +1052,7 @@ begin
          if fetch_events.wait_wr = '1' then
             held_v(1) := held_v(1) + 1;
          end if;
-         -- The core reports the events two cycles late, and an interrupt
-         -- entry flushes in the cycle it takes the request.
+         -- The core reports the events two cycles late.
          if fetch_events.flush = '1' then
             n_drop <= (n_drop(0) + held_v(0), n_drop(1) + held_v(1));
             held_v := (0, 0);
@@ -1498,7 +1087,7 @@ begin
       variable idle_v : natural := 0;
    begin
       wait until rising_edge(clk);
-      if rst = '1' or retire.valid = '1' or wstep = '1' or paused = '1' then
+      if rst = '1' or retire.valid = '1' or paused = '1' then
          idle_v := 0;
       else
          idle_v := idle_v + 1;

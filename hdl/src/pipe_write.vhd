@@ -2,19 +2,19 @@
 --
 -- THEORY OF OPERATION
 -- WRITE holds the architectural state: the registers, SR, PC, and the
--- hidden state of ISA.md §1.4. It runs the micro-operation in w_r.uop when
+-- halt of ISA.md §1.4. It runs the micro-operation in w_r.uop when
 -- its read data has come: it computes the result, writes the registers,
 -- puts a store into DBUS's register, and updates the flags. A store
 -- into the I/O range waits in WRITE, w_r.busy, until the bus accepts it
--- (MICROARCH.md §5.3). It takes interrupts before an instruction, pauses
--- there (MICROARCH.md §6.1), also at a breakpoint and after a step that
--- hit a watchpoint, runs the control instructions, waits for a request after WAIT in WAIT_ST, and flushes the
--- pipeline (see src/pipeline.vhd). Its
+-- (MICROARCH.md §5.3). It pauses before an instruction (MICROARCH.md
+-- §6.1), also at a breakpoint and after a step that hit a watchpoint, runs
+-- the control instructions, and flushes the pipeline (see
+-- src/pipeline.vhd). Its
 -- state is the record w_r (t_write), which PREPARE reads too.
 --
 -- The registers are w_r. The other outputs depend combinationally on w_r
--- and on the inputs of the same cycle: the store and the vector read go
--- into DBUS's register, a flush reaches every stage at once, and the
+-- and on the inputs of the same cycle: the store goes into DBUS's
+-- register, a flush reaches every stage at once, and the
 -- report of a step comes in the cycle it retires, with the
 -- registers it leaves (retire_o), as the trace writer's contract asks
 -- (src/trace_pkg.vhd). why_o and fwhy_o say what WRITE does in the cycle,
@@ -33,16 +33,13 @@
 --    ready_o.
 -- b) rq_i, rq_cnt_i, and ack_read_i give the read data that has come, in
 --    order.
--- c) A device holds nmi_valid_i or irq_valid_i until WRITE raises the
---    matching take, and the NMI vector stable with it. The IRQ vector may
---    change meanwhile; WRITE takes the vector of the cycle of the take.
--- d) st_valid_i is '1' while a store or a vector read waits in DBUS's
---    register, and st_acc_i when the bus accepts it.
--- e) pause_i comes from a flip-flop, and does not depend combinationally on
+-- c) st_valid_i is '1' while a store waits in DBUS's register, and
+--    st_acc_i when the bus accepts it.
+-- d) pause_i comes from a flip-flop, and does not depend combinationally on
 --    WRITE's outputs.
--- f) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops. WRITE takes
+-- e) reg_we_i, reg_idx_i, and reg_data_i come from flip-flops. WRITE takes
 --    a write only in PAUSED_ST with pause_i at '1'.
--- g) wch_addr_i and wch_en_i come from flip-flops. While a bit of wch_en_i
+-- f) wch_addr_i and wch_en_i come from flip-flops. While a bit of wch_en_i
 --    is set, PREPARE issues no first data read of an instruction while an
 --    older one is in WRITE, nor while w_r.wch_any is set, so that WRITE
 --    reaches the step boundary after a hit (MICROARCH.md §6.1).
@@ -85,22 +82,12 @@ entity pipe_write is
       dbus_data_i  : in  std_logic_vector(31 downto 0);
       pop_o        : out natural range 0 to 2;
 
-      -- The store or the vector read, into DBUS's register
-      -- (src/pipe_dbus.vhd)
+      -- The store, into DBUS's register (src/pipe_dbus.vhd)
       st_valid_i   : in  std_logic;
       st_acc_i     : in  std_logic;
       st_o         : out std_logic;
-      st_we_o      : out std_logic;   -- '1' for a store, '0' for a vector read
       st_addr_o    : out std_logic_vector(31 downto 0);
       st_data_o    : out std_logic_vector(31 downto 0);
-
-      -- Interrupt requests
-      nmi_valid_i  : in  std_logic;
-      nmi_vector_i : in  std_logic_vector(7 downto 0);
-      irq_valid_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0);
-      take_nmi_o   : out std_logic;
-      take_irq_o   : out std_logic;
 
       -- A pause before the next step (MICROARCH.md §6.1)
       pause_i      : in  std_logic;
@@ -121,7 +108,6 @@ entity pipe_write is
       flush_o      : out std_logic;   -- Empties the pipeline
       target_o     : out std_logic_vector(31 downto 0);
       instret_o    : out std_logic;
-      wstep_o      : out std_logic;   -- A wait step (ISA.md §7.5)
       retire_o     : out t_retire;
 
       -- For the fetch statistics (MICROARCH.md §8.1): what WRITE does in
@@ -194,9 +180,6 @@ begin
       variable done_v   : boolean;
       variable flush_v  : boolean;
       variable halt_v   : t_halt;
-      variable rti_v    : boolean;
-      variable bound_v  : boolean;
-      variable intr_v   : boolean;   -- An interrupt is taken now
       variable pbound_v : boolean;   -- A step boundary, where the core may pause
       variable rpause_v : boolean;   -- A pause on pause_i, or after a hit
       variable brk_v    : boolean;   -- The next instruction is at a breakpoint
@@ -204,9 +187,6 @@ begin
       variable hpause_v : boolean;   -- A pause after a step that hit a watchpoint
       variable whit_v   : std_logic_vector(C_WATCHES_MAX - 1 downto 0);
       variable pause_v  : boolean;
-      variable wbound_v : boolean;   -- A cycle of WAIT_ST, a step boundary of its own
-      variable wpause_v : boolean;   -- A pause on pause_i in WAIT_ST
-      variable wake_v   : boolean;   -- A request ends the wait (ISA.md §7.5)
       variable room_v   : boolean;
       variable accept_v : std_logic;
       variable why_v    : t_wwhy;
@@ -218,18 +198,13 @@ begin
       iw_v        := u_v.inst.iw;
       pop_o       <= 0;
       st_o        <= '0';
-      st_we_o     <= '1';
       instret_o   <= '0';
-      wstep_o     <= '0';
       flush_o     <= '0';
-      take_nmi_o  <= '0';
-      take_irq_o  <= '0';
       done_v      := false;
       flush_v     := false;
       why_v       := W_OTHER;
       fwhy_v      := C_FLUSH_OTHER;
       halt_v      := HALT_NONE;
-      rti_v       := false;
       store_v     := false;
       adjust_v    := false;
       two_v       := false;
@@ -266,7 +241,7 @@ begin
       bdata_v(0) := rq_i(0) when rq_cnt_i >= 1 else dbus_data_i;
       bdata_v(1) := rq_i(1) when rq_cnt_i >= 2 else dbus_data_i;
 
-      -- Room in DBUS's register for the store or the vector read: no read
+      -- Room in DBUS's register for the store: no read
       -- of PREPARE's is on the bus (src/pipe_dbus.vhd, contract a), and the
       -- register is free or frees itself now
       room_v := rd_stb_i = '0' and (st_valid_i = '0' or st_acc_i = '1');
@@ -309,35 +284,21 @@ begin
                (prep_i.valid = '1' and near(a_v, prep_i.inst.addr, prep_i.inst.blk, 2));
 
       -- A step boundary where no data access of the next instruction has
-      -- begun. The core pauses there whatever in_service and after_rti are,
-      -- but not before the first step after a pause, and ahead of an
-      -- interrupt (MICROARCH.md §6.1). It takes an interrupt there where
-      -- ISA.md §7.1 allows one.
+      -- begun. The core pauses there, but not before the first step after a
+      -- pause (MICROARCH.md §6.1).
       pbound_v := w_r.mode = RUN_ST and rst_i = '0' and w_r.commits = 0 and w_r.mid = '0' and
                   w_r.busy = '0' and w_r.cnt_step = 0 and w_r.exec_done = '0' and
                   (u_v.valid = '0' or u_v.first = '1');
       -- A step that hit a watchpoint (doc/DEBUG.md §6) is followed by a
-      -- pause of the core's own, ahead of an interrupt, as if pause_i were
+      -- pause of the core's own, as if pause_i were
       -- '1', so that it adds no term to the paths through the pause. The
       -- first step after a go on is not exempt: after_go is '1' only until
       -- that step is reported, before the boundary after it.
       rpause_v := pbound_v and w_r.after_go = '0' and (pause_i = '1' or w_r.wch_any = '1');
       hpause_v := rpause_v and w_r.wch_any = '1';
-      bound_v  := pbound_v and not rpause_v and w_r.in_service = '0' and w_r.after_rti = '0';
 
-      -- Each cycle of WAIT_ST is a step boundary with an empty pipeline,
-      -- where the core pauses as at any other. A request that is valid
-      -- ends the wait, whether or not it can be taken (ISA.md §7.5). If
-      -- it can, the entry goes at once. after_rti is '0' here, as WAIT
-      -- cleared it.
-      wbound_v := w_r.mode = WAIT_ST and rst_i = '0';
-      wpause_v := wbound_v and w_r.after_go = '0' and pause_i = '1';
-      wake_v   := wbound_v and not wpause_v and (nmi_valid_i = '1' or irq_valid_i = '1');
-      intr_v   := (bound_v or (wake_v and w_r.in_service = '0')) and
-                  (nmi_valid_i = '1' or (irq_valid_i = '1' and w_r.regs(14)(C_SR_E) = '1'));
-
-      -- A breakpoint (doc/DEBUG.md §6) is a pause of the core's own, below
-      -- an interrupt, and with the same exemption as the pause. Its flag
+      -- A breakpoint (doc/DEBUG.md §6) is a pause of the core's own, with
+      -- the same exemption as the pause. Its flag
       -- is that of the next instruction: the one in WRITE, or, while WRITE
       -- is empty, the one in PREPARE, which holds back its data read and
       -- so never reaches WRITE.
@@ -346,20 +307,8 @@ begin
       else
          brk_v := prep_i.valid = '1' and prep_i.first = '1' and prep_i.inst.brk = '1';
       end if;
-      bpause_v := pbound_v and not rpause_v and w_r.after_go = '0' and brk_v and not intr_v;
-      pause_v  := rpause_v or bpause_v or wpause_v;
-
-      if intr_v then
-         if nmi_valid_i = '1' then
-            take_nmi_o  <= '1';
-            n_v.vec     := nmi_vector_i;
-            n_v.vec_nmi := '1';
-         else
-            take_irq_o  <= '1';
-            n_v.vec     := irq_vector_i;
-            n_v.vec_nmi := '0';
-         end if;
-      end if;
+      bpause_v := pbound_v and not rpause_v and w_r.after_go = '0' and brk_v;
+      pause_v  := rpause_v or bpause_v;
 
       if pause_v then
          -- The micro-operation in WRITE has not begun, so it goes with the
@@ -384,138 +333,25 @@ begin
                n_v.regs(to_integer(reg_idx_i)) := regval(to_integer(reg_idx_i), reg_data_i);
             end if;
          elsif w_r.brk_wait = '0' then
-            -- A pause in a wait goes back to the wait. The go on forgets
-            -- the hits of the step before the pause.
-            n_v.mode     := WAIT_ST when w_r.waiting = '1' else RUN_ST;
+            -- The go on forgets the hits of the step before the pause.
+            n_v.mode     := RUN_ST;
             n_v.after_go := '1';
             n_v.wch      := (others => '0');
             n_v.wch_any  := '0';
             target_v     := w_r.regs(15);
             flush_v      := true;
          end if;
-      elsif intr_v then
-         -- ISA.md §7.2. The micro-operation in WRITE has not begun, so it
-         -- goes with the rest of the pipeline. A wait ends with the entry,
-         -- whose saved PC is R15, the address after the WAIT.
-         n_v.waiting    := '0';
-         n_v.mode       := VEC_ST;
-         n_v.vec_intr   := '1';
-         n_v.vec_issued := '0';
-         n_v.uop.valid  := '0';
-         flush_v        := true;
-         fwhy_v         := C_FLUSH_INTR;
-         why_v          := W_INTR;
-      elsif w_r.mode = WAIT_ST then
-         -- ISA.md §7.5. The pipeline is empty and FETCH stopped. A request
-         -- that cannot be taken ends the wait, and FETCH starts again at
-         -- R15. Else this cycle is a wait step, which counts as the first
-         -- step after a pause.
-         if wake_v then
-            n_v.waiting := '0';
-            n_v.mode    := RUN_ST;
-            target_v    := w_r.regs(15);
-            flush_v     := true;
-         elsif wbound_v then
-            n_v.after_go := '0';
-            wstep_o      <= '1';
-         end if;
-      elsif w_r.mode = VEC_ST then
-         -- The vector table entry is at VBASE * 256 + v. Its read goes into
-         -- DBUS's register, which drives the bus from the next cycle on.
-         why_v := W_INTR;
-         if w_r.vec_issued = '0' then
-            if room_v then
-               st_o           <= '1';
-               st_we_o        <= '0';
-               a_v            := w_r.regs(14)(23 downto 0) & w_r.vec;
-               n_v.vec_issued := '1';
-               -- The vector read is the entry's data access. Its hit is
-               -- at the instruction that the entry goes before, or at INT.
-               -- wch_pc follows the steps until the first hit, so that
-               -- the compares feed no enable.
-               whit_v      := watch_hits(a_v, 0, wch_addr_i, wch_en_i);
-               n_v.wch     := w_r.wch or whit_v;
-               n_v.wch_any := w_r.wch_any or (or whit_v);
-               if w_r.wch_any = '0' then
-                  n_v.wch_pc := w_r.regs(15) when w_r.vec_intr = '1' else u_v.inst.addr;
-               end if;
-            end if;
-         elsif rq_cnt_i >= 1 then
-            pop_o        <= 1;
-            n_v.saved_pc := w_r.regs(15) when w_r.vec_intr = '1' else u_v.inst.next_pc;
-            n_v.saved_sr := w_r.regs(14);
-            n_v.in_service    := '1';
-            n_v.regs(14)(C_SR_I) := '1';
-            n_v.regs(15) := rq_i(0);
-            target_v     := rq_i(0);
-            n_v.mode     := RUN_ST;
-            n_v.uop.valid := '0';
-            flush_v      := true;
-            fwhy_v       := C_FLUSH_INTR;
-
-            n_v.rep.valid  := '1';
-            n_v.rep.intr   := w_r.vec_intr;
-            n_v.rep.nmi    := w_r.vec_nmi;
-            n_v.rep.vector := w_r.vec;
-            n_v.rep.addr   := u_v.inst.addr;
-            n_v.rep.iw     := iw_v;
-            n_v.after_go   := '0';
-            if w_r.vec_intr = '0' then
-               -- INT is an instruction.
-               instret_o     <= not u_v.counted;
-               n_v.after_rti := '0';
-            end if;
-         end if;
       elsif w_r.mode = RUN_ST and u_v.valid = '1' then
          if cond_v = '0' then
             done_v := true;
          elsif u_v.kind = UOP_CTRL then
-            -- ISA.md §5.3
+            -- ISA.md §5.3: HALT is command 0 with bits 20..0 at 0, and
+            -- every other control word is reserved and halts too.
             done_v := true;
-            if iw_v(20 downto 8) /= 0 or (iw_v(25 downto 21) /= "00010" and iw_v(7 downto 0) /= 0) then
-               halt_v := HALT_RESERVED;
+            if iw_v(25 downto 0) = 0 then
+               halt_v := HALT_HALT;
             else
-               case iw_v(25 downto 21) is
-                  when "00000" =>
-                     halt_v := HALT_HALT;
-
-                  when "00001" =>
-                     if w_r.in_service = '0' then
-                        halt_v := HALT_RTI_OUTSIDE_ISR;
-                     else
-                        -- ISA.md §7.4
-                        n_v.regs(14)   := regval(14, w_r.saved_sr);
-                        n_v.regs(15)   := w_r.saved_pc;
-                        target_v       := w_r.saved_pc;
-                        n_v.in_service := '0';
-                        rti_v          := true;
-                     end if;
-
-                  when "00011" =>
-                     -- ISA.md §7.5. WAIT retires, and WRITE waits in
-                     -- WAIT_ST with the pipeline empty, as after a pause.
-                     n_v.waiting := '1';
-                     n_v.mode    := WAIT_ST;
-                     flush_v     := true;
-
-                  when "00010" =>
-                     if w_r.in_service = '1' then
-                        halt_v := HALT_NESTED_INT;
-                     else
-                        n_v.mode       := VEC_ST;
-                        n_v.vec        := iw_v(7 downto 0);
-                        n_v.vec_intr   := '0';
-                        n_v.vec_nmi    := '0';
-                        n_v.vec_issued := '0';
-                        flush_v        := true;
-                        fwhy_v         := C_FLUSH_INTR;
-                        why_v          := W_INTR;
-                        done_v         := false;
-                     end if;
-
-                  when others =>
-                     halt_v := HALT_RESERVED;
-               end case;
+               halt_v := HALT_RESERVED;
             end if;
          else
             rd_v := u_v.reads;
@@ -695,8 +531,9 @@ begin
                   -- The store, into DBUS's register when it is free
                   -- or frees itself now. A store into memory retires then.
                   -- One into the I/O range retires when the bus accepts it,
-                  -- so that a device sees it in the cycle of its step, as
-                  -- the timer's count of steps needs (DEVICES.md §4).
+                  -- so that a device sees it in the cycle of its step, and
+                  -- a console byte comes before the report of its step
+                  -- (src/trace_pkg.vhd, contract d).
                   if store_v then
                      done_v := false;
                      if w_r.busy = '1' then
@@ -760,16 +597,13 @@ begin
                end if;
                instret_o <= not u_v.counted;
 
-               if not rti_v and n_v.jump = '0' then
+               if n_v.jump = '0' then
                   n_v.regs(15) := u_v.inst.next_pc;
                end if;
                -- A jump that DECODE did not redirect FETCH for, or one it
                -- predicted taken that is skipped (MICROARCH.md §5.4), whose
                -- target is the next instruction.
-               if rti_v then
-                  flush_v := true;
-                  fwhy_v  := C_FLUSH_INTR;
-               elsif n_v.jump = '1' and u_v.inst.early = '0' then
+               if n_v.jump = '1' and u_v.inst.early = '0' then
                   flush_v := true;
                   fwhy_v  := C_FLUSH_JUMP;
                elsif u_v.inst.early = '1' and cond_v = '0' then
@@ -782,7 +616,6 @@ begin
                   flush_v  := true;
                   fwhy_v   := C_FLUSH_OTHER;
                end if;
-               n_v.after_rti := to_sl(rti_v);
                n_v.after_go  := '0';
                n_v.mid       := '0';
                n_v.jump      := '0';
@@ -791,9 +624,8 @@ begin
                end if;
             end if;
          else
-            -- Nothing changes until the micro-operation retires, but a
-            -- move to VEC_ST, the bus state, and the result of a first
-            -- cycle.
+            -- Nothing changes until the micro-operation retires, but the
+            -- bus state and the result of a first cycle.
             if not two_v then
                n_v.regs  := w_r.regs;
                n_v.last  := w_r.last;
@@ -819,7 +651,7 @@ begin
          n_v.uop := uop_i;
       end if;
 
-      -- The address and data of the store or the vector read, which DBUS
+      -- The address and data of the store, which DBUS
       -- takes when st_o is '1'
       st_addr_o <= a_v;
       st_data_o <= res_v.r;
@@ -845,10 +677,7 @@ begin
             w_r.uop        <= C_UOP_NONE;
             w_r.mode       <= RUN_ST;
             w_r.regs       <= C_REGS_RESET;
-            w_r.in_service <= '0';
-            w_r.after_rti  <= '0';
             w_r.after_go   <= '0';
-            w_r.waiting    <= '0';
             w_r.brk_wait   <= '0';
             w_r.halt       <= HALT_NONE;
             w_r.cond       <= '0';
@@ -857,7 +686,6 @@ begin
             w_r.busy       <= '0';
             w_r.cnt_step   <= 0;
             w_r.exec_done  <= '0';
-            w_r.vec_issued <= '0';
             w_r.commits    <= 0;
             w_r.wch        <= (others => '0');
             w_r.wch_any    <= '0';
@@ -869,8 +697,7 @@ begin
 
 
    -- The report of the step, in the cycle it retires, with the registers it
-   -- leaves. So an interrupt source that counts the steps sees each one as
-   -- soon as it can.
+   -- leaves. So the performance counters see each step as soon as they can.
    p_retire : process (all)
    begin
       retire_o      <= w_n.rep;

@@ -6,7 +6,7 @@
 --
 -- THEORY OF OPERATION
 -- The clock counts in every cycle, whatever the core does, so it runs on
--- while the core is held, paused, halted, or waiting. An accumulator adds
+-- while the core is held, paused, or halted. An accumulator adds
 -- 1000000 in each cycle. When the sum reaches G_CLK_HZ, the clock counts
 -- one microsecond and the accumulator keeps the sum less G_CLK_HZ, as the
 -- microsecond counter of src/perf.vhd does. After 999999 the microseconds

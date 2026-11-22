@@ -1,10 +1,8 @@
 ; The number and order of data reads (ISA.md §8.2) through the read counter,
-; with late shifts, two-cycle destinations, skipped instructions, and
-; interrupt vectors. Every read of COUNT returns the reads of it so far.
+; with late shifts, two-cycle destinations, and skipped instructions.
+; Every read of COUNT returns the reads of it so far.
 COUNT           .EQU    0xFFFFFF01
                 JMP     start
-                .ORG    4
-                .DAT    isr
                 .ORG    0x100
 start           MOVE    R4, COUNT
                 MOVE    @R4, 0
@@ -28,11 +26,8 @@ start           MOVE    R4, COUNT
                 MOVE    R5, R4
                 0<0     R2, @R5++, @R4  ; 2, 3
                 C>C     R2, @--R5, @R5++  ; 4, 5
-                INT     4               ; the vector read is a data access, not of COUNT
                 MOVE    R2, @R4         ; 6
-                MOVE    R14, 0x40000000  ; E = 1
+                MOVE    R14, 0x40000000  ; F0 = 1
                 MOVE    R2, @R4         ; 7
                 MOVE    R6, @R4         ; 8
                 HALT
-isr             MOVE    R7, @R4
-                RTI

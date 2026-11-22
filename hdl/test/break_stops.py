@@ -9,7 +9,7 @@ ADDR are the addresses of the breakpoints in hex, as tb_core's G_BREAK_AT
 takes them, at most four, as the emulator has (doc/DEBUG.md §6), or none.
 --watch gives the watchpoints as tb_core's G_WATCH_AT takes them, at most
 four: an address in hex and its kinds, r, w, or rw, such as "1Fw 20rw".
-EMULATOR_OPTIONS go to the emulator as they are, for example "--irq 6:2".
+EMULATOR_OPTIONS go to the emulator as they are, for example "--no-fpu".
 
 The script runs "niceemu --link 0" with the program, connects as the
 host, sets the breakpoints and the watchpoints, enables them all, and

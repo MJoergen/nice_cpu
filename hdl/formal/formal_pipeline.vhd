@@ -1,13 +1,12 @@
--- The pipelined core with the checkers of its bus and interrupt ports, for
--- SymbiYosys. Every input is free, so the solver tries every slave, every
--- interrupt source, every pause, and every instruction stream that keeps
--- to the checkers' assumptions.
+-- The pipelined core with the checkers of its bus ports, for SymbiYosys.
+-- Every input is free, so the solver tries every slave, every pause, and
+-- every instruction stream that keeps to the checkers' assumptions.
 --
 -- THEORY OF OPERATION
 -- core_check holds the checkers and the rules of a stopped core. Besides
 -- their assertions, the core's own, in its process
 -- p_check, hold here: no two instructions counted on instret_o in one
--- cycle, no read of PREPARE on the bus together with an access of WRITE,
+-- cycle, no read of PREPARE on the bus together with a store of WRITE,
 -- and no flush while a data read waits to be issued or its data is owed.
 -- The last is the data access rule of MICROARCH.md §9: every data read
 -- belongs to an instruction that retires. So do the properties of FETCH
@@ -33,7 +32,7 @@
 --
 -- REGISTER WRITES
 -- A register write comes only while the core is paused and pause_i is
--- '1', contract g) of src/pipeline.vhd. G_REG_WRITES false ties reg_we_i
+-- '1', contract e) of src/pipeline.vhd. G_REG_WRITES false ties reg_we_i
 -- to '0', for the bmc task of pipeline.sby, which is many times slower
 -- with the write.
 --
@@ -60,10 +59,6 @@ entity formal_pipeline is
       dbus_stall_i : in  std_logic;
       dbus_ack_i   : in  std_logic;
       dbus_data_i  : in  std_logic_vector(31 downto 0);
-      nmi_valid_i  : in  std_logic;
-      nmi_vector_i : in  std_logic_vector(7 downto 0);
-      irq_valid_i  : in  std_logic;
-      irq_vector_i : in  std_logic_vector(7 downto 0);
       pause_i      : in  std_logic;
       brk_addr_i   : in  t_brk_addrs;
       brk_en_i     : in  std_logic_vector(C_BREAKS_MAX - 1 downto 0);
@@ -85,14 +80,10 @@ architecture synthesis of formal_pipeline is
    signal dbus_we   : std_logic;
    signal dbus_addr : std_logic_vector(31 downto 0);
    signal dbus_data : std_logic_vector(31 downto 0);
-   signal nmi_ready : std_logic;
-   signal irq_ready : std_logic;
    signal paused    : std_logic;
    signal halted    : std_logic;
    signal reason    : t_halt;
    signal instret   : std_logic;
-   signal wstep     : std_logic;
-   signal waiting   : std_logic;
    signal retire    : t_retire;
    signal regs      : t_regs;
    signal reg_we    : std_logic;
@@ -135,13 +126,13 @@ begin
    --     brk_en_i(C_BREAKS - 1 downto 0) = brk_en_d(C_BREAKS - 1 downto 0));
 
    -- A register write comes only while the core is paused and pause_i is
-   -- '1', as contract g) of src/pipeline.vhd asks.
+   -- '1', as contract e) of src/pipeline.vhd asks.
    -- psl f_reg_paused : assume always reg_we_i = '1' -> (paused = '1' and pause_i = '1');
 
    -- No instruction at a breakpoint runs without a stop first, but the
    -- first after pause_i was '1'.
    -- psl f_brk_miss : assert always
-   --    (rst_i = '0' and retire.valid = '1' and retire.intr = '0' and asked_r = '0') ->
+   --    (rst_i = '0' and retire.valid = '1' and asked_r = '0') ->
    --    not hit(brk_addr_i, brk_en_i, retire.addr);
 
 
@@ -168,15 +159,8 @@ begin
          dbus_addr_o   => dbus_addr,
          dbus_data_o   => dbus_data,
          dbus_data_i   => dbus_data_i,
-         nmi_valid_i   => nmi_valid_i,
-         nmi_ready_o   => nmi_ready,
-         nmi_vector_i  => nmi_vector_i,
-         irq_valid_i   => irq_valid_i,
-         irq_ready_o   => irq_ready,
-         irq_vector_i  => irq_vector_i,
          pause_i       => pause_i,
          paused_o      => paused,
-         waiting_o     => waiting,
          brk_addr_i    => brk_addr_i,
          brk_en_i      => brk_en_i,
          wch_addr_i    => wch_addr_i,
@@ -189,7 +173,6 @@ begin
          halted_o      => halted,
          halt_reason_o => reason,
          instret_o     => instret,
-         wstep_o       => wstep,
          regs_o        => regs,
          retire_o      => retire,
          stats_o       => open
@@ -217,19 +200,11 @@ begin
          dbus_we_i    => dbus_we,
          dbus_addr_i  => dbus_addr,
          dbus_data_i  => dbus_data,
-         nmi_valid_i  => nmi_valid_i,
-         nmi_ready_i  => nmi_ready,
-         nmi_vector_i => nmi_vector_i,
-         irq_valid_i  => irq_valid_i,
-         irq_ready_i  => irq_ready,
-         irq_vector_i => irq_vector_i,
          pause_i      => pause_i,
          paused_i     => paused,
          halted_i     => halted,
          reason_i     => reason,
          retire_i     => retire,
-         wstep_i      => wstep,
-         waiting_i    => waiting,
          regs_i       => regs,
          brk_addr_i   => brk_addr_i,
          brk_en_i     => brk_en_i,

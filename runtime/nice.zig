@@ -87,8 +87,7 @@ pub fn readLine(buf: []u8) ?[]u8 {
 }
 
 /// The performance counters of DEVICES.md §3: the clock cycles and the
-/// instructions since reset. An interrupt routine must not read them while
-/// the code it interrupted is reading one.
+/// instructions since reset.
 pub fn cycles() u64 {
     return nice_cycles();
 }
@@ -191,8 +190,7 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 // and fails where only its start is reserved. Each block has an 8-byte
 // header, and its address and size are multiples of 8. Free
 // blocks are kept in a list sorted by address, and neighbors are merged
-// when a block is freed. NICE has no threads, and an interrupt routine
-// must not use the heap.
+// when a block is freed. NICE has no threads.
 const Block = extern struct {
     size: usize, // of the whole block, a multiple of 8
     next: ?*Block, // the next free block; unused when allocated

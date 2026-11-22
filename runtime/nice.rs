@@ -145,8 +145,7 @@ pub fn read_line(buf: &mut [u8]) -> Option<&str> {
 }
 
 /// The performance counters of DEVICES.md §3: the clock cycles and the
-/// instructions since reset. An interrupt routine must not read them while
-/// the code it interrupted is reading one.
+/// instructions since reset.
 pub fn cycles() -> u64 {
     unsafe { nice_cycles() }
 }
@@ -227,8 +226,7 @@ pub fn screen_clear() {
 // where only its start is reserved (WASM.md). Each block has an
 // 8-byte header, and its address and size are multiples of 8. Free blocks
 // are kept in a list sorted by address, and neighbors are merged when a
-// block is freed. NICE has no threads, and an interrupt routine must not
-// use the heap.
+// block is freed. NICE has no threads.
 #[repr(C)]
 struct Block {
     size: usize,      // of the whole block, a multiple of 8

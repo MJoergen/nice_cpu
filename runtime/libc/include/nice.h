@@ -25,8 +25,7 @@ int nice_pollc(void);
 void nice_print(const char *s);
 
 // The performance counters (DEVICES.md §3): the clock cycles and the
-// instructions since reset. An interrupt routine must not read them
-// while the code it interrupted is reading one.
+// instructions since reset.
 unsigned long long nice_cycles(void);
 unsigned long long nice_instructions(void);
 
@@ -38,17 +37,16 @@ __attribute__((import_module("env"), import_name("nice_isqrt64")))
 unsigned nice_isqrt64(unsigned long long x);
 
 // The microseconds since reset, from the counter of DEVICES.md §3 that is
-// exact on every board. The same rule about interrupt routines applies.
-// There is no assembly routine for it: it is C only.
+// exact on every board. There is no assembly routine for it: it is C
+// only.
 unsigned long long nice_micros(void);
 
 // The clock of the time of day (DEVICES.md §10), C only as well.
 // nice_clock returns the seconds since the Unix epoch, and stores the
-// microseconds within the second in *usec if usec is not null. The rule
-// about interrupt routines applies to its snapshot. nice_clock_isset
-// returns 1 if the clock holds a time, set by a program or the system, and
-// 0 if not. nice_clock_set sets it to sec seconds and usec microseconds,
-// 999999 at most.
+// microseconds within the second in *usec if usec is not null.
+// nice_clock_isset returns 1 if the clock holds a time, set by a program
+// or the system, and 0 if not. nice_clock_set sets it to sec seconds and
+// usec microseconds, 999999 at most.
 unsigned long long nice_clock(unsigned *usec);
 int nice_clock_isset(void);
 void nice_clock_set(unsigned long long sec, unsigned usec);

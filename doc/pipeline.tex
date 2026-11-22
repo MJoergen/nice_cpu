@@ -9,7 +9,7 @@
 % thin arrows on the left are the paths that are not the main flow: the
 % flush and redirect from WRITE, the early redirect from DECODE, and
 % PREPARE's reads of the registers that WRITE holds. It does not show the
-% handshakes, the interrupt ports, or the trace report.
+% handshakes, the debug ports, or the trace report.
 %
 % The short black bars are the registers on the main path. Each is drawn
 % inside the block of the entity that holds it, at the edge where its
@@ -116,7 +116,7 @@
    \draw[wire] (prepare.east) -- (dbus.west |- prepare.east)
       node[buslabel, below, pos = 0.62] {read request};
    \draw[wire] ([yshift = 2.5mm] write.east) -- ([yshift = 2.5mm] dbus.west |- write.east)
-      node[buslabel, above, pos = 0.55, align = center] {store,\\ vector read};
+      node[buslabel, above, pos = 0.55] {store};
    \draw[wire] ([yshift = -2.5mm] dbus.west |- write.east) -- ([yshift = -2.5mm] write.east)
       node[buslabel, below] {read data};
 

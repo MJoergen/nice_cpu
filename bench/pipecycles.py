@@ -142,8 +142,7 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   data only goes into a register: s0 or s1 with a side effect, and a MOVE
   into a register other than R15, which take it in the cycle of the ACK
   ("readlate").
-- Not modeled: interrupts (an entry is treated as a flush), self-modifying
-  code checks, the INSTR_LO retire rule, wrong-path fetch traffic, and bus
+- Not modeled: self-modifying code checks, the INSTR_LO retire rule, wrong-path fetch traffic, and bus
   stalls other than the math unit.
 
 Each cycle a micro-op leaves WRITE later than one after its predecessor is
@@ -178,7 +177,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 PHASES = ["rng64", "crc32", "bst", "heapsort", "vm", "strings"]
 CAUSES = ["startup", "fetch", "flush", "early", "sr", "jump", "agen", "shiftreg", "sumwait",
-          "bus", "mpu", "fpu", "readbus", "readlate", "shiftlate", "adjust", "interrupt"]
+          "bus", "mpu", "fpu", "readbus", "readlate", "shiftlate", "adjust"]
 CAUSE_TEXT = {
     "multi": "multi-micro-op instructions",
     "startup": "pipeline start",
@@ -197,7 +196,6 @@ CAUSE_TEXT = {
     "readlate": "read data used by more than a register write",
     "shiftlate": "shift count reduced in WRITE (memory, adder, R14, C<C)",
     "adjust": "destination adjusted by 1, or a computed jump",
-    "interrupt": "interrupt entries",
 }
 INSTR_LO = 0xFFFFFF42
 IO_BASE = 0xFFFFFF00
@@ -442,7 +440,7 @@ class Model:
         self.read_bus = read_bus
         self.slave_gap = slave_gap
         self.fpu_op, self.fpu_long = fpu_op, fpu_long
-        self.bubble = {"flush": flush, "early": early, "interrupt": flush + 1}
+        self.bubble = {"flush": flush, "early": early}
         self.cache: Dict[Tuple[int, int], Info] = {}
         self.regs = [0] * 16
         self.regs[14] = 0x01000000
@@ -532,11 +530,6 @@ class Model:
         self.ftimes = []
         self.leave = []
 
-    def interrupt(self) -> None:
-        # An entry: flush, a vector read, and a refetch.
-        self.restart_after(self.done_prev + 1 + self.flush - 4, "interrupt")
-        self.last_bus = max(self.last_bus, self.done_prev + 1)
-
     def step(self, pc: int, iw: int, skipped: bool, changes: List[str]) -> None:
         # The sign of the first constant word, which decides whether
         # DECODE predicts a conditional jump.
@@ -547,8 +540,9 @@ class Model:
         if self.stream_base == -1:
             self.stream_base = pc >> 1  # the target of a redirect
         elif pc != self.expect_pc:
-            # Not the fall-through, and no jump seen: start afresh.
-            self.new_stream(pc, (self.done_prev + 1, "interrupt"))
+            # Not the fall-through, and no jump seen: start afresh, as
+            # after a flush.
+            self.new_stream(pc, (self.done_prev + 1, "flush"))
         k0 = (pc >> 1) - self.stream_base
         k1 = ((pc + info.words - 1) >> 1) - self.stream_base
         ft, ftag = self.fetch_time(k1)
@@ -802,9 +796,6 @@ class Model:
 
 def run_model(model: Model, lines: Iterable[str]) -> Model:
     for step in hazards.steps(lines):
-        if step is None:
-            model.interrupt()
-            continue
         pc, iw, rest = step
         skipped = bool(rest) and rest[0] == "skipped"
         model.step(pc, iw, skipped, [] if skipped else rest)
@@ -828,14 +819,10 @@ def retires(model: Model, lines: Iterable[str], core_log: str, top: int = 20) ->
     mine: List[Tuple[int, str, str, int]] = []   # cycle, address, cause, iw
     for step in hazards.steps(lines):
         before = dict(model.gaps, multi=model.multi)
-        if step is None:
-            model.interrupt()
-            addr, iw = "intr", 0
-        else:
-            pc, iw, rest = step
-            skipped = bool(rest) and rest[0] == "skipped"
-            model.step(pc, iw, skipped, [] if skipped else rest)
-            addr = f"{pc:08X}"
+        pc, iw, rest = step
+        skipped = bool(rest) and rest[0] == "skipped"
+        model.step(pc, iw, skipped, [] if skipped else rest)
+        addr = f"{pc:08X}"
         after = dict(model.gaps, multi=model.multi)
         causes = "+".join(k for k in after if after[k] != before[k]) or "none"
         mine.append((model.total() - 1, addr, causes, iw))
@@ -918,8 +905,8 @@ def compare(m: Model, core_output: str) -> str:
 # The causes of the core's cycles (MICROARCH.md §8.1), and of a flush,
 # by the letters of the retire log.
 CORE_CAUSES = ["RETIRE", "REFILL", "BUBBLE", "FETCH", "REG", "ORDER", "BUS", "STALL", "READ",
-               "LATE", "SHIFT", "ADJUST", "STORE", "INTR", "OTHER"]
-CORE_FLUSHES = ["JUMP", "SKIP", "STORE", "INTR", "OTHER"]
+               "LATE", "SHIFT", "ADJUST", "STORE", "OTHER"]
+CORE_FLUSHES = ["JUMP", "SKIP", "STORE", "OTHER"]
 # The groups in which the model's causes and the core's compare: a name,
 # the model's causes ("instr" for one cycle per instruction), and the
 # core's. The model charges a cycle to what bound a micro-op, the core to
@@ -935,7 +922,6 @@ CAUSE_GROUPS = [
     ("read", ["readbus", "readlate", "mpu", "fpu"], ["STALL", "READ", "LATE"]),
     ("shift", ["shiftlate"], ["SHIFT"]),
     ("adjust", ["adjust"], ["ADJUST"]),
-    ("interrupt", ["interrupt"], ["INTR"]),
     ("other", [], ["OTHER"]),
 ]
 
@@ -965,9 +951,9 @@ def core_causes(lines: Iterable[str], pcs: List[int]) -> List[Tuple[Dict[str, in
         fl = {c: 0 for c in CORE_FLUSHES}
         for st in steps[a + 1:b + 1]:
             for ch in st[2] if len(st) > 2 else "":
-                if "a" <= ch <= "o":
+                if "a" <= ch < chr(ord("a") + len(CORE_CAUSES)):
                     cyc[CORE_CAUSES[ord(ch) - ord("a")]] += 1
-                elif "A" <= ch <= "E":
+                elif "A" <= ch < chr(ord("A") + len(CORE_FLUSHES)):
                     fl[CORE_FLUSHES[ord(ch) - ord("A")]] += 1
                 else:
                     sys.exit(f"pipecycles.py: {ch!r} in the retire log")
@@ -1477,7 +1463,7 @@ def test() -> None:
     # address. The first has the letters of the two steps after its first
     # read, the second those of the two after its own.
     log = ["5 00000000 aaaaab", "6 00000010 a", "8 00000002 bA", "9 00000010 ac",
-           "10 00000020 a", "12 00000003 kk", "13 00000020 o", "14 00000004 a"]
+           "10 00000020 a", "12 00000003 kk", "13 00000020 n", "14 00000004 a"]
     got = [({k: v for k, v in c.items() if v}, {k: v for k, v in f.items() if v})
            for c, f in core_causes(log, [0x10, 0x10, 0x20, 0x20])]
     want = [({"RETIRE": 1, "REFILL": 1, "BUBBLE": 1}, {"JUMP": 1}), ({"SHIFT": 2, "OTHER": 1}, {})]

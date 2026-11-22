@@ -439,7 +439,6 @@ the core to what WRITE did in it, so they compare in groups:
 | read | readbus, readlate, mpu | STALL, READ, LATE |
 | shift | shiftlate | SHIFT |
 | adjust | adjust | ADJUST |
-| interrupt | interrupt | INTR |
 | other | | OTHER |
 
 At commit 31f740e, both programs have the same cycles in each phase by

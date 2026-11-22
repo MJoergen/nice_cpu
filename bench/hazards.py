@@ -15,8 +15,7 @@ registers it reads and writes, its data accesses, its constant words, and
 its micro-operations (MICROARCH.md §4). Each count compares an instruction
 with the one, two, or three before it. A skipped instruction counts as if
 it ran, because DECODE sees its operands before the condition is known, so
-a register it would write counts as written. An interrupt entry starts the
-sequence afresh, as it flushes the pipeline. The console output in the
+a register it would write counts as written. The console output in the
 trace and the lines after the halt are skipped (steps(), which
 pipecycles.py reads a trace with too).
 
@@ -47,7 +46,7 @@ class Instr:
     """What DECODE learns from one instruction word."""
 
     conditional: bool          # The condition is not "always"
-    control: bool              # HALT, RTI, INT, or a reserved word
+    control: bool              # HALT or a reserved word
     reads: FrozenSet[int]      # Registers read as operands or bases, R0 left out
     writes: FrozenSet[int]     # Registers written by the result or a side effect
     mem_reads: int             # Data reads
@@ -228,9 +227,6 @@ class Profile:
         self.raw_regs: Dict[int, int] = {}
         self.history: List[Instr] = []
 
-    def interrupt(self) -> None:
-        self.history.clear()
-
     def add(self, d: Instr) -> None:
         c = self.counts
         self.instructions += 1
@@ -314,23 +310,18 @@ class Profile:
 
 
 STEP_RE = re.compile(r"([0-9a-f]{8}) ([0-9a-f]{8})(?= |$)")
-ENTRY_RE = re.compile(r"(?:NMI|IRQ) [0-9a-f]{2}(?= |$)")
 
 
-def steps(lines: Iterable[str]) -> Iterator[Optional[Tuple[int, int, List[str]]]]:
+def steps(lines: Iterable[str]) -> Iterator[Tuple[int, int, List[str]]]:
     """The steps of a trace: the address, the instruction word, and the
-    rest of the line for an instruction, and None for an interrupt entry.
-    The emulator writes the program's console output to stdout too, so a
+    rest of the line of each instruction. The emulator writes the program's console output to stdout too, so a
     step may follow output that did not end in a newline, on the same
     line. The lines after the halt are not steps."""
     for line in lines:
         if line.startswith(("Halted", "Stopped")):
             return
         m = STEP_RE.match(line) or STEP_RE.search(line)
-        e = ENTRY_RE.search(line)
-        if e and (m is None or e.start() < m.start()):
-            yield None
-        elif m:
+        if m:
             yield int(m.group(1), 16), int(m.group(2), 16), line[m.end():].split()
 
 
@@ -340,9 +331,6 @@ def profile(lines: Iterable[str], mem: Optional[Dict[int, int]] = None) -> Profi
     conditional jump counts as resolved in WRITE."""
     p = Profile()
     for step in steps(lines):
-        if step is None:
-            p.interrupt()
-            continue
         c = 0 if mem is None else mem.get((step[0] + 1) & 0xFFFFFFFF, 0)
         d = decode(step[1], c)
         d.skipped = "skipped" in step[2]

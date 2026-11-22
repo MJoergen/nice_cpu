@@ -6,7 +6,7 @@ The sources are listed in [REFERENCES.md](REFERENCES.md). Where they disagree, t
 
 1. The intended behavior of the 2004 emulator `NICE.pm` and the 2004 web page. The emulator's bugs are not part of the ISA.
 2. The 1999 and 1997 articles.
-3. QNICE, the 16-bit descendant of NICE, as implemented in [MJoergen/qnice_cpu](https://github.com/MJoergen/qnice_cpu), for anything the NICE sources leave open, such as interrupts.
+3. QNICE, the 16-bit descendant of NICE, as implemented in [MJoergen/qnice_cpu](https://github.com/MJoergen/qnice_cpu), for anything the NICE sources leave open, such as the shift count.
 
 [Appendix B](#appendix-b-departures-from-the-sources) lists every place where this specification departs from a source.
 
@@ -32,12 +32,7 @@ The sources are listed in [REFERENCES.md](REFERENCES.md). Where they disagree, t
   - [5.2 SHIFT instructions (bits 27..26 = 10)](#52-shift-instructions-bits-2726--10)
   - [5.3 Control instructions (bits 27..26 = 11)](#53-control-instructions-bits-2726--11)
 - [6. Flags](#6-flags)
-- [7. Interrupts](#7-interrupts)
-  - [7.1 When an interrupt is taken](#71-when-an-interrupt-is-taken)
-  - [7.2 Interrupt entry](#72-interrupt-entry)
-  - [7.3 Vector table](#73-vector-table)
-  - [7.4 Return](#74-return)
-  - [7.5 Waiting](#75-waiting)
+- [7. No interrupts](#7-no-interrupts)
 - [8. Reset, memory, and I/O](#8-reset-memory-and-io)
   - [8.1 Reset](#81-reset)
   - [8.2 Memory](#82-memory)
@@ -79,35 +74,29 @@ There are sixteen 32-bit registers, R0 to R15. Every register can be used with e
 
 | Bit | 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23..0 |
 |---|---|---|---|---|---|---|---|---|---|
-| Name | I | E | V | N | Z | C | X | 1 | VBASE |
+| Name | F1 | F0 | V | N | Z | C | X | 1 | U |
 
 | Field | Meaning |
 |---|---|
-| I (bit 31) | Set to 1 by the hardware when an interrupt is taken (§7). |
-| E (bit 30) | Interrupts enabled: maskable interrupts are accepted only while E = 1. |
+| F1 (bit 31) | A flag for software. The hardware gives it no meaning and never writes it. |
+| F0 (bit 30) | A flag for software, as F1. |
 | V (bit 29) | Signed overflow. |
 | N (bit 28) | Result was negative (bit 31 of the result). |
 | Z (bit 27) | Result was zero. |
 | C (bit 26) | Carry out of an addition, borrow out of a subtraction, or the bit shifted out by a shift. |
 | X (bit 25) | Result was all ones (`0xFFFFFFFF`, that is −1). |
 | 1 (bit 24) | Always 1, at every point within an instruction. No write clears it (§4.3). It makes condition select 0 mean "always" (§3). |
-| VBASE (bits 23..0) | The upper 24 bits of the interrupt vector table address (§7.3). |
+| U (bits 23..0) | 24 bits for software, as F1. |
 
-Software can read and write every bit except bit 24. Instructions with the M bit (instruction bit 25, §2.1) set update only X, C, Z, N, and V (§6). I, E, and VBASE change only when software writes R14, on interrupt entry (I), and on `RTI`.
+Software can read and write every bit except bit 24. Instructions with the M bit (instruction bit 25, §2.1) set update only X, C, Z, N, and V (§6). F1, F0, and U change only when software writes R14. A condition tests F0 and F1 as it tests the flags (§3), so they are two flags that software sets and any instruction tests.
 
 ### 1.4 Hidden state
 
-These are not visible as registers. They exist for interrupts (§7), waiting, and halting:
+One bit of state is not visible as a register:
 
 | State | Meaning |
 |---|---|
-| `in_service` | 1 while an interrupt service routine runs, from interrupt entry until `RTI`. |
-| `saved_pc`, `saved_sr` | The PC and SR saved on interrupt entry and restored by `RTI`. |
-| `after_rti` | Set to 1 by `RTI`. Cleared to 0 when the next instruction completes, whether or not its condition is true. While it is 1, no IRQ or NMI is taken (§7.1). |
-| `waiting` | 1 after `WAIT`, until an NMI or IRQ is pending (§7.5). While it is 1, the processor runs no instruction. |
-| `halted` | 1 after `HALT` or any other halt (§5.3, §7.2, §7.4). Only reset clears it. |
-
-Pending interrupt requests (§7.1) are also state. How they are held is a hardware interface matter.
+| `halted` | 1 after `HALT` or any other halt (§5.3). Only reset clears it. |
 
 ## 2. Instruction format
 
@@ -122,16 +111,16 @@ Every instruction is one **instruction word**, followed by zero to three **const
 
 Control instructions divide the bits below the class differently:
 
-| Bits | 31 | 30..28 | 27 | 26 | 25..21 | 20..8 | 7..0 |
-|---|---|---|---|---|---|---|---|
-| Control | NEG | SEL | 1 | 1 | command | 0 | vector |
+| Bits | 31 | 30..28 | 27 | 26 | 25..21 | 20..0 |
+|---|---|---|---|---|---|---|
+| Control | NEG | SEL | 1 | 1 | command | 0 |
 
 - **NEG, SEL**: the condition (§3).
 - **Bits 27..26** select the class: `0x` ALU, `10` SHIFT, `11` control.
 - **C** (ALU only): use the C flag as carry or borrow input (§5.1).
 - **M**: update the flags from the result (§6).
 - **dest, s0, s1**: the three operand fields (§4).
-- **command, vector**: the control instruction and, for `INT`, its vector number (§5.3).
+- **command**: the control instruction (§5.3).
 
 The all-zero word is `MOVE R0, R0` with condition "always", so it does nothing. It is the canonical NOP, and the assembler writes it for `NOP` (§10.1).
 
@@ -163,12 +152,12 @@ Every instruction, including control instructions, is conditional. It executes o
 | 011 | Z | `?Z` | `?!Z` |
 | 100 | N | `?N` | `?!N` |
 | 101 | V | `?V` | `?!V` |
-| 110 | E | `?E` | `?!E` |
-| 111 | I | `?I` | `?!I` |
+| 110 | F0 | `?F0` | `?!F0` |
+| 111 | F1 | `?F1` | `?!F1` |
 
 The condition is tested against SR as it was before the instruction started.
 
-In this document, "the M bit" always means instruction bit 25 (modify flags), and "the E flag" means SR bit 30. The 2004 sources call SR bit 30 M, so the assembler also accepts `?M` and `?!M` as aliases for `?E` and `?!E`.
+In this document, "the M bit" always means instruction bit 25 (modify flags). The assembler also accepts the older names of SR bits 30 and 31 (Appendix B), with their `!` forms: `?E` and `?M` for `?F0`, and `?I` for `?F1`.
 
 A skipped instruction still consumes its constant words (a control instruction has none), so PC moves past the whole instruction. A skipped instruction has no other effect: it reads no operand from memory, writes nothing, applies no increments or decrements, and changes no flags.
 
@@ -237,7 +226,7 @@ An instruction runs in this order:
 
 Because step 5 runs before step 7, `MOVE @R1, R1++` with R1 = 0x40 stores 0x40 at address 0x41.
 
-The next instruction is the one at PC as it stands after step 8. Interrupts are taken only between instructions (§7). Steps 1 and 2 are instruction fetches, and every other memory access is a data access. §8.2 defines the two kinds, and §8.3 says what a fetch from the I/O range reads.
+The next instruction is the one at PC as it stands after step 8. Steps 1 and 2 are instruction fetches, and every other memory access is a data access. §8.2 defines the two kinds, and §8.3 says what a fetch from the I/O range reads.
 
 ### 5.1 ALU instructions (bit 27 = 0)
 
@@ -335,16 +324,13 @@ Arithmetic shift right is two instructions: `C<0[M] R0, Rx, 1` copies the sign b
 | Command (bits 25..21) | Mnemonic | Encoding (with condition "always") | Effect |
 |---|---|---|---|
 | 00000 | `HALT` | `0x0C000000` | halted ← 1. The processor stops. Only reset restarts it. |
-| 00001 | `RTI` | `0x0C200000` | Return from interrupt (§7.4). |
-| 00010 | `INT n` | `0x0C400000` + n | Software interrupt with vector n, 0–255 (§7.2). |
-| 00011 | `WAIT` | `0x0C600000` | waiting ← 1. The processor runs no instruction until an NMI or IRQ is pending (§7.5). |
-| others | | | Reserved. Executing one halts the processor. |
+| 00001–11111 | | | Reserved. Executing one halts the processor. |
 
-Bits 20..8 must be 0, and bits 7..0 must be 0 except in `INT`. An instruction that breaks this is reserved and halts the processor.
+Bits 20..0 must be 0. An instruction that breaks this is reserved and halts the processor.
 
 The condition field applies, so `?Z HALT` halts only when Z = 1. This includes reserved words: a reserved control word whose condition is false is skipped like any other instruction and does not halt the processor.
 
-Control instructions have no M bit and never update X, C, Z, N, or V. `HALT` and `WAIT` leave SR unchanged, `INT` changes only I (§7.2), and `RTI` replaces SR with the saved copy (§7.4).
+Control instructions have no M bit and never change SR.
 
 ## 6. Flags
 
@@ -360,79 +346,25 @@ If M = 1, and the destination is not R14 in a register-direct mode (000, 001, or
 
 The flags are computed from the result r of the operation, not from the value stored by a `Rx++` or `Rx--` destination.
 
-If M = 0, the flags do not change. This holds for every instruction, shifts included. Control instructions (§5.3) have no M bit and never compute flags from a result. `RTI` restores all of SR, the flags included, from the saved copy.
+If M = 0, the flags do not change. This holds for every instruction, shifts included. Control instructions (§5.3) have no M bit and never change the flags.
 
-## 7. Interrupts
+## 7. No interrupts
 
-NICE has one maskable interrupt request (IRQ), one non-maskable interrupt request (NMI), and a software interrupt (`INT`). The hardware saves PC and SR in hidden registers, `RTI` restores them, and interrupts do not nest.
+NICE has no interrupts: no interrupt request, no software interrupt, and no instruction that waits for one. A program learns of an event by polling, that is, by reading the status of a device in a loop (§8.3).
 
-### 7.1 When an interrupt is taken
+A system with a NICE processor is built so that it needs none:
 
-Before each instruction, the first one after reset included, the processor checks for pending requests:
-- **NMI** is taken if `in_service` = 0.
-- **IRQ** is taken if `in_service` = 0 and E = 1.
-- If both are pending, NMI goes first.
-- A halted processor takes no interrupts.
-- While `waiting` = 1, a pending request first ends the wait (§7.5).
-- No IRQ or NMI is taken while `after_rti` = 1, so the instruction directly after an `RTI` always runs first. That instruction may itself be an `INT`, which works normally. This guarantees that the interrupted program makes progress. A deferred request is taken before the second instruction after `RTI`, unless the first one is an `INT` (then the request waits for that routine's `RTI` as well), halts the processor, or, for an IRQ, leaves E = 0 (then the IRQ waits until software sets E).
+- **Input is not lost while the processor is busy.** The devices hold it in buffers in hardware, such as the console's input buffer and the queue of Ethernet frames, until the program reads it.
+- **Work that cannot wait is done in hardware.** On NiceMonMEGA65, the TCP engine runs in the FPGA beside the processor.
+- **A debugger breaks into any program.** The debug link ([DEBUG.md](DEBUG.md)) pauses the processor in hardware, at any instruction, and the program does nothing for it.
+- **A program that must react to a key, such as an interpreter that stops on a break key, polls the console between its statements.**
 
-**Pending requests are deferred, never lost.** An NMI or IRQ that cannot be taken when it arrives stays pending until it is taken. That happens when `in_service` = 1, or for an IRQ when E = 0. A request merges with one of the same kind that is already pending from the same source, and the pending one keeps its vector, so software must not rely on counting interrupts. Requests of different sources do not merge: each stays pending, and they are taken one at a time, in an order of priority that the system sets. What the sources are, and their order, is not part of the ISA; [DEVICES.md](DEVICES.md) says it for the emulator and the FPGA implementation. A request still pending when the processor halts is never taken, because only reset restarts the processor.
+Processors without interrupts are not new. The central processor of the CDC 6600 left all I/O to peripheral processors, which polled, and the eight cores of the Parallax Propeller poll or wait on a pin. An interrupt is one way among several to react to an event, and it costs state in the processor: a saved PC and SR, a vector table, a return instruction, and the rules of when a request is taken.
 
-When the processor accepts a request, the device supplies an 8-bit vector number v. The ISA does not say how requests are signaled and acknowledged: edge or level, the handshake, and how a request is held pending are hardware interface matters. The rules above are what software sees.
+Polling has its own cost, which falls on the program:
 
-### 7.2 Interrupt entry
-
-Entry is the same for IRQ, NMI, and `INT v`:
-
-1. saved_pc ← PC, the address of the next instruction. For `INT`, that is the instruction after the `INT`.
-2. saved_sr ← SR.
-3. in_service ← 1.
-4. SR.I ← 1.
-5. PC ← mem[(VBASE << 8) + v].
-
-`INT` executed while `in_service` = 1 halts the processor.
-
-### 7.3 Vector table
-
-The vector table has 256 words and starts at address VBASE × 256. Entry v holds the address of the routine for vector v. With VBASE in SR bits 23..0, the table always starts on a 256-word boundary.
-
-To set the table address without touching the flags:
-
-                    AND     R14, R14, 0xFF000000  ; keep the flags
-                    OR      R14, R14, TABLE_ADDR_DIV_256  ; set VBASE
-
-### 7.4 Return
-
-`RTI` does:
-
-1. SR ← saved_sr (bit 24 stays 1).
-2. PC ← saved_pc.
-3. in_service ← 0.
-4. after_rti ← 1.
-
-`RTI` executed while `in_service` = 0 halts the processor.
-
-Because SR is restored, an interrupt routine may change any flag freely, E and I included. An interrupt routine must save and restore any other registers it uses.
-
-### 7.5 Waiting
-
-`WAIT` completes as any other instruction does, and then sets `waiting` to 1. While `waiting` = 1, the processor runs no instruction.
-
-`waiting` clears as soon as an NMI or an IRQ is pending, whether or not it can be taken, so also while E = 0 or `in_service` = 1. The processor then goes on as before any instruction (§7.1): it takes the request if it can, and otherwise runs the instruction after the `WAIT`. A request taken there saves the address of that instruction, so its `RTI` returns there.
-
-So a `WAIT` ends at once when a request is already pending that could not be taken before it. With E = 0, a program can then test a flag that an interrupt routine sets, and wait for it, without losing a request that arrives between the test and the wait:
-
-                    AND     R14, R14, 0xBFFFFFFF  ; E = 0
-                    TST     @flag           ; set by the interrupt routine
-            ?Z      WAIT                    ; ends at once if a request is pending
-                    OR      R14, R14, 0x40000000  ; E = 1: the IRQ is taken here
-
-- `WAIT` changes no flags, and makes no data access.
-- `WAIT` inside an interrupt routine is allowed. A request ends the wait, and is taken after the `RTI` (§7.1).
-- `WAIT` right after `RTI` clears `after_rti` when it completes, as any instruction does (§1.4). A deferred request then ends the wait at once, and is taken.
-- A wait for a request that never comes lasts until reset.
-- Reset clears `waiting` (§8.1).
-- How long a wait takes, and what the devices of a system do meanwhile, is not part of the ISA. [DEVICES.md](DEVICES.md) says it for the emulator and the FPGA implementation.
+- A program that waits for an event spins in a loop of reads. The emulator does not spin the host's CPU for such a loop ([DEVICES.md §1.6](DEVICES.md#16-pacing)).
+- Work that must run at a regular time, such as music or a change of the screen in mid-frame, fits into the main loop, which reads a counter to know the time ([DEVICES.md §3](DEVICES.md#3-performance-counters)).
 
 ## 8. Reset, memory, and I/O
 
@@ -441,13 +373,9 @@ So a `WAIT` ends at once when a request is already pending that could not be tak
 | State | Value after reset |
 |---|---|
 | R0–R13, R15 | 0, so execution starts at address 0 |
-| R14 | `0x01000000`: only bit 24 set, so E = 0 (maskable interrupts off) and VBASE = 0 |
-| in_service, after_rti, waiting, halted | 0 |
-| Pending interrupt requests | none |
-| saved_pc, saved_sr | undefined |
+| R14 | `0x01000000`: only bit 24 set, so F1, F0, and U are 0 |
+| halted | 0 |
 | Memory | not changed by reset |
-
-**NMI after reset.** E = 0 holds off IRQ, but nothing holds off NMI. After reset, VBASE = 0 and PC = 0, so word 0 is both the first instruction and vector table entry 0. An NMI that arrives before the boot code has set VBASE and filled the vector table jumps through whatever those words hold. The system must therefore keep NMI from being raised until software is ready for it. The ISA provides no mechanism for this.
 
 ### 8.2 Memory
 
@@ -455,7 +383,7 @@ So a `WAIT` ends at once when a request is already pending that could not be tak
 - Each instruction runs with the words that memory held when the instructions before it had completed. So a store may change the next instruction or its constant words, and the change takes effect. An instruction that overwrites its own constant words does not see the change, because they were fetched in step 2.
 - A system may let more than one address reach the same word, as the aliasing and the byte windows of [DEVICES.md](DEVICES.md) do. The rule above then holds for a store to the address that the word is fetched from. A store through another address leaves undefined which value runs.
 
-Memory accesses are of two kinds. **Instruction fetches** read the instruction word and the constant words (steps 1 and 2 of §5). **Data accesses** are the operand reads, the destination writes, and the vector table reads.
+Memory accesses are of two kinds. **Instruction fetches** read the instruction word and the constant words (steps 1 and 2 of §5). **Data accesses** are the operand reads and the destination writes.
 
 **Data accesses are exact and in order.** Each data access named in this document is performed exactly once, as a separate access, and in program order. No data access is merged with another, dropped, repeated, reordered, or performed speculatively. I/O devices may rely on this. For one instruction the data accesses are:
 
@@ -463,7 +391,7 @@ Memory accesses are of two kinds. **Instruction fetches** read the instruction w
 2. Read s0 if its mode is 100–111, then s1 if its mode is 100–111. This applies even when the operation ignores the operand (§4.4). So `ADD R1, @R2, @R2` reads mem[R2] twice, and a `MOVE` whose unused s1 field holds `@R3` also reads mem[R3].
 3. Write the destination if its mode is 011–111. The destination is never read.
 
-Interrupt entry (§7.2), including `INT`, makes one data access: the read of the vector table entry. Control instructions make no other data accesses.
+Control instructions make no data access.
 
 **Instruction fetches are not ordered.** The processor may fetch instruction words and constant words early, more than once, or for instructions that never run. It may do so in any order relative to data accesses. Only the result is defined: each instruction runs with the words that memory held when the instructions before it had completed. This lets a pipelined processor fetch ahead, and lets instruction fetches and data accesses use separate buses.
 
@@ -528,19 +456,20 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 
 - **Case.** Labels and `.EQU` names are case-sensitive. Mnemonics, register names, conditions, modifiers, and directives are not.
 - **Comments.** A comment starts with `;` anywhere outside a string, or with `*` at the start of a word, and runs to the end of the line. So `4 *x` is `4` and a comment, and `4*x` is a product (§10.2).
-- **Separators.** On a line with a comma between its operands, the operands are separated by commas only, so an operand may hold spaces, as in `MOVE R1, end - data`. Its words are joined, and two of them with no `+`, `-`, or `*` between them are an error, so `ADD R1 R2, R3` is an error. An instruction or directive that takes one operand, such as `JMP`, `INT`, `.ORG`, or an `.EQU` value, takes all of its words as that operand, joined the same way: `JMP end + 2`, `N .EQU 2 + 3`. On a line without a comma, the operands are separated by whitespace, so `.DAT 1 +5` is two words, 1 and 5, but `.DAT 1 +5, 3` is 6 and 3.
+- **Separators.** On a line with a comma between its operands, the operands are separated by commas only, so an operand may hold spaces, as in `MOVE R1, end - data`. Its words are joined, and two of them with no `+`, `-`, or `*` between them are an error, so `ADD R1 R2, R3` is an error. An instruction or directive that takes one operand, such as `JMP`, `.ORG`, or an `.EQU` value, takes all of its words as that operand, joined the same way: `JMP end + 2`, `N .EQU 2 + 3`. On a line without a comma, the operands are separated by whitespace, so `.DAT 1 +5` is two words, 1 and 5, but `.DAT 1 +5, 3` is 6 and 3.
 - **Labels.** A label is the first word on a line that is not a mnemonic or a directive. It may end with `:`, and so may an `.EQU` name. Its value is the address of what follows on that line; on a `.ORG` line, that is the new address. A label or `.EQU` name is an ASCII letter or `_` followed by ASCII letters, digits, `_`, and `.`. It cannot be a mnemonic, a register name, or look like one: `R` followed by digits, so `R16` is rejected too.
 - **Anonymous labels.** A lone `:` as the label is an anonymous label, for a short loop that needs no name. It stands where a label may, also on a line of its own and on a `.ORG` line, and has the value a label there would have. `:-` refers to the nearest anonymous label above, and `:--` to the one before it, one more for each `-`. A label on the line of the reference counts as above. `:+` refers to the nearest anonymous label below, and `:++` to the one after it. They count in source order, not by address, so a `.ORG` does not change them. An anonymous label cannot be an `.EQU` name, and `niceasm --symbols` does not write it.
 
       :               SUB[M]  R1, R1, 1
               ?!Z     JMP     :-              ; back to the SUB
-- **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?M`/`?!M` are accepted as aliases for `?E`/`?!E`.
+- **Conditions.** `?cond` is one of the condition codes in §3, such as `?Z` or `?!C`. Without one, the instruction is unconditional. `?E` and `?M` are accepted as aliases for `?F0`, and `?I` for `?F1`, each with its `!` form.
 - **Modifiers.** `[M]` sets the M bit and `[C]` sets the C bit. `[CM]` and `[MC]` set both. `[C]` is accepted only on ALU instructions.
 - **Operand counts.** The assembler expects exactly the operands the instruction uses:
   - `ONE` takes dest only.
   - `MOVE`, `DBL`, `DEC`, and `NOT` take dest and s0.
   - The other ALU and SHIFT instructions take dest, s0, and s1.
-  - `HALT`, `RTI`, and `WAIT` take none, and `INT` takes the vector number.
+  - `HALT` takes none.
+- **No interrupt instructions.** `RTI`, `INT`, and `WAIT` are not mnemonics, as NICE has no interrupts (§7). The assembler rejects each of them with an error where a mnemonic stands, and none can be a label or an `.EQU` name, so an old source that uses them does not assemble by accident.
 - **Pseudo-instructions.** `CALL target` assembles as `ADD @--R13, n, R15` followed by `MOVE R15, target`, where n is the size of the `MOVE` in words: 2 when target has a constant word, else 1. `RET` assembles as `MOVE R15, @R13++`. These are the call and return of §9.1, so R13 is the stack pointer. A condition applies to every instruction of the expansion: `?Z CALL sub` calls only when Z is set, since `ADD` without `[M]` leaves the flags for the `MOVE`. Neither takes a modifier. Both are mnemonics, so neither can be a label or an `.EQU` name.
 - **One-instruction pseudo-instructions.** These are the other idioms of §9 and two common moves, each one instruction:
 
@@ -572,7 +501,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
 | `c`, `c[Rx]` | A constant, mode 011. As a source its value is Rx + c. As a destination it writes mem[Rx + c]. |
 | `@c`, `@c[Rx]` | Memory at Rx + c, mode 111. |
 
-- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+`, `-`, and `*`, with an optional leading sign, such as `end-data`, `-1`, or `4*label`. It may hold spaces where the operand may (§10.1), as in `end - data`, but a product has none before its `*`: a word that starts with `*` starts a comment, so `4 * x` is `4` and a comment, while `4* x` is the product. `*` binds tighter than `+` and `-`, a leading sign is on the first product, and there are no parentheses. An `.EQU` name in an expression stands for its value as a whole, so with `N .EQU 2+3`, `4*N` is 20. An anonymous label reference (§10.1) is a term too, as in `@:-` or `4*:+`. All the signs after its `:` are part of it, so an offset goes before it, as in `2+:-`, and `:++2` is an error. It cannot appear in an `.EQU` value. Each number must be below 2³², so `4294967296` and `0x100000000` are errors. The value of an expression wraps modulo 2³², except for `INT`, `.BLK`, and `.RES`, which take it before it wraps and reject it out of range, so `INT 0xFFFFFFFF+1` is an error, not vector 0.
+- **Numbers and expressions.** `0x` hex, `0b` binary, and plain decimal. The prefix and the digits may be in either case. There is no `#` prefix and no `$`. A label or an `.EQU` name may appear wherever a number may. A constant may also be an expression: numbers and symbols joined with `+`, `-`, and `*`, with an optional leading sign, such as `end-data`, `-1`, or `4*label`. It may hold spaces where the operand may (§10.1), as in `end - data`, but a product has none before its `*`: a word that starts with `*` starts a comment, so `4 * x` is `4` and a comment, while `4* x` is the product. `*` binds tighter than `+` and `-`, a leading sign is on the first product, and there are no parentheses. An `.EQU` name in an expression stands for its value as a whole, so with `N .EQU 2+3`, `4*N` is 20. An anonymous label reference (§10.1) is a term too, as in `@:-` or `4*:+`. All the signs after its `:` are part of it, so an offset goes before it, as in `2+:-`, and `:++2` is an error. It cannot appear in an `.EQU` value. Each number must be below 2³², so `4294967296` and `0x100000000` are errors. The value of an expression wraps modulo 2³², except for `.BLK` and `.RES`, which take it before it wraps and reject it out of range, so `.RES 0xFFFFFFFF+1` is an error, not 0 words.
 - **Register aliases.** Programs define them with `.EQU`, for example `SP .EQU R13` and `PC .EQU R15`.
 
 ### 10.3 Directives
@@ -623,19 +552,19 @@ It executes as follows:
 |---|---|---|---|
 | 0, C | M | 0000–1111 | `MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR` |
 | 10 | M | 0000–1111 | `0<0 0<1 0<C C<0 C<1 C<C <<< C<< 0>0 1>0 C>0 0>C 1>C C>C >>> >>C` |
-| 11 | command, bits 25..21 | | `HALT` (0), `RTI` (1), `INT` (2), `WAIT` (3), reserved (4–31) |
+| 11 | command, bits 25..21 | | `HALT` (0), reserved (1–31) |
 
 ## Appendix B: Departures from the sources
 
 | Topic | This specification | Sources that disagree |
 |---|---|---|
-| Condition field and SR layout | NEG at bit 31, SEL at 30..28; SR bits 31..24 = `I E V N Z C X 1` (2004 web page and emulator, same as QNICE) | Both articles: SEL at 31..29, NEG at 28, SR bit 31 = 1 |
-| Meaning of SR bits 31 and 30 | I = an interrupt was taken, E = maskable interrupts enabled (web page) | Articles: M = maskable interrupt occurred, I = enabled |
-| Name of SR bit 30 | E, so that M only ever means the instruction's modify-flags bit | Web page and emulator call it M, with condition `?M` |
+| Condition field and SR layout | NEG at bit 31, SEL at 30..28; SR bits 29..24 = `V N Z C X 1` (2004 web page and emulator, same as QNICE) | Both articles: SEL at 31..29, NEG at 28, SR bit 31 = 1 |
+| SR bits 31 and 30 | F1 and F0, two flags for software with no meaning to the hardware, tested by the conditions `?F1` and `?F0` (§1.3, §3). The assembler accepts `?I`, `?E`, and `?M` for them. | Web page: I = an interrupt was taken, E = maskable interrupts enabled, and the emulator calls E M, with condition `?M`. Articles: M = maskable interrupt occurred, I = enabled. |
+| SR bits 23..0 | U, 24 bits for software (§1.3) | Not specified anywhere |
 | Order of constant words | dest, s0, s1 (emulator and its binaries) | 1997 article: s1, s2, dest |
 | R15 as an operand | Address of the next instruction (1999 article, emulator, QNICE) | 1997 article: the current instruction |
-| Interrupt model | Hidden saved PC and SR, `RTI`, `INT`, no nesting (QNICE) | Articles and web page: R13 receives the return address and software nests interrupts |
-| HALT encoding space | Control group with `HALT`, `RTI`, `INT`, `WAIT`; reserved commands halt | Web page: spare bits "have no meaning and should be zero" |
+| Interrupts | None: no interrupt request, `INT`, `RTI`, or `WAIT` (§7) | Articles and web page: a maskable interrupt and an NMI, with R13 receiving the return address. QNICE has interrupts, `INT`, and `RTI`. |
+| HALT encoding space | Control group with `HALT`; the other commands are reserved and halt (§5.3) | Web page: spare bits "have no meaning and should be zero" |
 | Carry input to `SUB` | Subtracts C (borrow) | 1997 article: every arithmetic op adds C. The emulator subtracts it, as here. |
 | `MOVE`, `DEC` with the C bit | C bit ignored (emulator) | 1997 article: adds C |
 | `ONE` | r = 1 (emulator and web page) | The 74181 background suggests all ones |
@@ -648,10 +577,6 @@ It executes as follows:
 | Missing memory, I/O | Reads return 0; I/O at `0xFFFFFF00`–`0xFFFFFFFF` | Not specified anywhere |
 | SR bit 24 within an instruction | Always 1; every write to R14, side effects included, sets it (§4.3) | Not specified anywhere. The emulator forces it only before and after each instruction. |
 | `R14--` and `R14++` as destinations | r is written, then decremented or incremented, and each write sets bit 24 (§4.2) | Not specified anywhere |
-| Interrupt entry details | Entry sets I; NMI is taken before IRQ; NMI does not nest either (§7.1, §7.2) | Not specified anywhere. The articles have NMI and IRQ serviced "the same way". |
-| Pending interrupt requests | Deferred, never lost; a source's requests merge, keeping the first vector; those of different sources are taken in turn (§7.1) | Not specified anywhere |
-| `WAIT` | A wait for an NMI or IRQ that ends also while E = 0 or `in_service` = 1, as RISC-V's `WFI` (§7.5) | Not in the sources, which have only `HALT` |
-| Interrupts right after `RTI` | No IRQ or NMI until the instruction after `RTI` completes (`after_rti`, §7.1) | Not specified anywhere. QNICE guarantees the same progress. |
 | Memory access order | Each data access exactly once, unmerged, and in program order. Instruction fetches may run ahead, repeat, or be wasted (§8.2) | Not specified anywhere |
 | Instruction fetches from the I/O range | Read 0 and never reach a device (§8.3) | Not specified anywhere |
 | Carry input timing | The C flag as step 5 of §5 left it (§5.1, §5.2) | Not specified anywhere. The emulator also reads C after the source operands. |

@@ -114,19 +114,17 @@ it keeps its pace in the window. It takes one key at each step, so in the
 test, where a microsecond is a step, each key of the input file is one
 step.
 
-The board runs a self-test of four tests each time that F11 starts it,
+The board runs a self-test of three tests each time that F11 starts it,
 and shows PASS or FAIL for each:
 
 | Test | What it checks |
 |---|---|
 | RAM | The 8192 words from `0x0000B000` to `0x0000CFFF`, above the demo's variables and below a monitor's stack, RAM on every board: each is written with its address, and then with its address inverted, and read back |
 | Math unit | Signed and unsigned products and quotients of 32 bits, a division by zero, the most negative number divided by −1, and quotients of 64 bits, against known results |
-| Timer | 10 interrupts, one every 1000 cycles, which must come within 9500 to 10500 cycles of the start |
 | Performance counters | The instructions of a known sequence, and over a loop, at least as many cycles as instructions, some microseconds, and 1 to 255 cycles per microsecond |
 
 A failure shows two words in hex: the address that failed and the word
-read there, or for the timer, the interrupts that came and the cycles
-that they took. The last line says whether all tests passed.
+read there. The last line says whether all tests passed.
 
 Below the self-test is the network station
 ([DEVICES.md §6](../doc/DEVICES.md#6-network-station)), shown again and
@@ -181,8 +179,7 @@ assembled at `0x8000`, with its own entry there, which keeps the SP that
 the monitor called it with in `D_SP`. Each demo starts with SP at
 `D_SP`, and F12 returns from there with the status 0 in R1, after it has
 cleared the screen and put the cursor at the top left. A monitor that
-keeps a cursor of its own sets it again. The monitor then clears E, stops
-the timer, and sets VBASE to 0, as ABI.md says. In `niceemu`, the
+keeps a cursor of its own sets it again. In `niceemu`, the
 runtime's stand-in for a monitor, `runtime/test/monitor_console.nasm`,
 sits at 0: it sets SP to `0xFFFFFF00`, calls the demo, and halts when it
 returns.
@@ -202,15 +199,8 @@ NiceMonMEGA65, its variables from `0xFFFFF000`, the RAM that it keeps
 below them, and its stack below that.
 The assembler checks that the image stays below `VARS`, as the variables
 and the tested RAM are `.RES` blocks. The demo writes only these words,
-the screen, the cursor's registers, the math unit, the timer, the
-station's addresses, and its stack.
-
-The self-test's timer interrupt goes through vector `0x41` and a vector
-table at `0x8000`, VBASE `0x80`, the first page of the image. Its only
-entry, the word at `0x8041`, holds the address of the routine, which
-counts the interrupts in RAM. The self-test sets VBASE, and leaves the
-timer stopped and E clear when it is done, so no other demo has
-interrupts.
+the screen, the cursor's registers, the math unit, the station's
+addresses, and its stack.
 
 The demo scrolls by copying the rows, not with the display offset, so
 that the welcome stays, and so that it runs the same in `niceemu`, where

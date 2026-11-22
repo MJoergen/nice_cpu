@@ -180,7 +180,6 @@ ffff0098: fff00031 fff00020 fff00062 fff0006f fff00061 fff00072 fff00064 fff0002
 ffff01c2: 0000f050 0000f041 0000f053 0000f053
 ffff0212: 0000f050 0000f041 0000f053 0000f053
 ffff0262: 0000f050 0000f041 0000f053 0000f053
-ffff02b2: 0000f050 0000f041 0000f053 0000f053
 ffff0322: 0000f041 0000f06c 0000f06c 0000f020 0000f074 0000f065 0000f073 0000f074
 ffff032a: 0000f073 0000f020 0000f070 0000f061 0000f073 0000f073 0000f065 0000f064
 ffff0332: 0000f02e
@@ -192,13 +191,13 @@ Screen:
 |
 |    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
-|    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
+|
 |
 |  All tests passed.
 |
-|  A failure shows where it failed and what was read: an address and its word,
-|  or for the timer, the interrupts that came and the cycles that they took.
+|  A failure shows where it failed and what was read: an address and its word.
+|
 |
 |  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
 |  IP address            0.0.0.0
@@ -216,13 +215,13 @@ Screen:
 |
 |    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
-|    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
+|
 |
 |  All tests passed.
 |
-|  A failure shows where it failed and what was read: an address and its word,
-|  or for the timer, the interrupts that came and the cycles that they took.
+|  A failure shows where it failed and what was read: an address and its word.
+|
 |
 |  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
 |  IP address            0.0.0.0
@@ -242,13 +241,13 @@ Screen:
 |
 |    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
-|    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
+|
 |
 |  All tests passed.
 |
-|  A failure shows where it failed and what was read: an address and its word,
-|  or for the timer, the interrupts that came and the cycles that they took.
+|  A failure shows where it failed and what was read: an address and its word.
+|
 |
 |  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
 |  IP address            192.168.1.65
@@ -266,13 +265,13 @@ Screen:
 |
 |    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
-|    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
+|
 |
 |  All tests passed.
 |
-|  A failure shows where it failed and what was read: an address and its word,
-|  or for the timer, the interrupts that came and the cycles that they took.
+|  A failure shows where it failed and what was read: an address and its word.
+|
 |
 |  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
 |  IP address            0.0.0.0
@@ -292,13 +291,13 @@ Screen:
 |
 |    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                PASS
-|    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
+|
 |
 |  All tests passed.
 |
-|  A failure shows where it failed and what was read: an address and its word,
-|  or for the timer, the interrupts that came and the cycles that they took.
+|  A failure shows where it failed and what was read: an address and its word.
+|
 |
 |  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
 |  IP address            0.0.0.0
@@ -323,13 +322,13 @@ Screen:
 |
 |    RAM, 0000B000 to 0000CFFF                     PASS
 |    Math unit, multiply and divide                FAIL FFFFFF23 FFFFFFFF
-|    Timer, 10 interrupts every 1000 cycles        PASS
 |    Performance counters                          PASS
+|
 |
 |  A test failed.
 |
-|  A failure shows where it failed and what was read: an address and its word,
-|  or for the timer, the interrupts that came and the cycles that they took.
+|  A failure shows where it failed and what was read: an address and its word.
+|
 |
 |  The network station, 0xFFFFFFB0 to 0xFFFFFFBF
 |  IP address            0.0.0.0

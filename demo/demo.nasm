@@ -9,8 +9,8 @@
 ; afresh. F3 shows the bytes of each key, in hex and as characters, F5 the
 ; 256 characters of the font and ramps of colors, F7 the performance
 ; counters and those of a prime sieve, F9 is a game, the comet, and F11 is
-; the board: it tests the RAM, the math unit, the timer's interrupts, and
-; the counters, and shows and sets the network station's addresses.
+; the board: it tests the RAM, the math unit, and the counters, and shows
+; and sets the network station's addresses.
 ; At the start the typewriter, F1, runs. Its top rows say what the core is
 ; and how to go further, and the rows below them take what is typed, from
 ; the keyboard or the UART: a character goes at the cursor, RETURN starts a
@@ -33,17 +33,16 @@
 ; memory, so the program would not scroll there.
 ;
 ; The demo is a program under a monitor (runtime/ABI.md, "Programs under a
-; monitor"), assembled at 0x8000. A monitor calls it there with E = 0 and
-; SP on the monitor's stack; in niceemu, the runtime's stand-in for a
+; monitor"), assembled at 0x8000. A monitor calls it there with SP on
+; the monitor's stack; in niceemu, the runtime's stand-in for a
 ; monitor, runtime/test/monitor_console.nasm, does. Each demo starts with
 ; SP as it was at the entry, and F12 clears the screen and returns from
 ; there with the status 0. The variables are at VARS, past the image, and
 ; F11 tests the RAM from RAM_LO, past them, up to 0xCFFF, below a
 ; monitor's stack and variables, which are at the top of the address
-; space. The vector table of the timer's interrupt is the page 0x8000
-; of the image. So the demo writes no memory but these words, the screen,
-; the cursor's registers, the math unit, the timer, the network station's
-; addresses when F11 sets them, and the stack. The words are the same in
+; space. So the demo writes no memory but these words, the screen, the
+; cursor's registers, the math unit, the network station's addresses when
+; F11 sets them, and the stack. The words are the same in
 ; niceemu.
 ;
 ; On the board, a read of the console returns 0 until a byte arrives, so the
@@ -135,18 +134,10 @@ G_TICK          .EQU    VARS+2058       ; the microseconds from a tick to the ne
 G_OVER          .EQU    VARS+2059       ; 1 after the game has ended
 
 ; The variables of F11, in the same words, and the RAM that it tests
-S_TICKS         .EQU    VARS+2049       ; the interrupts of the timer
 B_MODE          .EQU    VARS+2050       ; 0, or 1 or 2 while an IP or MAC address is typed
 VARS_N          .EQU    2064            ; the words from VARS
 RAM_LO          .EQU    0xB000          ; the RAM tested
 RAM_N           .EQU    8192            ; up to 0xCFFF
-
-; The timer, and the vector of its interrupt, whose entry in the table at
-; VBASE * 256 is at 0x8041, in the image (see the entry)
-TM_PER          .EQU    0xFFFFFF10      ; the period, in cycles, or 0 to stop
-TM_VEC          .EQU    0xFFFFFF12
-VBASE           .EQU    0x80
-VECTOR          .EQU    0x41
 
 ; The network station (doc/DEVICES.md §6)
 E_IP            .EQU    0xFFFFFFB0      ; the IP address, the first byte in bits 31..24
@@ -204,11 +195,6 @@ T_ESC           .EQU    10000
                 .ORG    0x8000
                 MOVE    @D_SP, SP
                 JMP     TYPEW
-
-; The entry of the timer's interrupt in the vector table, at VBASE * 256 +
-; VECTOR
-                .ORG    0x8041
-                .DAT    TICK
 
 ; The typewriter: the welcome, and the rows below it
 TYPEW           MOVE    SP, @D_SP
@@ -822,9 +808,9 @@ STATUS          PUSH    R1
                 CALL    PRINT
                 RET
 
-; The board: the self-test of the RAM from RAM_LO, the math unit, the timer's
-; interrupts, and the performance counters, each with PASS or FAIL, once each
-; time that F11 starts it. R10 counts the failures. Then the Ethernet
+; The board: the self-test of the RAM from RAM_LO, the math unit, and the
+; performance counters, each with PASS or FAIL, once each time that F11
+; starts it. R10 counts the failures. Then the Ethernet
 ; station's addresses and counts, which BLOOP shows again and again, and
 ; which I and M change (see ESTART).
 BOARD           MOVE    SP, @D_SP
@@ -839,11 +825,8 @@ BOARD           MOVE    SP, @D_SP
                 CALL    TMATH
                 MOVE    R2, SCREEN+530
                 CALL    RESULT
-                CALL    TTIMER
-                MOVE    R2, SCREEN+610
-                CALL    RESULT
                 CALL    TCOUNT
-                MOVE    R2, SCREEN+690
+                MOVE    R2, SCREEN+610
                 CALL    RESULT
                 MOVE    R1, S_PASSED
                 MOVE    R3, TAIL
@@ -869,8 +852,7 @@ BLOOP           CALL    SHOWNET
                 JMP     BLOOP
 
 ; Each test sets R1 to 0 when it passes. When it fails, R1 is 1, and R5 and
-; R6 tell what failed: an address and the word read there, or for the timer,
-; the interrupts and the cycles that they took.
+; R6 tell what failed: an address and the word read there.
 
 ; TRAM writes each word of the RAM_N words from RAM_LO with its address,
 ; checks them, and does the same with the addresses inverted.
@@ -914,40 +896,6 @@ TMATH           MOVE    R2, MATH
                 RET
 MPASS           MOVE    R1, 0
                 RET
-
-; TTIMER lets the timer raise 10 interrupts, one every 1000 cycles, which
-; TICK counts, and checks that they came in 9500 to 10500 cycles. It waits
-; at most 100000 cycles. It sets VBASE, and leaves E clear.
-TTIMER          MOVE    @S_TICKS, 0
-                MOVE    @TM_VEC, VECTOR
-                AND     R14, R14, 0xFF000000
-                OR      R14, R14, VBASE
-                MOVE    R5, @P_CYC
-                MOVE    @TM_PER, 1000
-                OR      R14, R14, 0x40000000  ; E, which lets the interrupts in
-:               SUB     R6, @P_CYC, R5
-                CMP     @S_TICKS, 10
-        ?Z      JMP     :+
-                CMP     R6, 100000
-        ?C      JMP     :-
-:               MOVE    @TM_PER, 0
-                NOP                     ; a request still pending is taken here
-                NOP
-                AND     R14, R14, 0xBFFFFFFF
-                MOVE    R5, @S_TICKS
-                MOVE    R1, 1
-                CMP     R5, 10
-        ?C      RET                     ; fewer than 10
-                CMP     R6, 9500
-        ?C      RET
-                CMP     R6, 10500
-        ?!C     RET
-                MOVE    R1, 0
-                RET
-
-; TICK, the routine of the timer's interrupt
-TICK            ADD     @S_TICKS, @S_TICKS, 1
-                RTI
 
 ; TCOUNT checks the performance counters: the instructions of a known
 ; sequence, and over a loop, at least as many cycles as instructions, some
@@ -1293,9 +1241,8 @@ HEX8            MOVE    R4, 8
                 RET
 
 ; F12 returns to the monitor, or whatever called the demo, with the screen
-; cleared, the cursor at the top left, steady, and the status 0. Every demo
-; leaves the timer stopped and E clear. A monitor that keeps a cursor of
-; its own sets it again.
+; cleared, the cursor at the top left, steady, and the status 0. A monitor
+; that keeps a cursor of its own sets it again.
 MONITOR         MOVE    SP, @D_SP
                 MOVE    R2, SCREEN
                 MOVE    R3, TEXT+0x20
@@ -1594,10 +1541,8 @@ MSHIFT          .DAT    8, 0, 24, 16, 8, 0
 S_TEXTS         .DAT    242, LINK, S1
                 .DAT    404, TEXT, S_RAM
                 .DAT    484, TEXT, S_MATH
-                .DAT    564, TEXT, S_TIMER
-                .DAT    644, TEXT, S_COUNT
-                .DAT    962, TEXT, S_NOTE1
-                .DAT    1042, TEXT, S_NOTE2
+                .DAT    564, TEXT, S_COUNT
+                .DAT    962, TEXT, S_NOTE
                 .DAT    1202, LINK, S_ETH
                 .DAT    1282, TEXT, S_IP
                 .DAT    1362, TEXT, S_MAC
@@ -1610,10 +1555,8 @@ S_TEXTS         .DAT    242, LINK, S1
 S1              .ASCII_L 'A self-test, which runs each time that F11 starts it'
 S_RAM           .ASCII_L 'RAM, 0000B000 to 0000CFFF'
 S_MATH          .ASCII_L 'Math unit, multiply and divide'
-S_TIMER         .ASCII_L 'Timer, 10 interrupts every 1000 cycles'
 S_COUNT         .ASCII_L 'Performance counters'
-S_NOTE1         .ASCII_L 'A failure shows where it failed and what was read: an address and its word,'
-S_NOTE2         .ASCII_L 'or for the timer, the interrupts that came and the cycles that they took.'
+S_NOTE          .ASCII_L 'A failure shows where it failed and what was read: an address and its word.'
 S_ETH           .ASCII_L 'The network station, 0xFFFFFFB0 to 0xFFFFFFBF'
 S_IP            .ASCII_L 'IP address'
 S_MAC           .ASCII_L 'MAC address'

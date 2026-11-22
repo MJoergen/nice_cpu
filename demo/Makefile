@@ -142,11 +142,11 @@ TEST15 = ab\010c\nwxyz\033OD\033OD\033OA1\033OC\033OB2\033[12~!\033[14~?
 TEST16 = abc\033[24~more
 TESTS  = 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
 # For the colors, which niceemu does not show, the ninth has the words of
-# the menu, with F11 in black on white, of the four PASS in green, and of
+# the menu, with F11 in black on white, of the three PASS in green, and of
 # the line after them, and the fourteenth those of the FAIL in red, with
 # its words in white, and of the line after it
 DUMP9  = -d 0xFFFF0050:80 -d 0xFFFF01C2:4 -d 0xFFFF0212:4 -d 0xFFFF0262:4 \
-	 -d 0xFFFF02B2:4 -d 0xFFFF0322:17
+	 -d 0xFFFF0322:17
 DUMP14 = -d 0xFFFF0212:22 -d 0xFFFF0322:14
 
 test: $(BUILD)/emu_test.bin $(BUILD)/emu_fail.bin $(EMU)

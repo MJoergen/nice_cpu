@@ -20,14 +20,14 @@ syn match niceLabel     ":\(-\+\|+\+\)"
 " Instructions
 syn keyword niceAlu     MOVE SUB MDBL ADD DBL DEC NOT NOR IAND NAND XOR IOR XNOR AND ONE OR
 syn keyword niceShift   SHL SHR ROL ROR BPL BPR
-syn keyword niceControl HALT RTI INT WAIT
+syn keyword niceControl HALT
 syn keyword nicePseudo  CALL RET JMP JMPR CMP TST PUSH POP CLR NOP
 
 " Modifiers: [M], [C], [CM], [MC]
 syn match niceModifier  "\[[CM]\+\]"
 
 " Conditions: ?Z, ?!C, ?1, and so on
-syn match niceCond      "?!\=[1XCZNVEIM]\>"
+syn match niceCond      "?!\=\([1XCZNVEIM]\|F[01]\)\>"
 
 " Directives
 syn match niceDirective "\.\(EQU\|ORG\|DAT\|BLK\|RES\|ASCII_L\|ASCII_B\)\>"

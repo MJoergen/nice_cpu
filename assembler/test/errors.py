@@ -67,12 +67,18 @@ CASES: List[Tuple[str, str]] = [
     (" ADD R1, R2", "1: error: ADD takes 3 operands, got 2"),
     (" SHL R1, R2", "1: error: SHL takes 3 operands, got 2"),
     (" HALT R1", "1: error: HALT takes 0 operands, got 1"),
-    (" INT", "1: error: INT takes 1 operand, got 0"),
-    (" INT 256", "1: error: interrupt vector 256 is out of range 0..255"),
-    (" INT -1", "1: error: interrupt vector -1 is out of range 0..255"),
-    # INT takes the value before it wraps (ISA.md section 10.2).
-    (" INT 0xFFFFFFFF+1", "1: error: interrupt vector 4294967296 is out of range 0..255"),
-    (" INT v\n .ORG 256\nv HALT", "1: error: interrupt vector 256 is out of range 0..255"),
+    # The instructions of the interrupts are gone (#162), whatever their
+    # operands, modifiers, or condition; their names are still no symbols,
+    # so a WAIT alone on a line is an error, not a label.
+    (" INT", "1: error: INT: NICE has no interrupts (ISA.md section 7)"),
+    (" INT 0x21", "1: error: INT: NICE has no interrupts (ISA.md section 7)"),
+    (" RTI", "1: error: RTI: NICE has no interrupts (ISA.md section 7)"),
+    ("?Z WAIT", "1: error: WAIT: NICE has no interrupts (ISA.md section 7)"),
+    ("WAIT", "1: error: WAIT: NICE has no interrupts (ISA.md section 7)"),
+    ("rti:", "1: error: 'rti' is a reserved word and cannot be a symbol"),
+    # The conditions of SR bits 30 and 31 are ?F0 and ?F1; ?F alone is none.
+    ("?F HALT", "1: error: bad condition '?F'"),
+    ("?F2 HALT", "1: error: bad condition '?F2'"),
     # Conditions and modifiers
     ("?Q MOVE R1, R2", "1: error: bad condition '?Q'"),
     ("?Z", "1: error: condition without an instruction"),
@@ -124,7 +130,6 @@ CASES: List[Tuple[str, str]] = [
     # Third round of the review
     ("SP .EQU R13\nX .EQU 5[SP]\n .DAT X", "3: error: 'X' stands for the operand '5[SP]', not a number"),
     ("SP .EQU R13\nX .EQU 5[SP]\n MOVE R1, X+1", "3: error: 'X' stands for the operand '5[SP]', not a number"),
-    ("SP .EQU R13\nX .EQU 5[SP]\n INT X", "3: error: 'X' stands for the operand '5[SP]', not a number"),
     ("SP .EQU R13\nX .EQU 5[SP]\nY .EQU X+1\n .DAT Y", "3: error: 'X' stands for the operand '5[SP]', not a number"),
     ("SP .EQU R13\nY .EQU SP+1\n .DAT Y", "2: error: 'SP' is a register where a number is expected"),
     (" MOVE[M] [M] R1, R2", "1: error: 'MOVE[M] [M]': write each modifier once, in one bracket after the mnemonic"),
@@ -152,7 +157,6 @@ CASES: List[Tuple[str, str]] = [
     ("S .EQU 'ab'", "1: error: a string ('ab') is only allowed after .ASCII_L and .ASCII_B"),
     ("A .EQU R1\n .DAT A", "2: error: 'A' is a register where a number is expected"),
     ("A .EQU R1\n .ORG A", "2: error: 'A' is a register where a number is expected"),
-    ("A .EQU R1\n INT A", "2: error: 'A' is a register where a number is expected"),
     ("A .EQU R1\n MOVE --A, 1", "2: error: '--A': pre-decrement is not a destination mode, use Rx--"),
     ("X .EQU --R2\n MOVE X, R1", "2: error: 'X' (= '--R2'): pre-decrement is not a destination mode, use Rx--"),
     ("X .EQU @R2\n MOVE R1, @X", "2: error: '@X' (= '@@R2'): there is only one level of '@'"),
@@ -161,8 +165,7 @@ CASES: List[Tuple[str, str]] = [
     # Coverage audit: numbers and expressions
     (" MOVE R1, $10", "1: error: expected a number or a symbol at '$10'"),
     (" MOVE R1, #5", "1: error: expected a number or a symbol at '#5'"),
-    (" INT @5", "1: error: expected a number or a symbol at '@5'"),
-    (" INT R1", "1: error: 'R1' is a register where a number is expected"),
+    (" .DAT @5", "1: error: expected a number or a symbol at '@5'"),
     (" .DAT 'a'", "1: error: a string ('a') is only allowed after .ASCII_L and .ASCII_B"),
     (" .DAT 4294967296", "1: error: number too large: '4294967296'"),
     (" .DAT 0x", "1: error: bad number '0x'"),
@@ -182,22 +185,20 @@ CASES: List[Tuple[str, str]] = [
     # register cannot be a factor (#118)
     (" MOVE R1, R2*c", "1: error: 'R2' is a register where a number is expected"),
     # Products: a missing factor, a factor after a sign, and the range of
-    # INT and .BLK, taken before the value wraps (#118)
+    # .BLK, taken before the value wraps (#118)
     (" .DAT 4*", "1: error: bad expression '4*'"),
     (" .DAT 4**2", "1: error: bad expression '4**2'"),
     (" .DAT 1+*2", "1: error: bad expression '1+*2'"),
-    (" INT 128*2", "1: error: interrupt vector 256 is out of range 0..255"),
     (" .ORG 1\n .BLK 0x10000*0x10000",
      "2: error: .BLK of 4294967296 words at 0x00000001 runs past address 0xffffffff"),
     # Coverage audit: operand counts, conditions, and modifiers
-    (" RTI 1", "1: error: RTI takes 0 operands, got 1"),
-    (" INT 1, 2", "1: error: INT takes 1 operand, got 2"),
+    (" RTI 1", "1: error: RTI: NICE has no interrupts (ISA.md section 7)"),
+    (" INT 1, 2", "1: error: INT: NICE has no interrupts (ISA.md section 7)"),
     (" ONE R1, R2", "1: error: ONE takes 1 operand, got 2"),
     (" DBL R1, R2, R3", "1: error: DBL takes 2 operands, got 3"),
     (" 0<0 R1, R2, R3, R4", "1: error: 0<0 takes 3 operands, got 4"),
-    (" RTI[M]", "1: error: RTI takes no modifiers"),
-    (" WAIT 1", "1: error: WAIT takes 0 operands, got 1"),
-    (" WAIT[M]", "1: error: WAIT takes no modifiers"),
+    (" RTI[M]", "1: error: RTI: NICE has no interrupts (ISA.md section 7)"),
+    (" WAIT[M]", "1: error: WAIT: NICE has no interrupts (ISA.md section 7)"),
     # Anonymous labels (ISA.md 10.1)
     (" JMP :+", "1: error: ':+': no anonymous label below"),
     (" JMP :-", "1: error: ':-': no anonymous label above"),
@@ -224,8 +225,8 @@ CASES: List[Tuple[str, str]] = [
     (":: HALT", "1: error: bad symbol name '::'"),
     (":- HALT", "1: error: bad symbol name ':-'"),
     (":+: HALT", "1: error: bad symbol name ':+'"),
-    ("wait .EQU 5", "1: error: 'wait' is a mnemonic and cannot be a symbol"),
-    (" INT[C] 1", "1: error: INT takes no modifiers"),
+    ("wait .EQU 5", "1: error: 'wait' is a reserved word and cannot be a symbol"),
+    ("halt .EQU 5", "1: error: 'halt' is a mnemonic and cannot be a symbol"),
     (" SHL[CM] R1, R2, R3", "1: error: [C] is only allowed on ALU instructions"),
     (" MOVE[] R1, R2", "1: error: 'MOVE[]': bad modifier"),
     (" MOVE[CMC] R1, R2", "1: error: 'MOVE[CMC]': bad modifier"),
@@ -312,7 +313,11 @@ GOOD: List[Tuple[str, str]] = [
     ("x .EQU 3\n JMP 4* x", "00000000 0003d800\n00000001 0000000c\n"),
     (" .DAT 1 +5", "00000000 00000001\n00000001 00000005\n"),
     (" .DAT 1 +5, 3", "00000000 00000006\n00000001 00000003\n"),
-    (" INT 1 + 2", "00000000 0c400003\n"),
+    # ?F0 and ?F1 (#162), and ?E, ?I, and ?M, their old names: HALT
+    # 0c000000 with SEL 110 or 111, and NEG 1 for '!'.
+    ("?F0 HALT\n?!f1 HALT\n?e HALT\n?!I HALT\n?M HALT",
+     "00000000 6c000000\n00000001 fc000000\n00000002 6c000000\n"
+     "00000003 fc000000\n00000004 6c000000\n"),
     (" .ORG 0xFFFFFFFE\n .BLK 2\n HALT",
      "00000000 0c000000\nfffffffe 00000000\nffffffff 00000000\n"),
     (" .ORG 0xFFFFFFFE\n .RES 2\n HALT", "00000000 0c000000\n"),

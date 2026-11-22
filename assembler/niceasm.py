@@ -23,10 +23,11 @@ from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 MASK = 0xFFFFFFFF
 
-ALU, SHIFT, CTRL, PSEUDO = range(4)
+ALU, SHIFT, CTRL, PSEUDO, REMOVED = range(5)
 
 # name: (class, opcode or control command, number of operands). A PSEUDO
 # instruction has no opcode: instruction() expands it (ISA.md section 10.1).
+# A REMOVED one is an error, and stays a word that cannot be a label.
 MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "MOVE": (ALU, 0x0, 2), "SUB": (ALU, 0x1, 3), "MDBL": (ALU, 0x2, 3),
     "ADD": (ALU, 0x3, 3), "DBL": (ALU, 0x4, 2), "DEC": (ALU, 0x5, 2),
@@ -44,8 +45,8 @@ MNEMONICS: Dict[str, Tuple[int, int, int]] = {
     "SHL": (SHIFT, 0x0, 3), "ROL": (SHIFT, 0x6, 3), "BPL": (SHIFT, 0x7, 3),
     "SHR": (SHIFT, 0x8, 3), "ROR": (SHIFT, 0xE, 3), "BPR": (SHIFT, 0xF, 3),
 
-    "HALT": (CTRL, 0x00, 0), "RTI": (CTRL, 0x01, 0), "INT": (CTRL, 0x02, 1),
-    "WAIT": (CTRL, 0x03, 0),
+    "HALT": (CTRL, 0x00, 0),
+    "RTI": (REMOVED, 0, 0), "INT": (REMOVED, 0, 1), "WAIT": (REMOVED, 0, 0),
 
     "CALL": (PSEUDO, 0, 1), "RET": (PSEUDO, 0, 0), "JMP": (PSEUDO, 0, 1),
     "CMP": (PSEUDO, 0, 2), "TST": (PSEUDO, 0, 1), "PUSH": (PSEUDO, 0, 1),
@@ -67,7 +68,11 @@ PSEUDO_ONE: Dict[str, Tuple[str, List[str]]] = {
 
 DIRECTIVES = {".EQU", ".ORG", ".DAT", ".BLK", ".RES", ".ASCII_L", ".ASCII_B"}
 
-CONDITION_FLAGS = "1XCZNVEI"  # SEL 0..7; ?M is the 2004 name of ?E
+# The flag that each SEL of 0 to 7 tests (ISA.md section 3).
+CONDITION_FLAGS = ["1", "X", "C", "Z", "N", "V", "F0", "F1"]
+# The names that SR bits 30 and 31 had while NICE had interrupts: E and I,
+# and M, the 2004 name of E. Old source keeps assembling.
+CONDITION_ALIASES = {"E": "F0", "M": "F0", "I": "F1"}
 
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*$")
 IDENT_IN_TEXT = re.compile(r"(?<![A-Za-z0-9_.])[A-Za-z_][A-Za-z0-9_.]*")
@@ -137,6 +142,8 @@ class Assembler:
             raise AsmError(f"'{name}' looks like a register and cannot be a symbol "
                            f"(the registers are R0 to R15)")
         if name.upper() in MNEMONICS:
+            if MNEMONICS[name.upper()][0] == REMOVED:
+                raise AsmError(f"'{name}' is a reserved word and cannot be a symbol")
             raise AsmError(f"'{name}' is a mnemonic and cannot be a symbol")
 
     def anon(self, t: str) -> int:
@@ -514,6 +521,8 @@ class Assembler:
             raise AsmError(f"unknown mnemonic '{mtok}'")
         name = m.group(1).upper()
         cls, opcode, nops = MNEMONICS[name]
+        if cls == REMOVED:
+            raise AsmError(f"{name}: NICE has no interrupts (ISA.md section 7)")
 
         if args and args[0].startswith("["):
             if m.group(2) is None:
@@ -559,11 +568,6 @@ class Assembler:
         iw = cond << 28
         if cls == CTRL:
             iw |= 0x0C000000 | opcode << 21
-            if args:
-                v = self.value(args[0])
-                if not 0 <= v <= 255:
-                    raise AsmError(f"interrupt vector {v} is out of range 0..255")
-                iw |= v
             self.emit(iw, line_no)
             return
 
@@ -745,8 +749,9 @@ class Assembler:
         has_cond = tok[0].startswith("?")
         if has_cond:
             c = tok.pop(0)
-            m = re.match(r"\?(!?)(.)$", c)
-            flag = m.group(2).upper().replace("M", "E") if m else ""
+            m = re.match(r"\?(!?)([A-Za-z0-9]+)$", c)
+            flag = m.group(2).upper() if m else ""
+            flag = CONDITION_ALIASES.get(flag, flag)
             if not m or flag not in CONDITION_FLAGS:
                 raise AsmError(f"bad condition '{c}'")
             cond = (m.group(1) == "!") << 3 | CONDITION_FLAGS.index(flag)

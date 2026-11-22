@@ -10,7 +10,7 @@ low             MOVE    R1, 0x2
                 .DAT    0x0c800000      ; reserved control word
                 .DAT    0x3c000100      ; reserved control word
 entry_point
-start           INT     33
+start           .DAT    0x0c400021      ; reserved control word
                 .DAT    0x00005800      ; MOVE R1, ? (cut off)
 ; add
                 HALT

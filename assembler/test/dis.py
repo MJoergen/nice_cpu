@@ -38,10 +38,14 @@ API: List[Tuple[List[Optional[int]], Dict[int, str], Tuple[str, int]]] = [
     ([0x00005800, 0x02], {0x02: "low"}, ("MOVE R1, 0x2", 2)),
     ([0x08005830, 0x10, 0x10], {0x10: "x"}, ("SHL R1, x, 0x10", 3)),
     ([0xB003D800, 0x04], {}, ("?!Z MOVE R15, 0x4", 2)),
-    ([0x0C400021], {}, ("INT 33", 1)),
     ([0x8C000000], {}, ("?!1 HALT", 1)),
-    ([0x0C600000], {}, ("WAIT", 1)),
-    ([0x3C600000], {}, ("?Z WAIT", 1)),
+    # The conditions of SR bits 30 and 31, SEL 110 and 111 (#162)
+    ([0x6C000000], {}, ("?F0 HALT", 1)),
+    ([0xFC000000], {}, ("?!F1 HALT", 1)),
+    # RTI, INT 33, and WAIT of before #162 are reserved control words
+    ([0x0C200000], {}, (".DAT 0x0c200000 ; reserved control word", 1)),
+    ([0x0C400021], {}, (".DAT 0x0c400021 ; reserved control word", 1)),
+    ([0x3C600000], {}, (".DAT 0x3c600000 ; reserved control word", 1)),
     ([0x0C800000], {}, (".DAT 0x0c800000 ; reserved control word", 1)),
     ([0x0C600001], {}, (".DAT 0x0c600001 ; reserved control word", 1)),
     ([0x00005800, None], {}, (".DAT 0x00005800 ; MOVE R1, ? (cut off)", 1)),

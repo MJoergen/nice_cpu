@@ -61,10 +61,11 @@ bad command line.
 The rules of the output:
 
 - An instruction takes its constant words with it. The output shows them
-  as operands, in hex: `MOVE R1, 0x1000`. The vector of `INT` is decimal.
+  as operands, in hex: `MOVE R1, 0x1000`.
 - Mnemonics are the ones of ISA.md, with the alias for a SHIFT
   instruction where one exists (`SHL`, `ROL`, `BPL`, `SHR`, `ROR`, `BPR`).
-  "Always" is no condition, and "never" is `?!1`. Registers are `R0` to
+  "Always" is no condition, and "never" is `?!1`. The conditions of SR
+  bits 30 and 31 are `?F0` and `?F1`. Registers are `R0` to
   `R15`, never `SP` or `PC`, which are names that programs define.
 - The pseudo-instructions, such as `CALL` and `JMP`, are not written,
   since their words are those of the instructions written by hand
@@ -147,10 +148,16 @@ This section lists what the assembler does beyond it.
   have spaces on both sides of its sign.
 - A line with one word that is not a mnemonic or a directive is a label,
   even when it is indented. When it is indented and has no `:`, as a
-  misspelled `HALT` or `RTI` alone on a line would be, the assembler prints
+  misspelled `HALT` alone on a line would be, the assembler prints
   `file:line: warning: message` and assembles the program.
 - A label or `.EQU` name cannot be a mnemonic or look like a register (`R`
   followed by digits, so `R16` is rejected too).
+- `RTI`, `INT`, and `WAIT` are errors, as NICE has no interrupts (ISA.md
+  §7). They stay reserved words, which cannot be a label or an `.EQU`
+  name, so an old program with a `WAIT` alone on a line does not
+  assemble it as a label.
+- `?E`, `?I`, and `?M`, the old names of `?F0` and `?F1`, and their `!`
+  forms, are accepted, so old source assembles.
 - An anonymous label is `:` alone as the label. `::` and `:-` are not
   labels, and `:` cannot be an `.EQU` name. A reference with more signs
   than there are anonymous labels above or below it is an error, which

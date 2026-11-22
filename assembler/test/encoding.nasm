@@ -68,14 +68,14 @@ TEN             .EQU    10
         ?Z      MOVE    R1, R2
         ?N      MOVE    R1, R2
         ?V      MOVE    R1, R2
-        ?E      MOVE    R1, R2
-        ?I      MOVE    R1, R2
+        ?E      MOVE    R1, R2          ; the old name of ?F0
+        ?I      MOVE    R1, R2          ; the old name of ?F1
         ?!1     MOVE    R1, R2
         ?!M     MOVE    R1, R2
 ; control
                 HALT
-                RTI
-                INT     0x21
+        ?F0     HALT                    ; NEG 0, SEL 110: 6c000000
+        ?F1     HALT                    ; NEG 0, SEL 111: 7c000000
         ?Z      HALT
 ; data and expressions
 data:           .DAT    0b101, 0x10+TEN-1, -1, data
@@ -156,12 +156,11 @@ res_end         .DAT    res_end         ; 0x304
 ; a quote of the other kind, no escapes, and ',' and '*' in a string
                 .ASCII_L "it's"         ; 41d-421: 69 74 27 73 0
                 .ASCII_L '"\n*,'        ; 422-427: 22 5c 6e 2a 2c 0
-; lower case condition and modifier, INT at its limit and with an expression
+; lower case conditions and modifier
         ?!e     HALT                    ; 428: NEG 1, SEL 110: ec000000
                 SHL[m]  R1, R2, R3      ; 429: 08000000 | M 02000000: 0a004103
-                INT     255             ; 42a: 0c4000ff
-VEC             .EQU    0x1F
-                INT     VEC+1           ; 42b: 0c400020
+        ?!f1    HALT                    ; 42a: NEG 1, SEL 111: fc000000
+        ?!F0    halt                    ; 42b: NEG 1, SEL 110: ec000000
 ; an .EQU standing for a whole operand, in both fields, and after @
 OPW             .EQU    @4[R1]
 PDEC            .EQU    --R2
@@ -220,11 +219,11 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
                 ; 467-46d: 4*0x467 = 119c, e, 5, -6 = fffffffa, 3*5 = f,
                 ; 5*5-1 = 18, 1fffffffe wraps to fffffffe
                 MOVE    R1, 4*pl[R2]    ; 46e: 0x01<<14 | 0x32<<7: 00005900, 46f: 119c
-                INT     3*0x55          ; 470: 255: 0c4000ff
+                .DAT    3*0x55          ; 470: 255: 000000ff
                 .DAT    pl*0+2*2*2      ; 471: 8
-; WAIT (ISA.md 5.3), alone and with a condition: ?!Z is NEG 1, SEL 011
-                WAIT                    ; 472: 0c600000
-        ?!Z     wait                    ; 473: b0000000 | 0c600000 = bc600000
+; the old names of ?F1 and ?!F0 in lower case
+        ?i      HALT                    ; 472: 7c000000
+        ?!m     HALT                    ; 473: ec000000
 ; anonymous labels (ISA.md 10.1): ':-' is the nearest above, a label on the
 ; line of the reference included, and ':+' the nearest below, each more sign
 ; one more. They count in source order, so a .ORG does not change them. The
@@ -267,4 +266,4 @@ se              MOVE    R1, se - sa     ; 4b2: 00005800, 4b3: 4b2-4b0 = 2
                 .BLK    TEN - 9         ; 4c0: 0
 SPACED          .EQU    2 + 3
                 .DAT    4*SPACED        ; 4c1: 4*5 = 14
-                INT     SPACED + 1      ; 4c2: 0x62<<21 | 6 = 0c400006
+                .DAT    SPACED+1        ; 4c2: 6

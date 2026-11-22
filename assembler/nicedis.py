@@ -31,7 +31,6 @@ ALU_NAMES = ["MOVE", "SUB", "MDBL", "ADD", "DBL", "DEC", "NOT", "NOR",
 # The alias where one exists, the canonical mnemonic otherwise.
 SHIFT_NAMES = ["SHL", "0<1", "0<C", "C<0", "C<1", "C<C", "ROL", "BPL",
                "SHR", "1>0", "C>0", "0>C", "1>C", "C>C", "ROR", "BPR"]
-CTRL_NAMES = ["HALT", "RTI", "INT", "WAIT"]
 FIELD_NAMES = ["dest", "s0", "s1"]
 
 # The constant of a label is only shown as one from this value on, so that
@@ -63,7 +62,6 @@ class Insn(NamedTuple):
     mnemonic: str           # with its modifiers
     operands: List[Operand]
     unused: List[Tuple[str, Operand]]  # unused fields that are not R0, by name
-    vector: Optional[int]   # the vector of INT
     reserved: bool          # a reserved control word
     cut: bool               # constant words are missing
     target: Optional[int] = None  # the target of ADD R15, R15, c, written as JMPR
@@ -91,11 +89,9 @@ def decode(addr: int, read: Reader) -> Insn:
     assert word is not None
     cond = condition(word)
     if word >> 26 & 3 == 3:
-        cmd, vector = word >> 21 & 0x1F, word & 0xFF
-        if cmd > 3 or word >> 8 & 0x1FFF or (cmd != 2 and vector):
-            return Insn([word], cond, "", [], [], None, True, False)
-        return Insn([word], cond, CTRL_NAMES[cmd], [], [], vector if cmd == 2 else None,
-                    False, False)
+        if word & 0x03FFFFFF:  # every command but HALT is reserved (ISA.md 5.3)
+            return Insn([word], cond, "", [], [], True, False)
+        return Insn([word], cond, "HALT", [], [], False, False)
 
     shift = word >> 27 & 1
     opcode = word >> 21 & 0xF
@@ -128,7 +124,7 @@ def decode(addr: int, read: Reader) -> Insn:
     target = None
     if name == "ADD" and fields == [0x0F, 0x0F, 0x30] and consts[2] is not None:
         target = (addr + 2 + consts[2]) & MASK  # the relative jump JMPR (ISA.md 10.1)
-    return Insn(words, cond, name, ops[:nops], unused, None, False, cut, target)
+    return Insn(words, cond, name, ops[:nops], unused, False, cut, target)
 
 
 def operand_text(op: Operand, name: Namer) -> str:
@@ -154,10 +150,7 @@ def statement(insn: Insn, name: Namer) -> str:
     if insn.target is not None:
         return " ".join(t for t in (insn.cond, "JMPR", name(insn.target) or f"0x{insn.target:x}")
                         if t)
-    if insn.vector is not None:
-        args = str(insn.vector)
-    else:
-        args = ", ".join(operand_text(op, name) for op in insn.operands)
+    args = ", ".join(operand_text(op, name) for op in insn.operands)
     return " ".join(t for t in (insn.cond, insn.mnemonic, args) if t)
 
 

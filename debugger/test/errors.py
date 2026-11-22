@@ -4,7 +4,8 @@ files that it must refuse, and checks the exit status and the last line
 on stderr. The files are checked before the link opens, so their cases
 give a port that nothing serves. Two servers in this script stand in for
 a wrong peer: one that never sends niceemu's b notice, and one that
-serves a link of major 1, which nicedbg.py does not know (DEBUG.md §9).
+serves a link of a major that nicedbg.py does not know, 2 or 0 (DEBUG.md
+§9).
 One case is no error: --help, which must print DESCRIPTION. No niceemu
 is needed."""
 
@@ -36,10 +37,11 @@ def free_port() -> int:
         return port
 
 
-def serve(answer: bool) -> int:
+def serve(answer: bool, version: int = 0x20) -> int:
     """A server of one connection on a free port. With answer, it sends a b
-    notice and answers a read of VERSION with 0x10, major 1; without, it
-    sends nothing. It closes the connection when the client does."""
+    notice and answers a read of VERSION with version, 0x20, major 2, by
+    default; without, it sends nothing. It closes the connection when the
+    client does."""
     server = socket.socket()
     server.bind(("127.0.0.1", 0))
     server.listen(1)
@@ -55,7 +57,7 @@ def serve(answer: bool) -> int:
                 data += chunk
                 if answer and b"#" in data:
                     conn.sendall(packet("r", f"{VERSION:08X}0001"
-                                             f"{0x10:08X}"))
+                                             f"{version:08X}"))
                     data = b""
 
     threading.Thread(target=run, daemon=True).start()
@@ -133,9 +135,13 @@ def main() -> None:
              f"sends to each host that connects, from 127.0.0.1:{quiet}; is "
              f"that port served by niceemu --link, not by another program?")
         major = serve(True)
-        case("a link of major 1", ["--tcp", str(major)], 1,
-             "nicedbg.py: the system serves debug link version 1.0 (0x10); "
-             "this tool knows major 0")
+        case("a link of major 2", ["--tcp", str(major)], 1,
+             "nicedbg.py: the system serves debug link version 2.0 (0x20); "
+             "this tool knows major 1")
+        old = serve(True, 0x08)
+        case("a link of major 0", ["--tcp", str(old)], 1,
+             "nicedbg.py: the system serves debug link version 0.8 (0x08); "
+             "this tool knows major 1")
         case("--port of a missing device", ["--port", "/nonexistent/tty"],
              1, "nicedbg.py: cannot open /nonexistent/tty: No such file or "
              "directory")

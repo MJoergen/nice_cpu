@@ -2,9 +2,8 @@
 """nicedbg: an interactive debugger on the debug link of doc/DEBUG.md.
 
 It reads and writes memory, loads a .bin file, starts, holds, pauses,
-steps, and goes on, sets the breakpoints and the watchpoints, raises an
-NMI, shows and sets the registers, and disassembles, with one short
-command each. "help" lists them. Numbers are hex, with or without 0x.
+steps, and goes on, sets the breakpoints and the watchpoints, shows and
+sets the registers, and disassembles, with one short command each. "help" lists them. Numbers are hex, with or without 0x.
 An empty line repeats a step.
 
 The disassembler is assembler/nicedis.py. --symbols FILE, or the command
@@ -57,10 +56,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import nicedis  # noqa: E402
 
 from nicebin import Symbols, load_words, read_bin  # noqa: E402
-from nicelink import (AFTER_RTI, BRK_ADDR, BRK_COUNT, BRK_EN,  # noqa: E402
+from nicelink import (BRK_ADDR, BRK_COUNT, BRK_EN,  # noqa: E402
                       CONTROL, FREE, FULL_WAIT, HALT_REASON, HALTED, HOLD,
-                      IN_SERVICE, IRQ_PENDING, MAX_WORDS, NMI_PENDING,
-                      PAUSE, RAM, REASONS, WAITING, REGS, SAVED_PC, STOP,
+                      MAX_WORDS, PAUSE, RAM, REASONS, REGS, STOP,
                       VERSION, WCH_ADDR, WCH_COUNT, WCH_EN, WCH_PC,
                       WCH_READ, WCH_WRITE, Link, LinkError, add_arguments,
                       open_link)
@@ -231,9 +229,7 @@ class Debugger(cmd.Cmd):
             lines.append(self._watch_hit(n))
         if (new.pauses - old.pauses > new.breaks - old.breaks +
                 new.watches - old.watches):
-            # Bit 6 reads 0 before link version 7.
-            wait = ", waiting" if link.read_word(CONTROL) & WAITING else ""
-            lines.append(f"paused{wait}, {self._pc(True)}")
+            lines.append(f"paused, {self._pc(True)}")
         for line in lines:
             if data[-1:] not in (b"", b"\n") or (not data and line_open):
                 data += b"\n"
@@ -455,14 +451,13 @@ class Debugger(cmd.Cmd):
             why = link.read_word(HALT_REASON)
             state = f"halted: {REASONS.get(why, why)}"
             # A hold after a halt keeps bit 1 and the reason, until a
-            # clear (link version 5), as by load.
+            # clear, as by load.
             if ctl & HOLD:
                 state = f"held, after a halt: {REASONS.get(why, why)}"
         elif ctl & HOLD:
             state = "held"
         elif ctl & PAUSE:
-            # open_link has checked the major, so the minor tells.
-            stop = link.read_word(STOP) if (version & 0xF) >= 4 else 0
+            stop = link.read_word(STOP)
             if stop & 0x200:
                 hit = self._where(link.read_word(WCH_PC))
                 state = f"at watchpoint {stop & 0xFF}, hit at {hit}"
@@ -472,10 +467,6 @@ class Debugger(cmd.Cmd):
                 state = "paused"
         else:
             state = "running"
-        # A wait for an interrupt, paused or not: bit 6, which reads 0
-        # before link version 7.
-        if ctl & WAITING and not ctl & (HOLD | HALTED):
-            state += ", waiting for an interrupt"
         rom = "hidden" if ctl & RAM else "shown"
         print(f"{state}, ROM {rom}, control {ctl:08x}, link version "
               f"{version >> 4}.{version & 0xF}, input free "
@@ -484,25 +475,6 @@ class Debugger(cmd.Cmd):
             print(self._pc())
         elif ctl & PAUSE:
             print(self._pc(not ctl & HOLD))
-        # The hidden state and the requests, of link version 7. They are
-        # not defined while held, and the requests read 0 after a halt.
-        if (version & 0xF) >= 7 and not ctl & HOLD:
-            print(self._interrupts(ctl))
-
-    def _interrupts(self, ctl: int) -> str:
-        """The interrupt state of DEBUG.md §6, from the control word."""
-        parts = []
-        if ctl & IN_SERVICE:
-            pc, sr = self.link.read(SAVED_PC, 2)
-            parts.append(f"in a routine, return to {self._where(pc)}, "
-                         f"SR {sr:08x}")
-        if ctl & AFTER_RTI:
-            parts.append("after RTI")
-        if ctl & NMI_PENDING:
-            parts.append("NMI pending")
-        if ctl & IRQ_PENDING:
-            parts.append("IRQ pending")
-        return "interrupts: " + (", ".join(parts) if parts else "none")
 
     def do_regs(self, arg: str) -> None:
         """regs: shows R0 to R15. They are live while the processor runs,
@@ -544,14 +516,10 @@ class Debugger(cmd.Cmd):
         raise ValueError(f"'{text}' is not R0 to R15, SP, SR, or PC")
 
     def _write_reg(self, n: int, value: int) -> int:
-        """Writes register n of a paused processor, which link version 6
-        allows (DEBUG.md §6), and returns what it reads back: R0 stays 0,
-        and R14 keeps bit 24 set."""
+        """Writes register n of a paused processor (DEBUG.md §6), and
+        returns what it reads back: R0 stays 0, and R14 keeps bit 24
+        set."""
         link = self.link
-        version = link.read_word(VERSION)
-        if (version & 0xF) < 6:
-            raise ValueError(f"link version {version >> 4}.{version & 0xF} "
-                             "cannot write the registers; 0.6 can")
         if not link.read_word(CONTROL) & PAUSE:
             raise ValueError("the processor is not paused; 'pause' first")
         link.write(REGS + n, [value])
@@ -726,11 +694,8 @@ class Debugger(cmd.Cmd):
         link.write(BRK_EN, [en & ~(1 << n)])
 
     def _watch_count(self) -> int:
-        """The number of watchpoints, of link version 7, which a system
-        of an older version has none of."""
-        link = self.link
-        count = link.read_word(WCH_COUNT) \
-            if link.read_word(VERSION) & 0xF >= 7 else 0
+        """The number of watchpoints, which a system may have none of."""
+        count = self.link.read_word(WCH_COUNT)
         if count == 0:
             raise ValueError("this system has no watchpoints")
         return count
@@ -779,28 +744,6 @@ class Debugger(cmd.Cmd):
                              f"{count - 1:x}")
         en = link.read_word(WCH_EN)
         link.write(WCH_EN, [en & ~(3 << 2 * n)])
-
-    def do_nmi(self, arg: str) -> None:
-        """nmi VEC: raises an NMI with the vector VEC. VEC is 0 to ff (link
-        version 8). A running processor takes it at once, unless it is in
-        an interrupt routine, and a paused one at the next go or step."""
-        link = self.link
-        if not arg.strip():
-            raise ValueError("give the vector, 0 to ff")
-        vector = number(arg.strip())
-        if vector > 0xFF:
-            raise ValueError(f"the vector is 0 to ff, not {arg.strip()}")
-        if link.read_word(VERSION) & 0xF < 8:
-            raise ValueError("this system has no NMI request; it needs "
-                             "link version 8")
-        ctl = link.read_word(CONTROL)
-        if ctl & HOLD:
-            raise ValueError("the processor is held; 'go' first")
-        if ctl & HALTED:
-            raise ValueError("the processor has halted, and takes no NMI")
-        link.raise_nmi(vector)
-        if ctl & PAUSE:
-            print(f"NMI {vector:02x} pending; 'go' or 'step' takes it")
 
     def do_send(self, arg: str) -> None:
         r"""send TEXT: sends the text to the program. It takes escapes such

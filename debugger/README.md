@@ -4,8 +4,8 @@
 [DEBUG.md](../doc/DEBUG.md). It talks to `niceemu --link` over TCP
 ([emulator/README.md](../emulator/README.md#debug-link)), or to a
 system on its UART. It loads a program, runs, pauses, steps, and goes
-on, sets the breakpoints and the watchpoints, raises an NMI, reads and
-writes the registers and the memory, and disassembles with
+on, sets the breakpoints and the watchpoints, reads and writes the
+registers and the memory, and disassembles with
 [`nicedis.py`](../assembler/README.md), with labels from `niceasm.py
 --symbols` or `nicebuild.py`.
 
@@ -38,7 +38,7 @@ The options:
 One of `--tcp` and `--port` must be given. The files are read before the
 link opens, so a bad file stops the debugger before it touches the
 system. It then reads the link's version, and stops on a major other
-than 0, which it does not know (DEBUG.md §9). With `--tcp`, it waits up
+than 1, which it does not know (DEBUG.md §9). With `--tcp`, it waits up
 to 2 seconds for the `b` notice that niceemu sends to each host that
 connects (DEBUG.md §7.2), and stops without one, as the port is then
 served by another program.
@@ -71,9 +71,8 @@ one in full.
 | `step` (`s`) `[N]` | Runs N steps of a paused processor, and shows the PC after each, up to 16. An empty line steps again. |
 | `b [ADDR]` | Sets a breakpoint at ADDR, or lists them. |
 | `bd N` or `bd all` | Disables breakpoint N, or all of them. |
-| `wp [ADDR [r\|w\|rw]]` | Sets a watchpoint at ADDR, or lists them. It stops after a step that writes the word, by default, reads it (`r`), or either (`rw`). It needs link version 7. |
+| `wp [ADDR [r\|w\|rw]]` | Sets a watchpoint at ADDR, or lists them. It stops after a step that writes the word, by default, reads it (`r`), or either (`rw`). A system may have none. |
 | `wpd N` or `wpd all` | Disables watchpoint N, or all of them. |
-| `nmi VEC` | Raises an NMI with vector VEC, 0 to ff. A running processor takes it at once, unless it is in an interrupt routine, and a paused one at the next `go` or `step`. It needs link version 8, and is an error while the processor is held or has halted. |
 | `regs` | Shows R0 to R15. |
 | `set Rn VALUE` | Writes a register of a paused processor. `SP`, `SR`, and `PC` name R13, R14, and R15. |
 | `pc [ADDR]` | Shows the PC of a paused processor and its instruction, or sets it. |
@@ -92,14 +91,7 @@ arrive, above the prompt: `[breakpoint 0, PC=... LOOP  SUB[M] ...]`,
 `[watchpoint 0, hit at 00000000 START, PC=... READ  MOVE ...]`, with
 the address of the instruction that hit (DEBUG.md §6), `[paused,
 PC=...]`, `[halted: HALT, PC=...]`, `[boot]`, and `[input overflow]`. The PC after a halt is the word after the instruction that
-halted. A pause in a wait for an interrupt (ISA.md §7.5) shows as
-`[paused, waiting, PC=...]`, the PC the word after the `WAIT`, and
-`status` adds `waiting for an interrupt` to the state. With link
-version 7, `status` also shows the interrupt state of DEBUG.md §6,
-while the processor is not held: `interrupts: in a routine, return to
-00000003 BACK, SR 01000001` inside an interrupt routine, with where its
-`RTI` returns to, then `after RTI` and `NMI pending` or `IRQ pending`
-where they apply, or `interrupts: none`.
+halted.
 
 The commands also come from stdin when it is no terminal, so a script
 can drive it:
@@ -149,6 +141,5 @@ the files, with exact messages, and the description that `--help`
 prints, and `test/link.py`, which runs the link,
 the loader, the debugger's commands, and `add_options()` and `run()` on
 a parser of a front end's own, on `niceemu --link` with the programs
-`test/echo.nasm`, `test/break.nasm`, `test/wait.nasm`,
-`test/hidden.nasm`, and `test/watch.nasm`. It builds niceemu
+`test/echo.nasm`, `test/break.nasm`, and `test/watch.nasm`. It builds niceemu
 first if needed. `make typecheck` runs `mypy --strict`.

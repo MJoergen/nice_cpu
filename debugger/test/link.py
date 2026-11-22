@@ -181,7 +181,7 @@ def test_link(port: str, echo: str) -> None:
     link = connect(port)
     try:
         version = link.read_word(nicelink.VERSION)
-        check("the link's version is 0.8", version == 0x08, f"{version:02x}")
+        check("the link's version is 1.0", version == 0x10, f"{version:02x}")
         link.control(HOLD | RAM)
         words = [0x1000 * i + 7 for i in range(nicelink.MAX_WORDS + 44)]
         link.write(0x4000, words)
@@ -275,7 +275,7 @@ def test_run_control(port: str, prog: str, at: dict[str, int]) -> None:
         ok = wait_for(link, lambda: len(link.breaks) == 3)
         pc = link.read_word(REGS + 15)
         r7 = link.read_word(REGS + 7)
-        check("breakpoint 2 at AFTER, after the interrupt routine",
+        check("breakpoint 2 at AFTER, after the routine",
               ok and link.breaks[-1] == 2 and pc == at["AFTER"] and
               r7 == 0x1234, f"PC {pc:x} R7 {r7:x}")
         link.set_breaks([])
@@ -335,7 +335,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
               "in reset\n", repr(out))
         out = command(dbg, "status")
         check("dbg: status while held", out.startswith(
-            "held, ROM hidden, control 00000009, link version 0.8, "),
+            "held, ROM hidden, control 00000009, link version 1.0, "),
             repr(out))
         out = command(dbg, "b LOOP")
         check("dbg: a breakpoint at a label", out == f"0: {loop:08x} LOOP\n",
@@ -416,7 +416,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         out = command(dbg, "d LOOP 2")
         check("dbg: the disassembly at a label", out == "LOOP:\n" +
               line(loop, "02210230 00000001", "SUB[M] R4, R4, 0x1") +
-              line(loop + 2, "b003d800 00000006", "?!Z MOVE R15, 0x6"),
+              line(loop + 2, "b003d800 00000004", "?!Z MOVE R15, 0x4"),
               repr(out))
         # MOVE R5, with its constant word at DONE
         command(dbg, "w DONE-1 00015800")
@@ -434,84 +434,10 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         link.close()
 
 
-def test_wait(port: str, prog: str) -> None:
-    """nicedbg.py on test/wait.nasm: the status of a processor that waits
-    for an interrupt, and the notice of a pause in the wait (link version
-    7)."""
-    link = connect(port)
-    dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
-                                                              ".sym")))
-    try:
-        command(dbg, f"load {prog}")
-        command(dbg, "go")
-        wait_for(link, lambda: link.read_word(nicelink.CONTROL) & nicelink.WAITING != 0)
-        out = command(dbg, "status")
-        check("dbg: status in a wait", out.startswith(
-            "running, waiting for an interrupt, ROM hidden, control 00000048, "), repr(out))
-        out = command(dbg, "pause")
-        check("dbg: a pause in a wait", "paused, waiting, PC=00000001" in out,
-              repr(out))
-        out = command(dbg, "status")
-        check("dbg: status paused in a wait", out.startswith(
-            "paused, waiting for an interrupt, ROM hidden, control 00000058, "), repr(out))
-    finally:
-        link.close()
-
-
-def test_hidden(port: str, prog: str) -> None:
-    """nicedbg.py on test/hidden.nasm: the interrupt state in status, in
-    the routine of an INT, after its RTI, and with a request of the timer
-    that E = 0 holds (link version 7); then an NMI that nmi raises, which
-    a step takes, and its errors (link version 8)."""
-    link = connect(port)
-    dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
-                                                              ".sym")))
-    try:
-        command(dbg, f"load {prog}")
-        command(dbg, "b ISR")
-        go(dbg, lambda l: len(l.breaks))
-        out = command(dbg, "status")
-        check("dbg: status in a routine", out.endswith(
-            "\ninterrupts: in a routine, return to 00000003 BACK, "
-            "SR 01000001\n"), repr(out))
-        command(dbg, "bd all")
-        command(dbg, "step")
-        out = command(dbg, "status")
-        check("dbg: status after RTI", out.endswith(
-            "\ninterrupts: after RTI\n"), repr(out))
-        command(dbg, "step")
-        out = command(dbg, "status")
-        check("dbg: status with an IRQ pending", out.endswith(
-            "\ninterrupts: IRQ pending\n"), repr(out))
-        out = command(dbg, "nmi 2")
-        check("dbg: nmi while paused", out ==
-              "NMI 02 pending; 'go' or 'step' takes it\n", repr(out))
-        out = command(dbg, "status")
-        check("dbg: status with an NMI pending", out.endswith(
-            "\ninterrupts: NMI pending, IRQ pending\n"), repr(out))
-        out = command(dbg, "step")
-        check("dbg: a step takes the NMI", " ISR  RTI" in out, repr(out))
-        out = command(dbg, "nmi 100")
-        check("dbg: nmi of a vector past ff", out ==
-              "error: the vector is 0 to ff, not 100\n", repr(out))
-        out = command(dbg, "nmi")
-        check("dbg: nmi without a vector", out ==
-              "error: give the vector, 0 to ff\n", repr(out))
-        command(dbg, "hold")
-        out = command(dbg, "status")
-        check("dbg: no interrupt state while held",
-              "interrupts" not in out, repr(out))
-        out = command(dbg, "nmi 2")
-        check("dbg: nmi while held", out ==
-              "error: the processor is held; 'go' first\n", repr(out))
-    finally:
-        link.close()
-
-
 def test_watch(port: str, prog: str, at: dict[str, int]) -> None:
-    """nicedbg.py's watchpoints on test/watch.nasm (link version 7): wp
-    and its list, the notice of a write's hit, a step that reads, the
-    status, two reads in one step, the errors, and wpd."""
+    """nicedbg.py's watchpoints on test/watch.nasm: wp and its list, the
+    notice of a write's hit, a step that reads, the status, two reads in
+    one step, the errors, and wpd."""
     link = connect(port)
     dbg = nicedbg.Debugger(link, nicebin.Symbols(prog.replace(".bin",
                                                               ".sym")))
@@ -703,15 +629,11 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         echo, _ = assemble("echo", tmp)
         prog, at = assemble("break", tmp)
-        wait, _ = assemble("wait", tmp)
-        hidden, _ = assemble("hidden", tmp)
         watch, watch_at = assemble("watch", tmp)
         with emulator() as port:
             test_link(port, echo)
             test_run_control(port, prog, at)
             test_commands(port, prog, at)
-            test_wait(port, wait)
-            test_hidden(port, hidden)
             test_watch(port, watch, watch_at)
             test_program(port, prog)
             test_options(port, prog)

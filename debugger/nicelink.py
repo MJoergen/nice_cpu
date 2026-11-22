@@ -50,21 +50,13 @@ from typing import Callable, NoReturn
 
 ESC = 0xFF
 
-# The debug registers of DEBUG.md §6: the hidden state (version 7),
-# R0-R15, and the rest
-SAVED_PC = 0xFFFFFFD0
-SAVED_SR = 0xFFFFFFD1
-# The watchpoints (version 7): the enable bits, two for each, of the
-# reads and the writes, their number, the address of a hit, and the
-# address of watchpoint 0, then 1 to 3
+# The debug registers of DEBUG.md §6. The watchpoints: the enable bits,
+# two for each, of the reads and the writes, their number, the address of
+# a hit, and the address of watchpoint 0, then 1 to 3
 WCH_EN = 0xFFFFFFD4
 WCH_COUNT = 0xFFFFFFD5
 WCH_PC = 0xFFFFFFD6
 WCH_ADDR = 0xFFFFFFD8
-# The NMI request (version 8): a write with NMI_RAISE raises an NMI with the
-# vector of bits 7 to 0, and a read has NMI_RAISE while it is pending
-NMI_REQ = 0xFFFFFFD7
-NMI_RAISE = 0x100
 # The kinds of access that a watchpoint stops at, its two enable bits
 WCH_READ = 1
 WCH_WRITE = 2
@@ -74,38 +66,29 @@ HALT_REASON = 0xFFFFFFF1
 VERSION = 0xFFFFFFF2
 # The major of the version that the tools know, bits 7 to 4 of it
 # (DEBUG.md §9). A new minor, bits 3 to 0, keeps them working.
-MAJOR = 0
+MAJOR = 1
 FREE = 0xFFFFFFF3
-# The breakpoints (version 4): the enable bits, their number, the stop
-# register, and the address of breakpoint 0, then 1 to 7
+# The breakpoints: the enable bits, their number, the stop register, and
+# the address of breakpoint 0, then 1 to 7
 BRK_EN = 0xFFFFFFF4
 BRK_COUNT = 0xFFFFFFF5
 STOP = 0xFFFFFFF6
 BRK_ADDR = 0xFFFFFFF8
 
 # Control bits: hold the processor in reset, halted (read only), clear the
-# memory first, hide the ROM, so that the RAM is at 0, pause (version 2),
-# step a paused processor (version 3), and, read only and of version 7,
-# waits for an interrupt, in an interrupt routine, after an RTI, an NMI
-# pending, and an IRQ pending
+# memory first, hide the ROM, so that the RAM is at 0, pause, and step a
+# paused processor
 HOLD = 1
 HALTED = 2
 CLEAR = 4
 RAM = 8
 PAUSE = 16
 STEP = 32
-WAITING = 64
-IN_SERVICE = 0x80
-AFTER_RTI = 0x100
-NMI_PENDING = 0x200
-IRQ_PENDING = 0x400
 
 # The halt reasons of DEBUG.md §6
 REASONS = {
     1: "HALT",
     2: "reserved control instruction",
-    3: "INT inside an interrupt routine",
-    4: "RTI outside an interrupt routine",
     5: "step limit",
 }
 
@@ -612,23 +595,9 @@ class Link:
         raise LinkError(f"no answer to the write of {value:08X} to the "
                         f"control register")
 
-    def raise_nmi(self, vector: int) -> None:
-        """Raises an NMI with the vector (DEBUG.md §6, version 8). A write
-        that is not answered is not sent again, as the processor may have
-        taken it: it is read back, and a request still pending is the one
-        sent, as a second one would merge with it."""
-        an = f"{NMI_REQ:08X}0001"
-        if self._request("W", f"{an}{NMI_RAISE | vector:08X}", "k" + an):
-            return
-        got = self._read_once(NMI_REQ, 1)
-        if got is not None and got[0] == NMI_RAISE | vector:
-            return
-        raise LinkError("no answer to the NMI request; the processor may "
-                        "have taken it or not")
-
     def step(self, value: int = PAUSE | RAM,
              timeout: float | None = None) -> int | None:
-        """Runs one step of a paused processor (DEBUG.md §6, version 3):
+        """Runs one step of a paused processor (DEBUG.md §6):
         writes value with STEP to the control register, and waits for the
         p, x, w, or h that ends the step. Returns None when the processor
         paused again, with the x's number in breaks if it stopped at a
@@ -652,7 +621,7 @@ class Link:
         return None
 
     def set_breaks(self, addrs: list[int | None]) -> None:
-        """Sets the breakpoints (DEBUG.md §6, version 4): breakpoint i at
+        """Sets the breakpoints (DEBUG.md §6): breakpoint i at
         addrs[i], or disabled where it is None, and those past the list
         disabled. The addresses are written before the enable bits, so no
         breakpoint is enabled at an old address."""
@@ -664,7 +633,7 @@ class Link:
         self.write(BRK_EN, [en])
 
     def set_watches(self, watches: list[tuple[int, int] | None]) -> None:
-        """Sets the watchpoints (DEBUG.md §6, version 7): watchpoint i at
+        """Sets the watchpoints (DEBUG.md §6): watchpoint i at
         the address of watches[i], for its kinds, WCH_READ, WCH_WRITE, or
         both, or disabled where it is None, and those past the list
         disabled. The addresses are written before the enable bits."""

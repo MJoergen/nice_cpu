@@ -15,7 +15,7 @@ for each part: `pipe_fetch` (FETCH), `pipe_decode` (DECODE),
 `pipe_prepare` (PREPARE), `pipe_write` (WRITE), and `pipe_dbus` (DBUS,
 the data bus port). A simple multi-cycle core,
 `hdl/src/multicycle.vhd`, came first. It runs one instruction at a time,
-with the same buses, interrupt ports, and trace report, and is the working
+with the same buses, debug ports, and trace report, and is the working
 reference. Both pass every step of the test order in §9
 ([hdl/README.md](../hdl/README.md)). Where the pipelined core settled a
 question that this note left open, `hdl/ASSUMPTIONS.md` says how.
@@ -33,9 +33,8 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
   - [5.4 Control flow](#54-control-flow)
   - [5.5 Self-modifying code](#55-self-modifying-code)
   - [5.6 How often the hazards occur](#56-how-often-the-hazards-occur)
-- [6. Interrupts](#6-interrupts)
+- [6. Stops](#6-stops)
   - [6.1 Pause](#61-pause)
-  - [6.2 Wait](#62-wait)
 - [7. Datapath details](#7-datapath-details)
   - [7.1 Register values](#71-register-values)
   - [7.2 ALU](#72-alu)
@@ -56,7 +55,7 @@ question that this note left open, `hdl/ASSUMPTIONS.md` says how.
 | Registers | R0–R15 in flip-flops in WRITE. Only WRITE writes them, in order. PREPARE reads them and forms every operand value and address; WRITE has one bypass, the value it wrote last (§5.1, §7.4). R0 is always 0. R14 is SR and R15 is PC. |
 | Data accesses | Exact, in order, and never speculative, as ISA §8.2 requires. |
 | Instruction fetches | Free to run ahead, as ISA §8.2 allows (§2). |
-| Interrupts | Taken in WRITE, before an instruction, as soon as ISA §7.1 allows (§6). Valid/ready request ports for NMI and IRQ. |
+| Stops | No interrupts (ISA §7). A debugger's pause, breakpoints, and watchpoints stop the core in WRITE, before an instruction (§6). |
 | Language | VHDL-2008, GHDL for simulation, and SymbiYosys for formal verification. Synthesis for a board is done in the example design (§10). |
 | Verification | A trace writer diffed against `niceemu --trace`, then formal checks with SymbiYosys. |
 | Location | The `hdl/` directory, with commit prefix `nicehdl:` (§10). |
@@ -68,7 +67,7 @@ A pipeline must fetch ahead, and a Harvard core cannot keep its two buses in
 one order. So ISA.md distinguishes instruction fetches from data accesses:
 
 - **ISA §8.2** splits accesses into instruction fetches and data accesses. Only
-  data accesses (operand reads, destination writes, and vector reads) must be
+  data accesses (operand reads and destination writes) must be
   exact and in order. Instruction fetches may run early, repeat, or be wasted.
   Each instruction still runs with the words memory held once the
   instructions before it had completed, so self-modifying code works as
@@ -77,12 +76,12 @@ one order. So ISA.md distinguishes instruction fetches from data accesses:
   from `0xFFFFFF00`–`0xFFFFFFFF` reads 0. Without this, a fetch running ahead
   could start a device access. The emulator follows it, and
   `emulator/test/iofetch.nasm` tests it.
-- **ISA §7.1** checks for interrupts "before each instruction", not "before
-  each instruction fetch".
-- **Appendix B** records both rules.
+- **ISA §7** has no interrupts, so nothing can come between two
+  instructions but a debugger's stop (§6).
+- **Appendix B** records the first two rules.
 
 Nothing else in the ISA constrains the pipeline. Conditional execution, the side
-effects, R15 as an operand, and interrupts are all handled in the pipeline.
+effects, and R15 as an operand are all handled in the pipeline.
 
 ## 3. Pipeline
 
@@ -142,7 +141,8 @@ The parts do this:
 - **PREPARE** reads the registers, forms operand values and addresses
   (§7.4), reduces the shift count (§7.3), and issues data reads.
 - **WRITE** holds the ALU and the shifter, writes registers and memory,
-  updates SR, checks the condition, and starts flushes and interrupts.
+  updates SR, checks the condition, starts flushes, and runs the
+  control instructions.
 - **DBUS** is the data bus port. It keeps a tag for each request in
   flight, and the read data that WRITE has not used yet.
 
@@ -162,11 +162,10 @@ The others are not, for the reasons below.
 | DECODE to PREPARE | Yes: `valid_o`, `ready_i` | |
 | PREPARE to WRITE | Yes: `valid_o`, `ready_i` | |
 | PREPARE's data read to DBUS | No | The request register drives the bus, and PREPARE watches the bus's stall itself. It loads a read only when no store waits in DBUS in the next cycle (§5.3), which needs DBUS's state, not just a ready. |
-| WRITE's store or vector read to DBUS | No | WRITE checks DBUS's register and the bus's acceptance itself. A store into the I/O range retires only when the bus accepts it (§5.3). |
+| WRITE's store to DBUS | No | WRITE checks DBUS's register and the bus's acceptance itself. A store into the I/O range retires only when the bus accepts it (§5.3). |
 | DBUS's read data to WRITE | No | WRITE reads the data of up to two reads at once, from the FIFO or straight from the bus, and pops 0 to 2 of them. |
 | WRITE's flush and redirect | No | They empty every younger stage, and act beside the handshakes. |
 | Instruction and data buses | Wishbone | Pipelined Wishbone: `stb` and `stall` are valid and not ready, and `ack` returns each reply. |
-| Interrupt requests | Yes: `nmi_valid_i`, `nmi_ready_o`, and the same for IRQ | Ready depends on valid, as AXI allows (§6). |
 
 Even the AXI-style interfaces are not generic valid/ready pipeline
 stages, and a register slice between two of them would break the core.
@@ -184,7 +183,7 @@ one write port. DECODE emits:
 | `S0` | s0 has a side effect on a register other than R0 (modes 001, 010, 101, and 110) | Reads s0 if it is in memory. Writes Rx ± 1. |
 | `S1` | the same for s1 | Reads s0 first, if it is a memory operand not yet read. Then reads s1 if it is in memory, and writes Ry ± 1. |
 | `OP` | always, for ALU and SHIFT instructions | Reads the memory sources not yet read. Computes r. Writes the destination and applies its side effect. Updates the flags. |
-| `CTRL` | control instructions | `HALT`, `RTI`, `INT`, `WAIT`, or a reserved word. |
+| `CTRL` | control instructions | `HALT`, or a reserved control word, which halts too (ISA §5.3). |
 
 Reads happen in field order, s0 then s1, as ISA §8.2 requires. That is why `S1`
 also reads an s0 that has no micro-op of its own.
@@ -277,29 +276,17 @@ ISA §8.2 keeps data accesses exact, in order, and never speculative. So PREPARE
 issues a data read only when the instruction is certain to run:
 
 1. Its condition is known (§5.2).
-2. No older micro-op in flight can still redirect: a write to R15, `RTI`,
-   `INT`, a halt, or a store that may hit fetched code (§5.5).
+2. No older micro-op in flight can still redirect: a write to R15, a
+   halt, or a store that may hit fetched code (§5.5).
 3. Every older store is on the bus, or was: the bus accepts it no later
    than the cycle PREPARE loads the read, so the read cannot overtake it.
-4. No interrupt request is pending that could be taken before it (§6): an
-   NMI that is valid while `in_service` = 0, or an IRQ that is valid while
-   `in_service` = 0 and either E = 1 or an older micro-op in flight may
-   still set E. An IRQ with E = 0 does not count, or a program that never
-   sets E could never read memory. The instruction directly after an `RTI`
-   is exempt, because ISA §7.1 holds every request off until it has retired.
-   The instruction after that is not. An instruction that has issued a
-   data read already, or whose first micro-op has retired, is exempt too,
-   because no request can be taken before it any more. Without that, a
-   request that came between the two reads of `ADD R1, @R2, @R3` would
-   hold the second read off for ever.
-
-   A pause (§6.1) has a term of its own: while `pause_i` = 1, no
+4. No pause (§6.1) can come before it: while `pause_i` = 1, no
    instruction issues its first data read. An instruction that has issued
-   one, or whose first micro-op has retired, is exempt, as above. So is the
-   first step after the core goes on, but only from this term, not from
-   the interrupt requests, so that a request that comes just after the
-   core goes on is not taken late. The instruction after an `RTI` is not
-   exempt from it, since the core pauses after `RTI` too (§6.1). An
+   a data read already, or whose first micro-op has retired, is exempt,
+   because the core can no longer pause before it. Without that, a pause
+   that came between the two reads of `ADD R1, @R2, @R3` would hold the
+   second read off for ever. So is the first step after the core goes
+   on, so that one cycle of `pause_i` = 0 runs one step. An
    instruction at a breakpoint (§6.1) counts as a pause of its own: it
    issues no first data read, with the same exemptions. While a
    watchpoint is enabled (§6.1), an instruction issues no first data read
@@ -307,23 +294,20 @@ issues a data read only when the instruction is certain to run:
    exemptions of the instruction itself, but not of the first step.
 
 When PREPARE issues an instruction's first data read, the core commits to
-that instruction. No interrupt is taken before it (§6).
+that instruction. The core does not stop before it (§6).
 
 Stores are issued in WRITE, which is in order. WRITE puts a store into
 DBUS's store register, which drives the bus from the next cycle until the
 bus accepts it. The register is free again in that cycle, so a store can
 follow a store in every cycle. So no path runs from WRITE's decision to
 store into the system's address decode and its memories in one cycle
-([review/pipeline-timing.md](review/pipeline-timing.md), Stores). The
-vector read of an interrupt entry (§6) goes through the same register,
-for the same reason. It costs a cycle per entry.
+([review/pipeline-timing.md](review/pipeline-timing.md), Stores).
 
 A store into memory retires when it goes into the register. A store into
 the I/O range retires only when the bus accepts it, a cycle later at the
 earliest. Then a device sees the store in the cycle its instruction is
-counted on `instret_o`, as the timer, which counts steps, needs
-(DEVICES.md §4), and the trace writer prints a byte to the console before
-its instruction's line (§9). Stores into the I/O range are rare, but
+counted on `instret_o`, and the trace writer prints a byte to the console
+before its instruction's line (§9). Stores into the I/O range are rare, but
 for the math unit. Letting a store into the math unit retire when it goes
 into the register, as a store into memory does, saves 0.4% of the cycles
 of the translated benchmark and 0.1% of the hand-written one's, since a
@@ -333,8 +317,7 @@ will not be done.
 WRITE takes read data from DBUS's FIFO, in the cycle after its ACK,
 unless the data only goes into a register: s0 or s1 with a side effect,
 which keep it for the operation, and a `MOVE` into a register other than
-R15. Those take it in the cycle of the ACK. The vector of an interrupt
-entry is a jump, so it comes from the FIFO too (§6). So no path runs from the
+R15. Those take it in the cycle of the ACK. So no path runs from the
 data bus through the ALU, the shifter, a store, or a jump in one cycle
 ([review/pipeline-timing.md](review/pipeline-timing.md), Read data).
 Any other micro-operation that reads memory waits a cycle, unless PREPARE
@@ -374,8 +357,7 @@ WRITE flushes the stages above it and redirects FETCH when:
   its cycle, so the redirect does not wait for the ALU. Any other
   operation on R15, such as `ADD R15, R15, R1`, writes R15 in one cycle
   and redirects in the next (§7.4). Neither benchmark has one (§5.6).
-- An `INT`, an `RTI`, or an interrupt (§6) is taken.
-- A `WAIT` retires, or a request ends a wait without an entry (§6.2).
+- A control word halts the core.
 - A store may hit a word already fetched (§5.5).
 - A jump that DECODE predicted taken is skipped. Its target is the next
   instruction.
@@ -522,52 +504,13 @@ a register written by the previous instruction is read without a wait
 instruction are value chains, mostly in R1 to R4, not stack operations: R13
 alone is under 1% in both programs.
 
-## 6. Interrupts
+## 6. Stops
 
-Interrupt requests use valid/ready ports. The device holds `valid` until
-the core raises `ready`. So the device holds the pending state of ISA
-§7.1, and requests are never lost. The NMI vector stays stable with
-`valid`. The IRQ vector may change while `valid` stays high, as the merge
-of two sources changes it when the one first in order comes (§8); the
-core takes the vector of the cycle in which it raises `ready`.
-
-WRITE takes a request before an instruction, the first one after reset
-included, when ISA §7.1 allows it: not halted, `in_service` = 0,
-`after_rti` = 0, and E = 1 for IRQ. NMI goes first. Entry (ISA §7.2) flushes
-the pipeline, saves PC and SR, reads the vector through the data port once
-no store waits in DBUS (§5.3), and redirects FETCH. The vector read goes
-through DBUS's register, as a store does, so it is on the bus a cycle
-after WRITE issues it.
-
-A request is taken at the first instruction boundary where ISA §7.1 allows
-it, as in the emulator. ISA §7.1 says a request "is taken" when the
-conditions hold, and promises that a request deferred during an interrupt
-routine is taken before the second instruction after `RTI`. Rule 4 of §5.3
-makes this possible: no younger instruction issues a data read while a
-request is pending that could be taken before it, so the core never has to
-choose between a wasted access and a late interrupt. The one delay is the
-instruction after `RTI`, which `after_rti` protects until it has retired.
-
-A request that arrives after a younger instruction has issued its first data
-read is taken after that instruction. Software cannot tell this from a
-request that arrived one instruction later, and ISA §7.1 leaves the timing of
-the request signals to the hardware interface.
-
-`INT`, `RTI`, and `WAIT` run in WRITE as `CTRL` micro-ops, and flush.
-
-![Interrupt timing](interrupt.png)
-
-[interrupt.png](interrupt.png), drawn by [interrupt.tex](interrupt.tex),
-shows both cases on the core, with values read off a simulation of
-`hdl/test/irqwave.nasm`. In (a) the request comes while WRITE holds an
-instruction that has not begun. `irq_ready_o` rises at once, the flush
-drops that instruction, WRITE puts the read of the vector table entry
-into DBUS's register, which drives the bus in the next cycle, and the
-entry retires and redirects FETCH in the cycle after the data comes,
-since WRITE takes the vector from DBUS's FIFO (§5.3). In (b) the request comes in the cycle after PREPARE issued the
-data read of `MOVE R2, @data`. That instruction is committed
-(`w_r.commits` = 1), so `irq_ready_o` waits until it has retired, and the
-request is taken before the next one.
+NICE has no interrupts (ISA §7). The only things that come between two
+instructions are the stops of a debugger: a pause, a breakpoint, and a
+watchpoint. Each stops the core before an instruction that has not
+begun, and lets the instruction that has issued a data read finish
+first (§5.3).
 
 ### 6.1 Pause
 
@@ -575,14 +518,10 @@ Both cores have a pause for a debugger: an input `pause_i` and an output
 `paused_o`. The ISA has no such state. A program cannot tell that the core
 paused, but by its cycle counts.
 
-While `pause_i` = 1, the core stops at the next step boundary, where WRITE
-checks for an interrupt, whatever `in_service` and `after_rti` are. So it
-can pause inside an interrupt routine and right after `RTI`. These are the
-boundaries of the emulator's steps, and an interrupt entry is a step of
-its own. A pause goes ahead of an NMI or an IRQ at the same boundary. An
-instruction that has issued a data read is committed (§5.3) and finishes
-first, and rule 4 of §5.3 keeps the next one from committing, so the core
-reaches the boundary.
+While `pause_i` = 1, the core stops at the next step boundary. These are
+the boundaries of the emulator's steps. An instruction that has issued a
+data read is committed (§5.3) and finishes first, and rule 4 of §5.3
+keeps the next one from committing, so the core reaches the boundary.
 
 The pipelined core flushes there, so that FETCH waits at R15 with no
 request, and WRITE is in its mode `PAUSED_ST`. The multi-cycle core has a
@@ -597,8 +536,7 @@ while the core is paused: the core fetches from R15 again when it goes on.
 When `pause_i` is 0 in `PAUSED_ST`, the core goes on. It sets `after_go`
 as it leaves, and clears it when it reports the next step. While
 `after_go` is 1, the core does not pause, so it runs one step whatever
-`pause_i` is, and always makes progress. That step may be an interrupt
-entry: a request pending when the core goes on is taken first. So one
+`pause_i` is, and always makes progress. So one
 cycle of `pause_i` = 0 while `paused_o` = 1 runs exactly one step, and
 `paused_o` drops for at least a cycle. A fall of `pause_i` while the core
 still runs toward the boundary only cancels the pause. With `pause_i` held
@@ -608,19 +546,16 @@ A halted core ignores `pause_i`, and `paused_o` stays 0, as it could not
 go on. No committed instruction can halt, so a raised `pause_i` always ends
 in exactly one of `paused_o` and `halted_o`, and a system waits for
 either. `pause_i` must come from a flip-flop and must not depend
-combinationally on the core's outputs: it feeds the flush, `nmi_ready_o`,
-and `irq_ready_o`. The debug link drives it from bit 4 of its control
+combinationally on the core's outputs: it feeds the flush. The debug
+link drives it from bit 4 of its control
 register (DEBUG.md §6), and waits for `paused_o` or `halted_o`.
 
 Breakpoints (DEBUG.md §6) are pauses of the core's own. Each core has
 a generic `G_BREAKS`, from 0 to 8, and inputs for the addresses and the
 enable bits, from flip-flops of the debug link. At a step boundary, the
-core checks for a pause request first, then for an NMI or an IRQ that
-ISA §7.1 allows, and last whether the next instruction is at an enabled
-breakpoint. So an interrupt entry goes first, as in niceemu, and the
-breakpoint fires when its instruction is next again, after the `RTI`.
-The check does not depend on `in_service` or `after_rti`, and the first
-step after a pause is exempt from it, as from the pause.
+core checks for a pause request first, and then whether the next
+instruction is at an enabled breakpoint. The first step after a pause is
+exempt from the check, as from the pause.
 
 The multi-cycle core compares R15 in `BOUNDARY`. The pipelined core
 compares the address of each instruction that DECODE takes, and carries
@@ -630,9 +565,8 @@ paths. PREPARE holds back the first data read of a flagged instruction
 `pause_i`. WRITE takes the flag from its own micro-op, or, when it holds
 none, from PREPARE's, since a flagged instruction with a data read never
 leaves PREPARE. At a boundary where neither holds the next instruction
-yet, after a jump for example, there is no flag, and the core takes a
-pending request, as niceemu does. So the result does not depend on how
-long the fetch takes. A breakpoint written while the core runs may miss
+yet, after a jump for example, there is no flag yet, and the core waits
+for the instruction to reach one of them. A breakpoint written while the core runs may miss
 an instruction that DECODE has taken already, which DEBUG.md §6 allows.
 
 At a breakpoint, the core stays paused until `pause_i` has been 1 and is
@@ -645,14 +579,12 @@ Watchpoints (DEBUG.md §6) are pauses of the core's own too, after the
 step that hits one. Each core has a generic `G_WATCHES`, from 0 to 4,
 and inputs for the addresses and two enable bits each, of the reads and
 of the writes, from flip-flops of the debug link. The core checks each
-data access against them: the operand reads, the store, and the vector
-read of an interrupt entry or of `INT`. Fetches and constant words are
+data access against them: the operand reads and the store. Fetches and constant words are
 not data accesses, and a skipped instruction makes none. A hit sets a
 bit of `wch`, one for each watchpoint, and `wch_pc` takes the address of
-the step: R15 at its start, which is the address of the instruction, or
-of the instruction that an entry goes before. At the next step boundary
-the core pauses before anything else, ahead of a pause request and an
-interrupt, and with no exemption for the first step after a go on. It
+the step: R15 at its start, which is the address of the instruction. At
+the next step boundary the core pauses before anything else, ahead of a
+pause request, and with no exemption for the first step after a go on. It
 stays paused as at a breakpoint, with `brk_wait`, and the go on clears
 `wch`. The outputs `wch_hit_o` and `wch_pc_o` show `wch` and `wch_pc`,
 and the link reads them when `paused_o` rises.
@@ -661,7 +593,7 @@ The multi-cycle core checks each access as it starts it, and pauses in
 `BOUNDARY`. The pipelined core registers the inputs a cycle late, so no
 path runs from the link to the compares. WRITE checks the accesses of
 each micro-op as it runs it: the reads at the addresses that PREPARE
-formed and passed on, the store, and the vector read in `VEC_ST`. But
+formed and passed on, and the store. But
 PREPARE issues reads ahead of WRITE, so the reads of the next
 instruction could be on the bus before WRITE has seen a hit of the one
 before. So while a watchpoint is enabled, PREPARE issues no first data
@@ -672,14 +604,13 @@ feed only the D inputs of `wch` and of a bit for its OR, and `wch_pc`
 follows the address of each step until the first hit, so no compare
 drives an enable. WRITE treats a pending hit as a pause request, in the
 same term as `pause_i`, so it adds nothing to the paths through the
-pause (hdl/ASSUMPTIONS.md, items 27 to 29).
+pause (hdl/ASSUMPTIONS.md, items 17 to 19).
 
 A debugger writes a register while the core is paused (DEBUG.md §6), on
 the inputs `reg_we_i`, `reg_idx_i`, and `reg_data_i`, from flip-flops of
 the debug link. The core takes the write in a cycle of `PAUSED_ST` with
 `pause_i` = 1, through `regval`, so R0 stays 0 and R14 gets bit 24, and
-in no other cycle. No flags are computed, and `in_service`, `after_rti`,
-and the saved PC and SR stay. The pipeline is empty there, and the go on
+in no other cycle. No flags are computed. The pipeline is empty there, and the go on
 flushes to R15, so the core goes on from a written R15 with no path from
 the port to FETCH. The port adds a source to the D inputs of WRITE's
 registers, a mux whose select comes from flip-flops.
@@ -687,42 +618,6 @@ registers, a mux whose select comes from flip-flops.
 `halt_reason_o` is the reason of the step that halted the core, a
 `t_halt`, while `halted_o` is 1, and `HALT_NONE` before. So a system need
 not catch it from `retire_o`, which is for simulation.
-
-### 6.2 Wait
-
-`WAIT` (ISA §7.5) retires in WRITE as a `CTRL` micro-op and flushes.
-Rule 2 of §5.3 holds the data reads of younger instructions back behind
-it, as behind `INT`, so none has begun. WRITE sets `waiting` and goes to
-its mode `WAIT_ST`, where FETCH stops at R15, the address after the
-`WAIT`, as in `PAUSED_ST`. The multi-cycle core sets `waiting` and waits
-in `BOUNDARY`.
-
-Each cycle of a wait is a step boundary. With no request valid, the
-cycle is a wait step: nothing else happens, and the core raises
-`wstep_o`. A valid request ends the wait in the cycle it is seen, whether
-or not it can be taken. If ISA §7.1 allows it, the entry goes at once,
-and saves R15. Otherwise the pipelined core flushes and redirects FETCH
-to R15, and the multi-cycle core goes on from `BOUNDARY` as usual. No
-instruction is in flight in a wait, so a request is never taken late
-there.
-
-A pause goes ahead of a request at a wait's boundary, as at any other
-(§6.1). WRITE goes to `PAUSED_ST` and keeps `waiting`, and the go on
-returns to `WAIT_ST`. A wait step counts as the first step after a pause.
-So a step of a waiting core is one wait step, or the end of the wait and
-what follows it. No breakpoint stops a wait step. The check comes at the
-boundary where a request ends the wait, after the entry, as DEBUG.md §6
-says.
-
-`waiting_o` is 1 while `waiting` is 1 and no request is valid, paused or
-not, for bit 6 of the debug link's control register. `in_service_o`,
-`after_rti_o`, `saved_pc_o`, and `saved_sr_o` are the rest of the hidden
-state, straight from WRITE's registers, for the link's bits 7 and 8 and
-its words `0xFFFFFFD0` and `0xFFFFFFD1`. A system's counters
-and timer count the cycles of a wait as any cycle the core runs. The
-tests count steps instead, as the emulator does, so their timer, their
-requests, and the trace writer count each `wstep_o` as a step. In the
-fetch statistics (§8.1), a cycle of a wait has cause OTHER.
 
 ## 7. Datapath details
 
@@ -850,7 +745,7 @@ reduce (§7.3), which takes three for a rotation through C. The first
 cycle computes and writes the result, and in the third case reduces the
 count, or for a rotation through C takes the count mod 33 in the next
 cycle; the last cycle writes the adjusted value, redirects FETCH, or
-shifts. WRITE takes no interrupt between the cycles of one micro-op: it
+shifts. The core does not pause between the cycles of one micro-op: it
 waits for the last ([hdl/ASSUMPTIONS.md](../hdl/ASSUMPTIONS.md), item 6).
 
 ## 8. Memory system
@@ -892,11 +787,6 @@ system built from them must follow these rules:
 - **Requests in flight.** FETCH has up to 8 requests in flight on the
   instruction bus, and DBUS up to 4 on the data bus. A slave that cannot
   take more must raise STALL.
-- **Interrupt ports.** A device holds `valid` until the core raises
-  `ready`, and the NMI vector stable with it. The IRQ vector may change
-  meanwhile, and the core takes the one of the cycle of `ready`.
-  `nmi_ready_o` and `irq_ready_o` depend combinationally on `valid`, so a
-  device must not make `valid` depend combinationally on `ready`.
 - **Unmapped addresses.** Both buses need a default slave that acknowledges a
   read with 0 and drops a write (ISA §8.2). Without one, the core would wait
   forever.
@@ -931,8 +821,8 @@ system built from them must follow these rules:
   then. `hdl/test/instret.nasm` checks this, also behind a read that
   waits on the bus. The event counters take the core's `retire_o` and its
   own data bus, before the debug link joins it. A read or a store counts
-  when the bus accepts it, and a skip, a jump, or an interrupt in the
-  cycle of its retire report, which is no later than its `instret_o`, so a
+  when the bus accepts it, and a skip or a jump in the cycle of its
+  retire report, which is no later than its `instret_o`, so a
   read of a counter counts the same events as in the emulator.
   `emulator/test/events.nasm` checks this on both cores.
 - **Clock.** `hdl/src/tod.vhd` at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES §10),
@@ -962,21 +852,10 @@ system built from them must follow these rules:
   request into a register and acknowledges it two cycles after it is
   accepted at the earliest. While a command runs it holds every request
   but a read of `FPU_CMD`, for up to some 3400 cycles (DEVICES §11.5),
-  so a pause, an interrupt, and a single step wait that long, and a
+  so a pause and a single step wait that long, and a
   watchdog of the system must allow for it. Its arithmetic unit,
   `hdl/src/fpu_unit.vhd`, is inside it
   ([hdl/README.md](../hdl/README.md#the-floating-point-unit)).
-- **Timer.** `hdl/src/timer.vhd` at `0xFFFFFF10`–`0xFFFFFF1F` (DEVICES §4),
-  with its request on the core's IRQ port, through the merge below.
-- **Console's receive interrupt.** `hdl/src/console_irq.vhd` at
-  `0xFFFFFF02` (DEVICES §1.9). The system tells it when a byte or the end
-  enters the console's input, and whether one waits.
-- **IRQ merge.** `hdl/src/irq_merge.vhd` joins the timer's request and the
-  console's into the core's IRQ port, the timer's first (DEVICES §4). Each
-  source holds its own request until the core takes that one, so the two
-  never merge. It is combinational, so a request reaches the core in the
-  cycle it is raised, and the IRQ vector may change while `valid` stays
-  high (§6).
 - **SD card controller.** `hdl/src/sd_regs.vhd` at `0xFFFFFFA0`–`0xFFFFFFAF`
   (DEVICES §5): the registers and the buffer, with a port to a protocol
   engine that the board adds. With `G_HOLD_ACK`, as in simulation, the ACK
@@ -1011,23 +890,22 @@ of the core; every word then reads 0.
 | `0xFFFFFF60` | `FS_CTRL` | the run bit R in bit 0, and 0 in bits 31..1 | sets R to bit 0; if bit 1 is set, also clears the counters |
 | `0xFFFFFF61` | `FS_CYCLES` | the cycles counted | is ignored |
 | `0xFFFFFF62` | `FS_ISTALL` | the cycles in which the instruction bus stalled a request | is ignored |
-| `0xFFFFFF63` | `FS_DSTALL` | the cycles in which the data bus stalled a request of the core: a read, a store, or the vector read of an interrupt entry | is ignored |
+| `0xFFFFFF63` | `FS_DSTALL` | the cycles in which the data bus stalled a request of the core: a read or a store | is ignored |
 | `0xFFFFFF64` | `FS_JUMPS` | the jumps that DECODE redirected FETCH for (§5.4), predicted ones that are skipped too, also in a cycle when a flush drops them | is ignored |
 | `0xFFFFFF65`–`0xFFFFFF67` | | 0 | is ignored |
-| `0xFFFFFF68` + n | `FS_FLUSH` + n | the flushes of the pipeline by WRITE of cause n, for n = 0 to 4 | is ignored |
-| `0xFFFFFF6D`–`0xFFFFFF6F` | | 0 | is ignored |
-| `0xFFFFFF70` + n | `FS_CAUSE` + n | the cycles counted of cause n, for n = 0 to 14 | is ignored |
-| `0xFFFFFF7F` | | 0 | is ignored |
+| `0xFFFFFF68` + n | `FS_FLUSH` + n | the flushes of the pipeline by WRITE of cause n, for n = 0 to 3 | is ignored |
+| `0xFFFFFF6C`–`0xFFFFFF6F` | | 0 | is ignored |
+| `0xFFFFFF70` + n | `FS_CAUSE` + n | the cycles counted of cause n, for n = 0 to 13 | is ignored |
+| `0xFFFFFF7E`–`0xFFFFFF7F` | | 0 | is ignored |
 
-The causes of a flush (§5.4, §5.5, §6):
+The causes of a flush (§5.4, §5.5, §6.1):
 
 | n | Name | The flush |
 |---|---|---|
 | 0 | JUMP | after an instruction that wrote R15, and that DECODE did not redirect FETCH for |
 | 1 | SKIP | after a jump that DECODE predicted taken, and that is skipped |
 | 2 | STORE | after a store that may hit fetched code (§5.5), unless the instruction also jumps |
-| 3 | INTR | after `INT` or `RTI`, and at the start and at the end of an interrupt entry, so an entry counts twice |
-| 4 | OTHER | at a halt, at a pause, when the core goes on after a pause, at `WAIT`, and where a request ends a wait without an entry |
+| 3 | OTHER | at a halt, at a pause, and when the core goes on after a pause |
 
 The causes of a cycle. Each cycle counted has one, so the causes sum to
 `FS_CYCLES`. In a cycle in which WRITE holds a micro-operation, it is what
@@ -1051,8 +929,7 @@ flush by WRITE, or a jump that DECODE resolved; or else FETCH.
 | 10 | SHIFT | WRITE reduces a shift count in a cycle of its own (§7.3) |
 | 11 | ADJUST | WRITE writes a destination adjusted by 1, or a computed jump, in a second cycle |
 | 12 | STORE | WRITE waits with a store: for DBUS's register, or for the bus to accept a store into the I/O range (§5.3) |
-| 13 | INTR | WRITE runs an interrupt entry or `INT`, from its flush until the vector comes |
-| 14 | OTHER | any other cycle |
+| 13 | OTHER | any other cycle |
 
 - While R = 1, each clock cycle counts in which the core runs. The
   counters stop while the core is held, paused, or halted, as the cycle
@@ -1068,7 +945,7 @@ flush by WRITE, or a jump that DECODE resolved; or else FETCH.
 - A read returns the counter as it is in the cycle the read is accepted. To
   read a consistent set, stop the counters first.
 - The multi-cycle core has no pipeline. With it, only `FS_CYCLES` and
-  `FS_CAUSE` + 14, OTHER, count.
+  `FS_CAUSE` + 13, OTHER, count.
 - A flush of cause STORE finds what nothing else shows. The check of
   §5.5 is coarse on purpose: a store into the 32-word block of FETCH's
   oldest word, or into the block after it, flushes. So data or a stack
@@ -1085,7 +962,7 @@ To measure a piece of code, and then read the counters at leisure:
 The main check is a line-by-line diff against the emulator's trace.
 
 **The trace writer** is a simulation-only module. WRITE reports each
-retired instruction: its address and word, whether it was skipped, any interrupt taken, the halt reason, and the register
+retired instruction: its address and word, whether it was skipped, the halt reason, and the register
 values. The writer prints what changed, in the emulator's format and order:
 R0–R14 in order, R15 only after a jump, the memory write, and the halt reason.
 The report is a `t_retire` record (`hdl/src/trace_pkg.vhd`), and the writer
@@ -1097,24 +974,8 @@ accepts it from DBUS's store register (§5.3).
 **The testbench** has a sparse dual-port memory model that loads `.bin` files,
 a console model that writes each byte into the trace stream when it is
 written, a read counter that makes the number and order of data reads
-visible, and random stalls (all in `hdl/sim/wb_mem.vhd`), and an interrupt
-source that raises a request once a given number of instructions have
-retired, or a few cycles after that. The multi-cycle core takes a request
-only between steps, so its test gives the emulator the same options and
-the diff is exact. For the pipelined core, whether it takes a request
-before the next instruction or after one that had already issued a data
-read depends on the pipeline state (§6), so the trace cannot be predicted
-from the request step alone. So the testbench also writes an interrupt
-log: when each request was raised, the timer's included, and at which
-step the core took it. `hdl/test/irq_compare.py` runs the emulator with
-the matching `--irq STEP:VEC` or `--nmi STEP:VEC` options, and with
-`--no-timer-irq`, so that the log's requests stand in for the timer's,
-and the diff is then exact. It also checks that no request was taken
-later than the emulator would take it: not at all on the multi-cycle
-core, and on the pipelined core by no more than a run of instructions
-with a data read, from the first step where the emulator would take it.
-From there on, the core must take it where the emulator does, after an
-NMI that goes first, for example.
+visible, and random stalls (all in `hdl/sim/wb_mem.vhd`). Nothing comes
+from outside the program, so the diff is exact on both cores.
 
 **Test order:**
 
@@ -1130,8 +991,9 @@ NMI that goes first, for example.
    past the end of FETCH's range (§5.5), and the programs against the
    operand rules of §7.4 that hdl/README.md lists, `latecount.nasm` to
    `shiftjump.nasm`, with `samereg_prog.py`.
-5. The interrupt probes, and requests at every point in a hazard program,
-   which `hdl/test/irq_sweep.py` makes.
+5. The control words: `HALT`, and `INT`, `RTI`, `WAIT`, and every other
+   reserved control word, which halt with reason 2 (`cputest`,
+   `reserved`, `tb_trace`, and `tb_link`).
 6. Pauses (§6.1): probes and random programs with random pauses, short and
    held, and one step at a time, which must not change the trace, and a
    word of code written while the core is paused (hdl/README.md). The
@@ -1143,8 +1005,8 @@ NMI that goes first, for example.
    `hdl/test/random_prog.py`, measured with `hdl/test/random_stats.py`.
 
 **Formal checks**: each stage on its own where it can
-be, and properties of the whole core. The checkers of the Wishbone and
-interrupt ports in `hdl/formal/` serve both cores. Four stages are
+be, and properties of the whole core. The checkers of the Wishbone ports
+in `hdl/formal/` serve both cores. Four stages are
 proven for every cycle, each with assumptions that model the stages
 beside it: FETCH, so that DECODE sees each word that memory holds at the
 address it names; DECODE, so that the micro-operations of each
@@ -1157,7 +1019,7 @@ DBUS, so that WRITE gets the read data in the order of the ACKs. The
 functions both cores share, the shifter and the ALU, are proven against
 ISA.md §5 for every input, and the block compares of §5.5 against the
 ranges they stand for (`hdl/formal/formal_nice_pkg.vhd`). The math
-unit, the performance counters, the timer, and the fetch statistics of
+unit, the performance counters, and the fetch statistics of
 §8.1 are proven for every cycle too, each in a job of its own
 (hdl/README.md). Each
 assumption that names another stage is proven of that stage, or checked

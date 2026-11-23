@@ -507,9 +507,13 @@ jobserver-probe:
 run/budget:
 	@$(PYTHON) test/timing_budget.py --test
 
+# The check of test/trace_reads.py's decoding against words decoded by hand.
+run/reads:
+	@$(PYTHON) test/trace_reads.py --test
+
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/jobserver run/budget $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/jobserver run/budget run/reads $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000

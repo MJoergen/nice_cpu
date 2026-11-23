@@ -58,5 +58,5 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [readwait.nasm](readwait.nasm) | Data reads that wait for their condition and for an older micro-operation, which `tb_core` counts on the pipelined core. |
 | [random_prog.py](random_prog.py) | Writes random programs. |
 | [random_stats.py](random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
-| [trace_reads.py](trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. |
+| [trace_reads.py](trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. With `--test`, it checks its decoding against words decoded by hand, as `make run/reads` does. |
 | [timing_budget.py](timing_budget.py) | Compares the reports of `make timing` with the budget of the unit and the board, and warns at a miss. With `--spread` it gives the least, the median, and the most of each slack over the runs of `make timing-spread`. |

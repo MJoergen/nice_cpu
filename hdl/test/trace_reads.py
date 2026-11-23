@@ -3,6 +3,7 @@
 the data reads of the instruction on that line.
 
 Usage: trace_reads.py PROGRAM.bin EXPECTED.trace ACTUAL.trace
+       trace_reads.py --test                the self-test of make test
 
 Both traces are in the format of "niceemu --trace" (emulator/README.md),
 as the emulator and sim/trace.vhd write them. The script replays the
@@ -49,14 +50,17 @@ def length(iw: int) -> int:
 
 def reads(iw: int, pc: int, regs: list[int], mem: dict[int, int]) -> list[int]:
     """The addresses that the sources of iw at pc read, in order, with the
-    registers as they are when the instruction starts (ISA.md §5)."""
+    registers as they are when the instruction starts (ISA.md §5). A
+    control instruction has no operand fields and reads nothing: bits
+    20..0 of a jump or a call of one word are its distance (ISA.md §5.3)."""
+    if (iw >> 26) & 3 == 3:
+        return []
     consts = [0, 0, 0]
     p = pc + 1
-    if (iw >> 26) & 3 != 3:
-        for i in range(3):
-            if (field(iw, i) >> 4) & 3 == 3:
-                consts[i] = mem.get(p, 0)
-                p += 1
+    for i in range(3):
+        if (field(iw, i) >> 4) & 3 == 3:
+            consts[i] = mem.get(p, 0)
+            p += 1
     r = list(regs)
     r[15] = p
 
@@ -88,7 +92,31 @@ def reads(iw: int, pc: int, regs: list[int], mem: dict[int, int]) -> list[int]:
     return out
 
 
+def self_test() -> None:
+    """Checks reads() against words decoded by hand, each at 0x10 with the
+    constant word 4 after it."""
+    regs = [0, 0, 0x200, 0x300, 0x400] + [0] * 11
+    cases = [
+        (0x00006100, [0x200], "MOVE R1, @R2"),
+        (0x00607173, [0x200, 0x304], "ADD R1, @R2++, @4[R3]"),
+        (0x00316903, [0x1FF], "SUB @R5, @--R2, R3"),
+        # As operand fields, the distance 0x2242 would be @R4 and @R2, and
+        # the distance -1 would be @c[R15] twice.
+        (0x0C802242, [], "JMP with the distance 0x2242"),
+        (0x0CDFFFFF, [], "CALL with the distance -1"),
+        (0x0C000000, [], "HALT"),
+    ]
+    for iw, want, name in cases:
+        got = reads(iw, 0x10, regs, {0x11: 4})
+        if got != want:
+            sys.exit(f"FAIL trace_reads: {name} reads {got}, not {want}")
+    print(f"PASS trace_reads ({len(cases)} cases)")
+
+
 def main() -> None:
+    if sys.argv[1:] == ["--test"]:
+        self_test()
+        return
     if len(sys.argv) != 4:
         sys.exit(__doc__.split("\n\n")[1])
     mem = load_bin(sys.argv[1])

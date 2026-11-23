@@ -14,7 +14,8 @@ pin each are:
 
 | nice_cpu | NiceMonMEGA65 |
 |---|---|
-| `V2.5` | none yet |
+| `V2.6` | none yet |
+| `V2.5` | `V2.5` |
 | `V2.4` | `V2.4` |
 | `V2.3` | `V2.3`, `V2.3.1`, `V2.3.2` |
 | `V2.2` | `V2.2` |
@@ -39,6 +40,55 @@ pin each are:
 
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
+
+## V2.6 (2026-11-23)
+
+The character ROM has blocks and arrows at `0x80`–`0x99`, which were
+blank (#204), so that a program that draws a large clock, a wind
+arrow, or a picture of half blocks needs no font RAM.
+
+**Upgrade notes.**
+
+- **`0x80`–`0x99` of the character ROM are no longer blank** (#204).
+  The code of each glyph is the low byte of its Unicode code point:
+  the blocks U+2580–U+258F at `0x80`–`0x8F`, and the arrows
+  U+2190–U+2199 at `0x90`–`0x99`. `0x9A`–`0x9F`, `0x7F`, and
+  `0x00`–`0x1F` stay blank. A program that shows ISO 8859-1 text, or
+  that copies the ROM into the font RAM and writes its own glyphs from
+  `0x80`, shows the same as before.
+- **The word at `0xFFFE3000`**, row 0 of `0x80`, reads `0xFFFF` in a
+  ROM with these glyphs, and 0 in one without, so a program can tell.
+  NiceMonMEGA65 follows in MJoergen/NiceMonMEGA65#171, and until then
+  its ROM has them blank.
+- `hdl/src` has the same files and the same ports, and nothing in
+  `hdl/` changes, so the timing is that of `V2.4`. The address map is
+  that of `V2.5`. The debug link stays version 8, and Zig stays 0.17.0.
+
+**Specification and documents**
+
+- DEVICES.md §1.8 has the glyphs, the rows of the blocks, and the word
+  at `0xFFFE3000`, and §8 says that NiceMonMEGA65's ROM does not have
+  them yet (#204).
+- The note on the font's license in README.md names the four diagonal
+  arrows, which are not Spleen's.
+
+**Emulator (`niceemu`)**
+
+- `font/gen_font.py` takes 22 of the 26 glyphs from Spleen 2.2.0 by
+  their code points, and draws the four diagonal arrows, which Spleen
+  lacks, from the rows of ↗. `src/font.zig` is generated again. The
+  probe `font` reads rows of the new glyphs (#204).
+- The version is 2.6.0.
+
+**Demo (`demo/`)**
+
+- Its screen of the 256 characters shows the new glyphs. Its code and
+  its screens are unchanged.
+
+**Benchmarks**
+
+- The figures are those of `V2.4`: neither the cores, the translator,
+  nor the benchmarks change.
 
 ## V2.5 (2026-11-21)
 

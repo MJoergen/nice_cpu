@@ -23,7 +23,7 @@ e2              ADD     R15, R15, 1
                 HALT
                 HALT
                 HALT
-                MOVE    @s1+2, 4        ; the constant count of the next shift
+                MOVE    @s1+1, 4        ; the constant count of the next shift
 s1              0<0     R4, R3, 1       ; R4 = 1 << 4
                 MOVE    @s2+1, 0x10     ; the constant s0 of a late shift
 s2              0<0     R4, 0x1, @cnt   ; R4 = 0x10 << 5
@@ -33,8 +33,8 @@ s3              MOVE    R6, 0x2
                 MOVE    R5, s4+1
                 0<0     @R5, R3, @cnt   ; late store into the next constant: 1 << 5
 s4              MOVE    R6, 0x2
-                MOVE    R7++, s5+1      ; two-cycle write of the address
-                MOVE    @R7, 0x40       ; R7 = s5 + 2: the constant of s5
+                MOVE    R7++, s5        ; two-cycle write of the address
+                MOVE    @R7, 0x40       ; R7 = s5 + 1: the constant of s5
 s5              MOVE    R6, 0x2
                 ADD[M]  R0, R0, R0      ; Z = 1
         ?Z      MOVE    @s6+1, 0x50     ; a conditional store into fetched code

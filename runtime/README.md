@@ -255,7 +255,7 @@ A routine pushes the operands, writes a command, reads the result, and
 pops it, so it leaves the FPU's stack as it found it. A routine of the
 table below uses at most two of its values (DEVICES.md §11.5). An entry
 sets the command in R5 and jumps to a part that the entries share, so
-the library is 483 words, 289 of them for the float operations and the
+the library is 400 words, 245 of them for the float operations and the
 rest for the functions of `math.h` (Math functions, below). A program
 that calls any routine of it is joined with all of it. An
 `f32` goes in and out through the view `FPU_X_S`, and `+`, `−`, `×`,
@@ -382,7 +382,7 @@ The library is small on purpose:
   exact arithmetic. The float arithmetic is the float library's, so a
   program that calls `scanf`, even only for integers, is joined with
   the float library. `sscanf` with `%d` alone is 8816 words, and the float
-  library comes with it, 483 words more.
+  library comes with it, 400 words more.
 - The i family, `iscanf` and its relatives, with newlib's names, is
   `scanf` without the float conversions: `siscanf` with `%d` alone is
   4374 words, and is joined without the float library. A float
@@ -406,7 +406,7 @@ The library is small on purpose:
   nearest, ties to even, as glibc does. `%a` prints a 1 before the point,
   also for a subnormal, as musl does, or a 2 when the rounding carries
   into it, such as `0x2p+0` for `%.0a` of 1.5. They cost every program
-  that calls `printf` 3052 words: `printf` with `%d` alone is 7298 words.
+  that calls `printf` 2578 words: `printf` with `%d` alone is 7298 words.
   `%f` of 1e300 takes about 48000 steps.
 - The i family, `iprintf` and its relatives, with newlib's names, is
   `printf` without the float conversions, for a program that must be

@@ -206,27 +206,27 @@ begin
       regs_v(15) := X"00000006";
       instruction(X"00000003", mem_we => '1', mem_addr => X"FFFFFF00", mem_data => X"00000048");
 
-      -- 2: MOVE R15, skip
-      regs_v(15) := X"00000009";
+      -- 2: JMP skip, the jump of one word
+      regs_v(15) := X"00000008";
       instruction(X"00000006");
 
       -- 3: ?Z MOVE R1, 1, skipped. Only R15 changes.
-      regs_v(15) := X"0000000B";
-      instruction(X"00000009", skipped => '1');
+      regs_v(15) := X"0000000A";
+      instruction(X"00000008", skipped => '1');
 
       -- 4: DEC[M] R2, R2: 0 - 1 sets X, C, and N.
       regs_v(2)  := X"FFFFFFFF";
       regs_v(14) := X"17000000";
-      regs_v(15) := X"0000000C";
-      instruction(X"0000000B");
+      regs_v(15) := X"0000000B";
+      instruction(X"0000000A");
 
       -- 5: MOVE @CONSOLE, 10
-      regs_v(15) := X"0000000F";
-      instruction(X"0000000C", mem_we => '1', mem_addr => X"FFFFFF00", mem_data => X"0000000A");
+      regs_v(15) := X"0000000E";
+      instruction(X"0000000B", mem_we => '1', mem_addr => X"FFFFFF00", mem_data => X"0000000A");
 
       -- 6: control command 31, reserved
-      regs_v(15) := X"00000010";
-      instruction(X"0000000F", halt => HALT_RESERVED);
+      regs_v(15) := X"0000000F";
+      instruction(X"0000000E", halt => HALT_RESERVED);
       wait;
    end process p_core;
 

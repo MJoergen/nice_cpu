@@ -346,7 +346,7 @@ right, not fast: an instruction takes about ten cycles.
 |---|---|
 | `BOUNDARY` | Pauses while `pause_i` is 1, stops at a breakpoint, or starts an instruction. |
 | `FETCH` | Reads the instruction word, then each constant word, and increments R15 after each. |
-| `COND` | Tests the condition, and runs a control instruction. |
+| `COND` | Tests the condition, and runs a control instruction: a jump or a call of one word, or a halt. A call's push waits in `DEST_WAIT`. |
 | `SRC` | Evaluates s0, then s1, with their side effects. |
 | `MOD33` | For `C<C` and `C>C` only, reduces the count mod 33. |
 | `EXEC` | Computes the result, writes the destination, and updates the flags. |
@@ -423,7 +423,11 @@ stalls: 7 cycles over a fall-through for a jump that WRITE resolves,
 aligned or not, since its redirect reaches FETCH from a register, 2 for one that DECODE resolves, and one more for an
 operation other than `MOVE` into R15. A backward conditional `ADD R15,
 R15, offset`, which DECODE predicts taken, costs 2 when taken and 7 when
-skipped (MICROARCH.md §5.4). Its read of the counter before the
+skipped (MICROARCH.md §5.4). The jumps and the call of one word cost the
+same as the long forms: 2 for a `JMP` or a `CALL` that DECODE resolves, 7
+for a conditional `JMP` that is taken, and 2 or 7 for a backward `JMPR`,
+taken or skipped, with a cycle more when WRITE refetches from an odd
+address. Its read of the counter before the
 jump holds the stream up a cycle, which hides one cycle of the early
 bubble, 3 in a stream of instructions without reads. It also measures four reads in a
 row: WRITE takes read data from DBUS's FIFO, a cycle after its ACK,

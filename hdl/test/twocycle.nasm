@@ -165,9 +165,10 @@ j2              ADD     R15++, R15, 1   ; r = next + 1, R15 = next + 2
                 MOVE    R2, 0x44
                 HALT
                 .ORG    0x81000100      ; I = 1: SR as a pointer stays above the byte windows
-far             JMP     back1
-far2            JMP     back2
-far3            JMP     back3
+; MOVE R15: the program is out of reach of a JMP of one word
+far             MOVE    R15, back1
+far2            MOVE    R15, back2
+far3            MOVE    R15, back3
 tbl             .DAT    back4, back5, back6
                 .ORG    0x97000107
                 .DAT    back5

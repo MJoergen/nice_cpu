@@ -21,9 +21,12 @@ enough to be worth comparing:
   counter of sim/wb_mem.vhd and the emulator, so that the number and order
   of data reads are compared too. A store through a register can still
   reach the program by chance; both models then run the changed program.
-- Control instructions are rare: HALT and the reserved control words,
-  which halt the processor. They always have a condition, so that they
-  halt now and then.
+- The jumps of one word go forward like the others, JMP and CALL, or
+  back like the predicted ADD R15, R15, c, JMPR (ISA.md §5.3). A CALL
+  pushes through R13, which points into the data region.
+- The other control instructions are rare: HALT and the reserved control
+  words, which halt the processor. They always have a condition, so that
+  they halt now and then.
 - A memory destination is never @R0, @--R0, or @R0++, which store to
   word 0.
 - A source or base register is often one that the last three
@@ -56,6 +59,13 @@ COUNTER = 0xFFFFFF01  # The read counter (DEVICES.md §1)
 
 # MOVE R15, c: a jump to the constant word that follows.
 JUMP = 0x0003D800
+# The jumps and the call of one word, by their command (ISA.md §5.3): the
+# distance is in bits 20..0.
+SHORT_JMP, SHORT_JMPR, SHORT_CALL = 4, 5, 6
+# A word 0 below this marks a jump or a call of one word whose distance
+# main() works out: SHORT_MARK - (cond << 3 | command), forward for JMP and
+# CALL, and back for JMPR.
+SHORT_MARK = -100
 MOVE_C = 0x00001800  # MOVE R0, c: add the destination register << 14
 
 
@@ -179,6 +189,8 @@ def back_jump(rng: random.Random) -> list[int]:
         s0, s1 = 15, 0x30
     else:
         s0, s1 = 0x30, 15
+    if rng.random() < 0.5:
+        return [SHORT_MARK - (cond << 3 | SHORT_JMPR)]
     return [cond << 28 | 0x3 << 21 | 15 << 14 | s0 << 7 | s1, -5]
 
 
@@ -198,8 +210,9 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
     if kind < 0.0003:
         # A reserved command, with or without other bits, or HALT with a
         # bit of 20 to 0 set (ISA.md §5.3).
-        bad = rng.choice((rng.randrange(1, 32) << 21, rng.randrange(1, 32) << 21 | rng.getrandbits(21),
-                          1 << rng.randrange(21)))
+        # The commands 4 to 6 are the jumps and the call of one word.
+        cmd = rng.choice([c for c in range(1, 32) if c not in (4, 5, 6)])
+        bad = rng.choice((cmd << 21, cmd << 21 | rng.getrandbits(21), 1 << rng.randrange(21)))
         return [cond << 28 | 0b11 << 26 | bad]
     if kind < 0.05:
         return r15_template(rng, cond, recent)
@@ -210,6 +223,9 @@ def instruction(rng: random.Random, recent: list[list[int]]) -> list[int]:
         # (MICROARCH.md §5.6), and half of these are conditional.
         if rng.random() < 0.5:
             cond = rng.randrange(1, 16)
+        # Half of them are the JMP and the CALL of one word.
+        if rng.random() < 0.5:
+            return [SHORT_MARK - (cond << 3 | rng.choice((SHORT_JMP, SHORT_CALL)))]
         return [cond << 28 | JUMP, -1]
     return plain(rng, cond, recent)
 
@@ -241,7 +257,16 @@ def main() -> None:
         # r - 1 and r + 1 (ISA.md §4.2), and 2c for the shift. The
         # template's s1 is 0, or 1 for the shift.
         for j, word in enumerate(words):
-            if j > 0 and word == -5:
+            if j == 0 and word <= SHORT_MARK:
+                cond, cmd = (SHORT_MARK - word) >> 3, (SHORT_MARK - word) & 7
+                if cmd == SHORT_JMPR:
+                    t = rng.choice(starts[max(0, i - BACK_SPAN) : i + 1])
+                else:
+                    near = starts[i + 1 : i + JUMP_SPAN]
+                    t = rng.choice(near if near and rng.random() < NEAR else starts[i + 1:])
+                d = t - (starts[i] + 1)
+                words[j] = cond << 28 | 0b11 << 26 | cmd << 21 | d & 0x1FFFFF
+            elif j > 0 and word == -5:
                 # R15 is the address after the constant, so the offset is
                 # the target less that.
                 back = starts[max(0, i - BACK_SPAN) : i + 1]

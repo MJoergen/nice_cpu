@@ -21,7 +21,9 @@
 ; at the end if all passed. It runs on the pipelined core
 ; only, since the multi-cycle core has other bubbles and the emulator
 ; counts steps, not cycles. Each case starts on an even address, so that
-; the layout of each is that of the review's programs.
+; the layout of each is that of the review's programs, whose jumps are
+; the long forms, MOVE R15 and ADD R15, R15. The cases from 0x480 have
+; the jumps and the call of one word.
 CYCLES          .EQU    0xFFFFFF40
                 MOVE    R12, 0
 ; a fall-through, the baseline: 3 cycles between the reads
@@ -36,7 +38,7 @@ CYCLES          .EQU    0xFFFFFF40
                 .ORG    0x80
                 ADD[M]  R0, R0, 1       ; Z = 0
                 MOVE    R1, @CYCLES
-        ?Z      JMP     a1
+        ?Z      MOVE    R15, a1
 a1              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
                 CMP     R4, 3
@@ -45,7 +47,7 @@ a1              MOVE    R2, @CYCLES
                 .ORG    0xC0
                 ADD[M]  R0, R0, 1
                 MOVE    R1, @CYCLES
-        ?!Z     JMP     a2
+        ?!Z     MOVE    R15, a2
 a2              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
                 CMP     R4, 10
@@ -55,7 +57,7 @@ a2              MOVE    R2, @CYCLES
                 .ORG    0x100
                 ADD[M]  R0, R0, 1
                 MOVE    R1, @CYCLES
-        ?Z      JMP     a3
+        ?Z      MOVE    R15, a3
                 NOP
 a3              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
@@ -64,7 +66,7 @@ a3              MOVE    R2, @CYCLES
                 .ORG    0x140
                 ADD[M]  R0, R0, 1
                 MOVE    R1, @CYCLES
-        ?!Z     JMP     a4
+        ?!Z     MOVE    R15, a4
                 NOP
 a4              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
@@ -73,7 +75,7 @@ a4              MOVE    R2, @CYCLES
 ; a jump that DECODE resolves: 3 + 2
                 .ORG    0x180
                 MOVE    R1, @CYCLES
-                JMP     a5
+                MOVE    R15, a5
 a5              MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
                 CMP     R4, 5
@@ -158,5 +160,70 @@ b13             MOVE    R1, @CYCLES
 :               MOVE    R2, @CYCLES
                 SUB     R4, R2, R1
                 CMP     R4, 10
+        ?!Z     ADD     R12, R12, 1
+                JMP     s14
+; The jumps and the call of one word (ISA.md §5.3) cost what the long
+; forms do. A skipped conditional JMP: 3, the same as the fall-through
+                .ORG    0x480
+s14             ADD[M]  R0, R0, 1       ; Z = 0
+                MOVE    R1, @CYCLES
+        ?Z      JMP     c1
+c1              MOVE    R2, @CYCLES
+                SUB     R4, R2, R1
+                CMP     R4, 3
+        ?!Z     ADD     R12, R12, 1
+; a taken conditional JMP, resolved in WRITE, to an even address: 3 + 7
+                .ORG    0x4C0
+                ADD[M]  R0, R0, 1
+                MOVE    R1, @CYCLES
+        ?!Z     JMP     c2
+                NOP
+c2              MOVE    R2, @CYCLES
+                SUB     R4, R2, R1
+                CMP     R4, 10
+        ?!Z     ADD     R12, R12, 1
+; a JMP that DECODE resolves, to an even address: 3 + 2
+                .ORG    0x500
+                MOVE    R1, @CYCLES
+                JMP     c3
+                NOP
+c3              MOVE    R2, @CYCLES
+                SUB     R4, R2, R1
+                CMP     R4, 5
+        ?!Z     ADD     R12, R12, 1
+                JMP     s15
+; a conditional JMPR back, which DECODE predicts taken: taken, 3 + 2, as
+; at 0x300
+                .ORG    0x540
+c4              MOVE    R2, @CYCLES
+                SUB     R4, R2, R1
+                CMP     R4, 5
+        ?!Z     ADD     R12, R12, 1
+                JMP     s16
+s15             ADD[M]  R0, R0, 1       ; Z = 0
+                NOP
+                MOVE    R1, @CYCLES
+        ?!Z     JMPR    c4
+                HALT
+; the same, skipped: WRITE flushes and refetches the next instruction,
+; 3 + 7, and a cycle more for the refetch from an odd address
+                .ORG    0x580
+s16             ADD[M]  R0, R0, 1       ; Z = 0
+c5              MOVE    R1, @CYCLES
+        ?Z      JMPR    c5
+                MOVE    R2, @CYCLES
+                SUB     R4, R2, R1
+                CMP     R4, 11
+        ?!Z     ADD     R12, R12, 1
+; a CALL, which DECODE resolves, to an even address: 3 + 2, as a JMP
+; that DECODE resolves
+                .ORG    0x5C0
+                MOVE    R13, 0x700
+                MOVE    R1, @CYCLES
+                CALL    c6
+                NOP
+c6              MOVE    R2, @CYCLES
+                SUB     R4, R2, R1
+                CMP     R4, 5
         ?!Z     ADD     R12, R12, 1
                 HALT

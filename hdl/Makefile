@@ -174,7 +174,7 @@ EXAMPLES = count replicate print wrap
 PROBES = logic dest carry r15 cond rotate selfmod addr cputest \
   console screen iofetch reads reserved mpu mpu64 mpubits perf events input \
   r15modes r0dest r14mem skipconst carryin shiftc wrapmem smcown sd net eth bytewin \
-  fpu fpustack fpudec fpufunc
+  fpu fpustack fpudec fpufunc short shortfar
 # The runs that read the cycle counter or the time: memory in both.
 NOCYCLES_fpu        = yes
 NOCYCLES_fpu_stall  = yes

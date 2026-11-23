@@ -260,7 +260,7 @@ x1              CMP     R1, @x1
                 HALT
                 CMP     R1, 0x0C000000
         ?!Z     JMP     fail
-                MOVE    R1, @2[R15]     ; the word after the jump: 0x1234
+                MOVE    R1, @1[R15]     ; the word after the jump: 0x1234
                 JMP     x2
                 .DAT    0x1234
 x2              CMP     R1, 0x1234

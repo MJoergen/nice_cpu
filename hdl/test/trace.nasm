@@ -11,9 +11,9 @@
 CONSOLE         .EQU    0xFFFFFF00
                 MOVE    @0x50, 7        ; words 0-2
                 MOVE    @CONSOLE, 0x48  ; words 3-5: "H"
-                JMP     skip            ; words 6,7
-                HALT                    ; word 8: jumped over
-skip    ?Z      MOVE    R1, 1           ; words 9,10
-                DEC[M]  R2, R2          ; word 11: R2 = 0xFFFFFFFF, C = 1, N = 1
-                MOVE    @CONSOLE, 10    ; words 12-14
-                .DAT    0x0FE00000      ; word 15: control command 31, reserved
+                JMP     skip            ; word 6
+                HALT                    ; word 7: jumped over
+skip    ?Z      MOVE    R1, 1           ; words 8,9
+                DEC[M]  R2, R2          ; word 10: R2 = 0xFFFFFFFF, C = 1, N = 1
+                MOVE    @CONSOLE, 10    ; words 11-13
+                .DAT    0x0FE00000      ; word 14: control command 31, reserved

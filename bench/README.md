@@ -483,10 +483,11 @@ the read of the result. In heapsort's inner loop, for example:
         7722                 CMP     R7, R8
         7722                 ?V XOR  R14, R14, 0x10000000
 
-A `CALL` line is two instructions, and its run count is that of one of
-them. `cycprof.py --test` checks the charging on a counted loop whose
-cycles are worked out by hand in the script, and the runs of a `CALL`,
-and `make test` runs it.
+A `CALL` of a label is one instruction. A `CALL` of a register or of
+memory is two, and its run count is that of one of them.
+`cycprof.py --test` checks the charging on a counted loop whose cycles
+are worked out by hand in the script, and the runs of both kinds of
+`CALL`, and `make test` runs it.
 
 ## The size of a module
 

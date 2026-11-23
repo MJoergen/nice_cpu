@@ -282,6 +282,14 @@ CASES: List[Tuple[str, str]] = [
     ("T .EQU R3\n JMPR T", "2: error: JMPR takes an address, not 'T'"),
     (" JMPR nowhere", "1: error: undefined symbol 'nowhere'"),
     ("JMPR: HALT", "1: error: 'JMPR' is a mnemonic and cannot be a symbol"),
+    # the reach of the one-word JMP, JMPR, and CALL (ISA.md section 5.3):
+    # -0x100000 to 0xfffff words from the next instruction
+    (" JMP 0x100001", "1: error: JMP: '0x100001' is out of reach, 1048576 words from "
+     "the next instruction, where the reach is -1048576 to 1048575"),
+    (" .ORG 0x100000\n CALL 0", "2: error: CALL: '0' is out of reach, -1048577 words from "
+     "the next instruction, where the reach is -1048576 to 1048575"),
+    (" JMPR 0x80000000", "1: error: JMPR: '0x80000000' is out of reach, 2147483647 words "
+     "from the next instruction, where the reach is -1048576 to 1048575"),
     ("jmpr .EQU 1", "1: error: 'jmpr' is a mnemonic and cannot be a symbol"),
 ]
 
@@ -310,7 +318,8 @@ GOOD: List[Tuple[str, str]] = [
     # A '*' at the end of a word joins it to the next, as a '+' does: 4*3.
     # MOVE is 0, R1 1<<14, and a constant source 0x30<<7: 00005800.
     ("x .EQU 3\n MOVE R1, 4* x", "00000000 00005800\n00000001 0000000c\n"),
-    ("x .EQU 3\n JMP 4* x", "00000000 0003d800\n00000001 0000000c\n"),
+    # JMP 12 at 0 is one word, command 4 with the distance 12-1 = b.
+    ("x .EQU 3\n JMP 4* x", "00000000 0c80000b\n"),
     (" .DAT 1 +5", "00000000 00000001\n00000001 00000005\n"),
     (" .DAT 1 +5, 3", "00000000 00000006\n00000001 00000003\n"),
     # ?F0 and ?F1 (#162), and ?E, ?I, and ?M, their old names: HALT
@@ -399,8 +408,8 @@ WARN: List[Tuple[str, str, str]] = [
     # RET alone on an indented line is an instruction, not a label.
     # NOP alone on an indented line is an instruction, not a label.
     (" NOP\n\tHALT", "00000000 00000000\n00000001 0c000000\n", ""),
-    (" RET\n\tCALL 0", "00000000 0003f680\n00000001 0077580f\n00000002 00000002\n"
-     "00000003 0003d800\n00000004 00000000\n", ""),
+    # CALL 0 at 1 is one word, command 6 with the distance 0-2 = 1ffffe.
+    (" RET\n\tCALL 0", "00000000 0003f680\n00000001 0cdffffe\n", ""),
 ]
 
 

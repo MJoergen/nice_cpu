@@ -46,17 +46,24 @@ API: List[Tuple[List[Optional[int]], Dict[int, str], Tuple[str, int]]] = [
     ([0x0C200000], {}, (".DAT 0x0c200000 ; reserved control word", 1)),
     ([0x0C400021], {}, (".DAT 0x0c400021 ; reserved control word", 1)),
     ([0x3C600000], {}, (".DAT 0x3c600000 ; reserved control word", 1)),
-    ([0x0C800000], {}, (".DAT 0x0c800000 ; reserved control word", 1)),
+    ([0x0CE00000], {}, (".DAT 0x0ce00000 ; reserved control word", 1)),
+    ([0x0FE00000], {}, (".DAT 0x0fe00000 ; reserved control word", 1)),
     ([0x0C600001], {}, (".DAT 0x0c600001 ; reserved control word", 1)),
     ([0x00005800, None], {}, (".DAT 0x00005800 ; MOVE R1, ? (cut off)", 1)),
     ([0x00004130, 0x05], {}, (".DAT 0x00004130, 0x00000005 ; MOVE R1, R2 (s1: 0x5)", 2)),
     ([0x5 << 21 | 0x01 << 14 | 0x12 << 7], {}, ("DEC R1, --R2", 1)),
     ([0x00000000 | 0x11 << 14 | 0x5D << 7], {}, ("MOVE R1--, @--R13", 1)),
-    # ADD R15, R15, c is JMPR to 2 + c, the address after it plus c: 3<<21
-    # | 0x0f<<14 | 0x0f<<7 | 0x30 = 0063c7b0. Any other form stays an ADD.
-    ([0xB063C7B0, 0xFFFFFFFE], {}, ("?!Z JMPR 0x0", 2)),
-    ([0x0063C7B0, 0x10], {0x12: "loop"}, ("JMPR loop", 2)),
-    ([0x0063C7B0, 0xFFFFFFF0], {}, ("JMPR 0xfffffff2", 2)),
+    # The one-word JMP, JMPR, and CALL (#192): commands 4, 5, and 6, with
+    # the target 1 + the distance of bits 20..0, signed
+    ([0x0C800000], {}, ("JMP 0x1", 1)),
+    ([0xBCBFFFFF], {}, ("?!Z JMPR 0x0", 1)),
+    ([0x0CA00011], {0x12: "loop"}, ("JMPR loop", 1)),
+    ([0x0CC0000F], {0x10: "sub"}, ("CALL sub", 1)),
+    ([0x3CDFFFFE], {}, ("?Z CALL 0xffffffff", 1)),
+    ([0x0C8FFFFF], {}, ("JMP 0x100000", 1)),
+    ([0x0C900000], {}, ("JMP 0xfff00001", 1)),
+    # ADD R15, R15, c is an ADD: JMPR is one word now
+    ([0xB063C7B0, 0xFFFFFFFE], {}, ("?!Z ADD R15, R15, 0xfffffffe", 2)),
     ([0x0063C7B0, None], {}, (".DAT 0x0063c7b0 ; ADD R15, R15, ? (cut off)", 1)),
     ([0x0263C7B0, 0x01], {}, ("ADD[M] R15, R15, 0x1", 2)),
     ([0x0063D80F, 0x01], {}, ("ADD R15, 0x1, R15", 2)),

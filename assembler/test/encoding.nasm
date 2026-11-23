@@ -184,9 +184,13 @@ alone:
 clab    ?Z      HALT                    ; 438: 3c000000
                 .DAT    clab            ; 439: 438
                 MOVE    R1 ,R2 * comment  ; 43a: 00004100
-; CALL and RET (ISA.md 10.1): the constant is the size of the MOVE, a label
-; is the ADD's address, and a condition is on both words
-cl              CALL    flab            ; 43b: 0077580f, 43c: 2, 43d: 0003d800, 43e: 436
+; CALL and RET (ISA.md 10.1): with an address, CALL is one word, command 6,
+; with the distance from the next instruction: 0cc00000 | 436-43c = -6 =
+; 1ffffa. Otherwise the constant is the size of the MOVE, a label is the
+; ADD's address, and a condition is on both words. The .BLK keeps the
+; addresses below.
+cl              CALL    flab            ; 43b: 0cdffffa
+                .BLK    3               ; 43c-43e: 0
                 CALL    R2              ; 43f: 0077580f, 440: 1, 441: 0003c100
                 CALL    @R2             ; 442: 0077580f, 443: 1, 444: 0003e100
                 CALL    5[R2]           ; 445: 0077580f, 446: 2, 447: 0003d900, 448: 5
@@ -196,8 +200,10 @@ cl              CALL    flab            ; 43b: 0077580f, 43c: 2, 43d: 0003d800, 
                 ret                     ; 451: 0003f680
                 .DAT    cl              ; 452: 43b
 ; JMP, CMP, TST, PUSH, POP, CLR, and NOP (ISA.md 10.1): each is the one
-; instruction of its idiom, with the condition on it
-jl              JMP     flab            ; 453: 0003d800, 454: 436
+; instruction of its idiom, with the condition on it. JMP with an address
+; is command 4: 0c800000 | 436-454 = -1e = 1fffe2.
+jl              JMP     flab            ; 453: 0c9fffe2
+                .BLK    1               ; 454: 0
         ?!C     JMP     @R2++           ; 455: a003f100
                 CMP     R1, 5           ; 456: 022000b0, 457: 5
                 CMP     @R2, R3         ; 458: 02202103
@@ -230,8 +236,10 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
 ; six here are A1 to A6, at 474, 476, 47a, 490, 488, and 489.
 :               MOVE    R1, 3           ; A1, 474: 00005800, 475: 3
 :               SUB[M]  R1, R1, 1       ; A2, 476: 022040b0, 477: 1
-        ?!Z     JMP     :-              ; 478: b003d800, 479: A2 = 476
-:               JMP     :-              ; A3, 47a: 0003d800, 47b: A3 = 47a, its own line
+        ?!Z     JMP     :-              ; 478: bc800000 | A2-479 = -3: bc9ffffd
+                .BLK    1               ; 479: 0
+:               JMP     :-              ; A3, 47a: A3-47b = -1: 0c9fffff, its own line
+                .BLK    1               ; 47b: 0
                 .DAT    :--, :---, 2+:-, 4*:+, :-+1, :+-1, -:-
                 ; 47c-482: A2 = 476, A1 = 474, 2+A3 = 47c, 4*A4 = 1240,
                 ; A3+1 = 47b, A4-1 = 48f, -A3 = fffffb86
@@ -240,16 +248,16 @@ pl              .DAT    4*pl, 2+3*4, 2*3-1, -2*3, 3*PR, PR*PR-1, 0xFFFFFFFF*2
                 .ORG    0x488
 :               .DAT    :--             ; A5, 488: A4 = 490, above in source order
 :               MOVE    R1, @:-[R2]     ; A6, 489: 1<<14 | 0x72<<7 = 00007900, 48a: A6 = 489
-; JMPR (ISA.md 10.1): ADD R15, R15, target-next, where next is the address
-; 2 words on: 3<<21 | 0x0f<<14 | 0x0f<<7 | 0x30 = 0063c7b0. ?!Z is b, ?C is
-; 2 in the top nibble. A7 and A8 are anonymous labels at 4a0 and 4aa.
+; JMPR (ISA.md 10.1): command 5, 0ca00000, with the distance target-next
+; in bits 20..0, where next is the address of the next word. ?!Z is b, ?C is
+; 2 in the top nibble. A7 and A8 are anonymous labels at 4a0 and 4a6.
                 .ORG    0x4a0
 :               SUB[M]  R1, R1, 1       ; A7, 4a0: 022040b0, 4a1: 1
-        ?!Z     JMPR    :-              ; 4a2: b063c7b0, 4a3: 4a0-4a4 = fffffffc
-                JMPR    jr              ; 4a4: 0063c7b0, 4a5: 4a8-4a6 = 2
-        ?C      jmpr    :+              ; 4a6: 2063c7b0, 4a7: A8-4a8 = 2
-jr              JMPR    jr              ; 4a8: 0063c7b0, 4a9: 4a8-4aa = fffffffe
-:               JMPR    0               ; A8, 4aa: 0063c7b0, 4ab: 0-4ac = fffffb54
+        ?!Z     JMPR    :-              ; 4a2: 4a0-4a3 = -3: bcbffffd
+                JMPR    jr              ; 4a3: 4a5-4a4 = 1: 0ca00001
+        ?C      jmpr    :+              ; 4a4: A8-4a5 = 1: 2ca00001
+jr              JMPR    jr              ; 4a5: 4a5-4a6 = -1: 0cbfffff
+:               JMPR    0               ; A8, 4a6: 0-4a7 = -4a7 = 1ffb59: 0cbffb59
 ; spaces in an operand (ISA.md 10.1): on a line with a comma, an operand
 ; runs to the next comma, and an instruction or directive that takes one
 ; operand takes all of its words. Without a comma, each word is an operand,
@@ -262,8 +270,13 @@ se              MOVE    R1, se - sa     ; 4b2: 00005800, 4b3: 4b2-4b0 = 2
                 MOVE    R3, TEN + 1[R2]  ; 4b8: 3<<14 | 0x32<<7 = 0000d900, 4b9: b
                 .DAT    1 +5            ; 4ba: 1, 4bb: 5
                 .DAT    1 + 5, - 2      ; 4bc: 6, 4bd: fffffffe
-                JMP     se + 2          ; 4be: 0003d800, 4bf: 4b4
-                .BLK    TEN - 9         ; 4c0: 0
+                JMP     se + 2          ; 4be: 4b4-4bf = -b: 0c9ffff5
+                .BLK    TEN - 9         ; 4bf: 0
 SPACED          .EQU    2 + 3
-                .DAT    4*SPACED        ; 4c1: 4*5 = 14
-                .DAT    SPACED+1        ; 4c2: 6
+                .DAT    4*SPACED        ; 4c0: 4*5 = 14
+                .DAT    SPACED+1        ; 4c1: 6
+; the one-word forms (ISA.md 5.3): a condition, and the ends of the reach,
+; 0xfffff forward and 0x100000 back from the next instruction
+        ?Z      CALL    flab            ; 4c2: 3cc00000 | 436-4c3 = -8d: 3cdfff73
+far             JMP     far + 1 + 0xFFFFF  ; 4c3: 0c800000 | fffff: 0c8fffff
+                JMPR    far + 2 - 0x100000  ; 4c4: 0ca00000 | -100000: 0cb00000

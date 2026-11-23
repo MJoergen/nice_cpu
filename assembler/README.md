@@ -67,11 +67,12 @@ The rules of the output:
   "Always" is no condition, and "never" is `?!1`. The conditions of SR
   bits 30 and 31 are `?F0` and `?F1`. Registers are `R0` to
   `R15`, never `SP` or `PC`, which are names that programs define.
-- The pseudo-instructions, such as `CALL` and `JMP`, are not written,
+- The one-word `JMP`, `JMPR`, and `CALL` (ISA.md §5.3) are written with
+  their target, the address after them plus the distance, so that the
+  target can be a label. The other pseudo-instructions are not written,
   since their words are those of the instructions written by hand
-  (ISA.md §10.1). `JMPR` is the exception: `ADD R15, R15, c`, with no
-  modifier, is `JMPR` to its target, the address after it plus c, so
-  that the target can be a label. Any other `ADD` to R15 stays an `ADD`.
+  (ISA.md §10.1): a jump of two words is `MOVE R15, label`, and
+  `ADD R15, R15, c` stays an `ADD`.
 - Words that no instruction of the syntax gives are `.DAT`, with what they
   would do as a comment. These are the reserved control words (ISA.md
   §5.3), and `MOVE`, `DBL`, `DEC`, `NOT`, and `ONE` with an unused field
@@ -98,7 +99,7 @@ skipped:
   right when it has a label.
 - A constant of 16 or more that is the address of a label is shown as the
   label, with the value in the comment: `MOVE R15, loop ; loop =
-  0x00000123`. So is the target of a `JMPR`. Smaller constants, such as
+  0x00000123`. So is the target of a one-word jump or call. Smaller constants, such as
   the 2 of a call, stay numbers, and so does the count of a SHIFT
   instruction. Of several labels at one
   address, the first one in the file that `niceasm` accepts is shown.
@@ -172,6 +173,13 @@ This section lists what the assembler does beyond it.
   error too, so `CMP[C]` is not a compare with borrow. The target of
   `JMPR` is an address expression, since the assembler subtracts the
   address after the jump, so `JMPR R3` and `JMPR @x` are errors.
+- `JMP`, `JMPR`, and `CALL` with an address are always one word, with the
+  distance from the next instruction in bits 20..0 (ISA.md §5.3). A
+  target more than 1048576 words back, or more than 1048575 forward, is an
+  error. The size of a statement depends only on its operand modes, so
+  the assembler never falls back to a longer form: a far target is
+  written `MOVE R15, label`, or for a call `ADD @--R13, 2, R15` and
+  `MOVE R15, label`.
 - An `.EQU` value is a number, an expression, a register, or a complete
   operand such as `@R2`, `R3++`, or `5[R4]`. The name is replaced by its value
   when it is a whole operand, the part after `@`, the register in `--Rx`,

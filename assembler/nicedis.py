@@ -32,6 +32,8 @@ ALU_NAMES = ["MOVE", "SUB", "MDBL", "ADD", "DBL", "DEC", "NOT", "NOR",
 SHIFT_NAMES = ["SHL", "0<1", "0<C", "C<0", "C<1", "C<C", "ROL", "BPL",
                "SHR", "1>0", "C>0", "0>C", "1>C", "C>C", "ROR", "BPR"]
 FIELD_NAMES = ["dest", "s0", "s1"]
+# The one-word jumps and call, by their control command (ISA.md 5.3)
+SHORT_NAMES = {v: k for k, v in niceasm.SHORT.items()}
 
 # The constant of a label is only shown as one from this value on, so that
 # small numbers, such as the 2 of a call, stay numbers.
@@ -64,7 +66,7 @@ class Insn(NamedTuple):
     unused: List[Tuple[str, Operand]]  # unused fields that are not R0, by name
     reserved: bool          # a reserved control word
     cut: bool               # constant words are missing
-    target: Optional[int] = None  # the target of ADD R15, R15, c, written as JMPR
+    target: Optional[int] = None  # the target of a one-word JMP, JMPR, or CALL
 
     def dat(self) -> bool:
         return self.reserved or self.cut or bool(self.unused)
@@ -88,8 +90,13 @@ def decode(addr: int, read: Reader) -> Insn:
     word = read(addr)
     assert word is not None
     cond = condition(word)
-    if word >> 26 & 3 == 3:
-        if word & 0x03FFFFFF:  # every command but HALT is reserved (ISA.md 5.3)
+    if word >> 26 & 3 == 3:  # the control instructions (ISA.md 5.3)
+        cmd = word >> 21 & 0x1F
+        if cmd in SHORT_NAMES:  # the distance from the next instruction
+            dist = word & 0x1FFFFF
+            target = (addr + 1 + dist - (0x200000 if dist & 0x100000 else 0)) & MASK
+            return Insn([word], cond, SHORT_NAMES[cmd], [], [], False, False, target)
+        if word & 0x03FFFFFF:  # every other command but HALT is reserved
             return Insn([word], cond, "", [], [], True, False)
         return Insn([word], cond, "HALT", [], [], False, False)
 
@@ -121,10 +128,7 @@ def decode(addr: int, read: Reader) -> Insn:
     ops = [Operand(f, c, i == 0, bool(shift) and i == 2 and f >> 4 == 3)
            for i, (f, c) in enumerate(zip(fields, consts))]
     unused = [(FIELD_NAMES[i], ops[i]) for i in range(nops, 3) if fields[i]]
-    target = None
-    if name == "ADD" and fields == [0x0F, 0x0F, 0x30] and consts[2] is not None:
-        target = (addr + 2 + consts[2]) & MASK  # the relative jump JMPR (ISA.md 10.1)
-    return Insn(words, cond, name, ops[:nops], unused, False, cut, target)
+    return Insn(words, cond, name, ops[:nops], unused, False, cut)
 
 
 def operand_text(op: Operand, name: Namer) -> str:
@@ -148,8 +152,8 @@ def operand_text(op: Operand, name: Namer) -> str:
 def statement(insn: Insn, name: Namer) -> str:
     """The condition, mnemonic, and operands of an instruction that is not a .DAT."""
     if insn.target is not None:
-        return " ".join(t for t in (insn.cond, "JMPR", name(insn.target) or f"0x{insn.target:x}")
-                        if t)
+        return " ".join(t for t in (insn.cond, insn.mnemonic,
+                                    name(insn.target) or f"0x{insn.target:x}") if t)
     args = ", ".join(operand_text(op, name) for op in insn.operands)
     return " ".join(t for t in (insn.cond, insn.mnemonic, args) if t)
 

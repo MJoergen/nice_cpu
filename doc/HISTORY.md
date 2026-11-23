@@ -926,3 +926,12 @@ had 15 rows. Then the screen grew to 28 rows and 160×112 pixels, so
 that on NiceMonMEGA65 the 28 rows and the debugger's strip of 4 fill
 the 1024 lines of its display. With `-2004` it keeps the 25 rows,
 whose screen at `0x400` would grow into the code (#203).
+
+## The codes 0x80 to 0x9F of the character ROM
+
+Until 2026-11-23, the character ROM had blank glyphs at `0x80` to
+`0x9F`, as Spleen has no glyphs for the C1 control codes of ISO 8859-1.
+A program that wanted a block or an arrow copied the ROM into the font
+RAM and drew its own. Then `0x80` to `0x99` got the blocks U+2580 to
+U+258F and the arrows U+2190 to U+2199, each at the low byte of its
+code point, so that a program finds them in the ROM (#204).

@@ -239,7 +239,7 @@ KEY             MOVE    @SCR_X, COL     ; the cursor where the next character go
         ?C      JMP     PUT             ; printable ASCII
         ?Z      JMP     BACK            ; DEL
                 CMP     R1, 0xA0
-        ?C      JMP     KEY             ; 0x80 to 0x9F have no character
+        ?C      JMP     KEY             ; 0x80 to 0x9F, C1 control codes
                 ; 0xA0 and above fall through to PUT
 
 ; A character at the cursor, which moves on, to the next line after the last
@@ -373,9 +373,9 @@ KCODES          MOVE    SP, @D_SP
 
 ; SHOWB, the ECHO of F3, shows the byte R1 in the row ROW, as the byte COL of
 ; its key: in hex from column 2, and from column 42 as a character, or as ^
-; and a character for a control code. 0x80 to 0x9F have no character, and
-; the bytes after the first K_MAX of a key are not shown. It changes nothing
-; but COL, which it counts up.
+; and a character for a control code. 0x80 to 0x9F, the C1 control codes,
+; show no character, and the bytes after the first K_MAX of a key are not
+; shown. It changes nothing but COL, which it counts up.
 SHOWB           PUSH    R2
                 PUSH    R3
                 PUSH    R4

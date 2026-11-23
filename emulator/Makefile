@@ -94,7 +94,8 @@ OPTS_sd      = --sd0 test/sd.img.out -d 0x200:32 -d 0xffffffa0:16
 OPTS_net     = -d 0x200:17 -d 0xffffffb0:16
 # The frames sent go to test/eth.frames.out, checked after the probes.
 OPTS_eth     = --eth-in test/eth.in --eth-out test/eth.frames.out -d 0x200:33 -d 0xffffffc0:16
-OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1
+OPTS_font    = -d 0xfffe0820:32 -d 0xfffe0020:1 -d 0xfffe2826:1 -d 0xffffff86:1 \
+               -d 0xfffe3000:32 -d 0xfffe32e0:32 -d 0xfffe3340:1
 OPTS_chunky  = --color -d 0xffffff87:1
 # chunky again, with --screen, which prints only the size of the mode.
 OPTS_chunky_screen = -s

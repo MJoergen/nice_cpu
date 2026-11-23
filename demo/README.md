@@ -48,16 +48,16 @@ send to the console, appears at the blinking cursor:
 
 Past the last row, the typewriter's rows scroll up by one, and the welcome
 stays. Other control codes and other escape sequences do nothing, and so do
-the bytes `0x80` to `0x9F`. The bytes from `0xA0` on are the characters of
-ISO 8859-1.
+the bytes `0x80` to `0x9F`, the C1 control codes of ISO 8859-1. The bytes
+from `0xA0` on are its characters.
 
 The key codes show the bytes that each key sends, as
 [DEVICES.md §1.5](../doc/DEVICES.md#15-keyboard) lists them, which helps when
 writing programs that read the keyboard. Each key gets a row, with its
 bytes in hex from column 2, and from column 42 as characters, a control
 code as `^` and a character: `^[` is ESC, `^C` is CTRL-C, and `^?` is
-DEL. The bytes `0x80` to `0x9F` have no character, and a key shows at
-most 12 bytes. A sequence from the line shows as one key, and so
+DEL. The bytes `0x80` to `0x9F`, the C1 control codes, show no
+character, and a key shows at most 12 bytes. A sequence from the line shows as one key, and so
 does an ESC with the bytes that come within 10 ms after it. So the ESC
 key shows alone, and in a test of `niceemu`, where the next byte of the
 input file is always there, an ESC shows with the key after it. A function
@@ -72,7 +72,8 @@ once it is past row 24
 
 The characters and the colors check the font and the video output at a
 glance. On the left are the 256 characters of the font, ISO 8859-1, in 16
-rows of 16. A row's label is the code of its first character, and the
+rows of 16, with the blocks and arrows of the character ROM at `0x80` to
+`0x99` ([DEVICES.md §1.8](../doc/DEVICES.md#18-font)). A row's label is the code of its first character, and the
 digits above the columns add to it. On the right are ramps of seven
 colors, red, green, blue, yellow, cyan, magenta, and gray, each with the
 16 intensities `0` to `F` of 4-bit color: first as backgrounds, and then as

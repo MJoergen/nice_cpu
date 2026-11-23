@@ -186,7 +186,8 @@ pixels of the chunky mode, when the mode word at `0xFFFFFF87` selects it
 of text of 2004, or the 100 rows of pixels that cover them. A resized window
 scales the screen and keeps its aspect. The characters are from the font
 that the font base at `0xFFFFFF86` selects (DEVICES.md §1.8): the
-character ROM, Spleen 16×32 as on NiceMonMEGA65, or the font RAM at
+character ROM, Spleen 16×32 as on NiceMonMEGA65, with blocks and arrows
+at `0x80`–`0x99`, or the font RAM at
 `0xFFFE0000`, which a program writes. Spleen is in `src/font.zig`, which
 `font/gen_font.py` generates (`font/LICENSE.spleen` has its license).
 `--no-font` makes the words of both fonts ordinary memory, as on an FPGA
@@ -284,7 +285,7 @@ address twice and a file with no words are errors.
 | `0x10000000`–`0x5FFFFFFF` | 1342177280 | Byte windows (DEVICES.md §9). A data access reaches a word, a byte, or a halfword of words `0x00000000`–`0x03FFFFFF`. Instruction fetches read 0. |
 | `0x60000000`–`0xFFFDFFFF` | 2684223488 | Ordinary memory. |
 | `0xFFFE0000`–`0xFFFE1FFF` | 8192 | Font RAM (DEVICES.md §1.8). Ordinary memory, but a write keeps only bits 15..0. With `--no-font`, ordinary memory. |
-| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (DEVICES.md §1.8): Spleen 16×32, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
+| `0xFFFE2000`–`0xFFFE3FFF` | 8192 | Character ROM (DEVICES.md §1.8): Spleen 16×32, with blocks and arrows at `0x80`–`0x99`, 32 words per glyph. A write is dropped. With `--no-font`, ordinary memory. |
 | `0xFFFE4000`–`0xFFFEFFFF` | 49152 | Ordinary memory. |
 | `0xFFFF0000`–`0xFFFF45FF` | 17920 | Screen: the characters of 80×28 in its first 2240 words, or 160×112 pixels in the chunky mode (DEVICES.md §1.10). Ordinary memory. With `-2004` it is at `0x00000400`–`0x0000427F` instead, 80×25 or 160×100. |
 | `0xFFFF4600`–`0xFFFFFEFF` | 47360 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |

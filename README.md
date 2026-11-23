@@ -292,7 +292,8 @@ The code and the documents are under the [MIT license](LICENSE),
   are by B. Ulmann and T. Kratz (see [doc/REFERENCES.md](doc/REFERENCES.md)).
 - **The font of the emulator's window**, `emulator/src/font.zig`, is
   generated from Spleen 16×32, under the BSD 2-Clause license in
-  `emulator/font/LICENSE.spleen`.
+  `emulator/font/LICENSE.spleen`. The four diagonal arrows at `0x96` to
+  `0x99` are not Spleen's, and are drawn by `emulator/font/gen_font.py`.
 - **SDL 3**, which a build with `-Dwindow` compiles in, is under the zlib
   license.
 - **Math functions of the C library**, in `runtime/libc/src/math/`:

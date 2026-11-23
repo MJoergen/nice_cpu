@@ -72,10 +72,32 @@ class Instr:
     dest_adjust: bool = False  # A register destination in mode 001 or 010
 
 
+def is_short(iw: int) -> bool:
+    """Whether iw is a one-word JMP, JMPR, or CALL: control commands 4-6."""
+    return (iw >> 26) & 3 == 3 and 4 <= (iw >> 21) & 0x1F <= 6
+
+
 def decode(iw: int, c: int = 0) -> Instr:
     """The instruction word iw, with c its first constant word, which
     decides whether DECODE predicts a conditional jump."""
     conditional = ((iw >> 31) & 1, (iw >> 28) & 7) != (0, 0)
+    if is_short(iw):
+        # The one-word JMP, JMPR, and CALL (ISA.md §5.3): a jump is MOVE
+        # R15, d[R15], and a call MOVE @--R13, R15 that jumps to d[R15] too.
+        # DECODE redirects an unconditional one, and predicts a JMPR with
+        # a condition taken when it jumps back (src/pipe_pkg.vhd,
+        # short_early). Any other is a jump that WRITE resolves, its
+        # target known as that of MOVE R15, c is.
+        call = (iw >> 21) & 0x1F == 6
+        early = not conditional or ((iw >> 21) & 0x1F == 5 and bool((iw >> 20) & 1))
+        d = Instr(conditional, False, frozenset({13}) if call else frozenset(),
+                  frozenset({13, 15}) if call else frozenset({15}), 0, call, 1, 1,
+                  False, True, early, True, False)
+        if call:
+            d.store_sum_reg = 13
+        if not early:
+            d.jump_kind = "constant"
+        return d
     if (iw >> 26) & 3 == 3:
         return Instr(conditional, True, frozenset(), frozenset(), 0, False, 1, 1,
                      True, True, False, False, False)

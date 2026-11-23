@@ -17,7 +17,7 @@
 ;   top of the loop.
 ; - A loop tested at the bottom, in the library routines, closes with
 ;   JMPR label, as in hand.nasm, which DECODE predicts taken
-;   (MICROARCH.md §5.4). The other jumps back are MOVE PC, label.
+;   (MICROARCH.md §5.4). The other jumps back are JMP label.
 ; - The byte buffer is unpacked to one byte per word before the strings
 ;   phase, outside its timing, as unsigned char buf[] is with CHAR_BIT = 32.
 ;

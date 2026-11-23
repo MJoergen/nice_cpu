@@ -78,24 +78,24 @@ These are the tables from the emulator. First `bench.c`
 through nicewasm:
 
     phase      instructions       cycles  result
-    rng64            51746        51774  0e18cd0a  ok
-    crc32            63514        63542  2df3b109  ok
-    bst             297825       297853  55a72225  ok
-    heapsort        298396       298424  bdb22882  ok
-    vm              840049       840077  04156880  ok
-    strings         101281       101309  d9867cf6  ok
-    total          1652811      1652979
+    rng64            51744        51770  0e18cd0a  ok
+    crc32            63512        63538  2df3b109  ok
+    bst             296798       296824  55a72225  ok
+    heapsort        298394       298420  bdb22882  ok
+    vm              840047       840073  04156880  ok
+    strings         100207       100233  d9867cf6  ok
+    total          1650702      1650858
 
 Then `hand.nasm`:
 
     phase      instructions       cycles  result
     rng64            39949        39953  0e18cd0a  ok
     crc32            27658        27662  2df3b109  ok
-    bst             114179       114183  55a72225  ok
-    heapsort        177189       177193  bdb22882  ok
+    bst             113154       113158  55a72225  ok
+    heapsort        175654       175658  bdb22882  ok
     vm              112013       112017  04156880  ok
     strings          20321        20325  d9867cf6  ok
-    total           491309       491333
+    total           488749       488773
 
 The instruction count leaves out the reads of the counters, and the
 cycle count includes them. The emulator counts one cycle per
@@ -338,19 +338,19 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1697007 instructions, 2435862 cycles (estimate), CPI 1.435
-      cycles above 1/instruction: 738855
+    bench.bin: 1694067 instructions, 2424787 cycles (estimate), CPI 1.431
+      cycles above 1/instruction: 730720
       ...
-      taken jumps resolved in WRITE (flush)                        270193  0.159/instr  36.6%
-      jumps DECODE resolves (early-redirect bubble)                 55103  0.032/instr   7.5%
+      taken jumps resolved in WRITE (flush)                        270193  0.159/instr  37.0%
+      jumps DECODE resolves (early-redirect bubble)                 79101  0.047/instr  10.8%
       ...
-      read data a cycle after the bus (registered request)         103501  0.061/instr  14.0%
-      read data used by more than a register write                 180100  0.106/instr  24.4%
+      read data a cycle after the bus (registered request)         103501  0.061/instr  14.2%
+      read data used by more than a register write                 180100  0.106/instr  24.6%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         51746     82004  1.585   mpu 0.35, bus 0.15, early 0.05, adjust 0.02
+      rng64         51744     82002  1.585   mpu 0.35, bus 0.15, early 0.06, fetch 0.02
       ...
-      total       1652811   2351155  1.423
+      total       1650702   2340857  1.418
 
 The bubbles are the core's. A jump that WRITE resolves leaves WRITE in
 cycle c − 2 and flushes in the same cycle, and the redirect reaches
@@ -370,7 +370,7 @@ the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2351155 cycles, 1.42 per instruction, and those of `hand.nasm` 1252534,
+2340857 cycles, 1.42 per instruction, and those of `hand.nasm` 1247321,
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -388,12 +388,12 @@ PREPARE forms; and `--dest-adjust N` gives a register destination in
 mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
-phases take 2351155 cycles, against 2349102 without, and those of
-`hand.nasm` 1252534 against 1248275. A fifth, `--read-late N`, also 1 by
+phases take 2340857 cycles, against 2339144 without, and those of
+`hand.nasm` 1247321 against 1246297. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2261167 cycles and 1172037. `pipecycles.py --test` checks the model on
+Without it, the phases take 2250869 cycles and 1168102. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -495,12 +495,12 @@ and `make test` runs it.
 `words.py` gives the size in words of a wasm module translated by
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig`. `make words` prints it for `bench.wasm`,
-`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 11604, 5903,
-and 29891 words. 3052 of the benchmark's words are the
+`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 9625, 4909,
+and 24591 words. 3052 of the benchmark's words are the
 float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
 clang, a module of the math functions of the C library that are C, in
-double and float, and prints its size, 7268 words, which
+double and float, and prints its size, 5723 words, which
 runtime/README.md quotes. The others are routines of the float library. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
@@ -555,16 +555,16 @@ values, and runs the program; `make native` runs it on the host. To
 change a size, edit its define, run `python3 floatexpected.py`, put its
 values in `float.c`, and run `make wasm`.
 
-The program is 10550 words, the float library among them. The table
+The program is 8632 words, the float library among them. The table
 from the emulator:
 
     phase      instructions       cycles  result
-    convert          42793        42821  97943df8  ok
-    dot32             4946         4974  c0c723f7  ok
-    dot64             6569         6597  ba3319ea  ok
-    mandel          114317       114345  4c25faf9  ok
-    norm             11679        11707  7703cd00  ok
-    total           180304       180444
+    convert          40743        40769  97943df8  ok
+    dot32             4686         4712  c0c723f7  ok
+    dot64             6309         6335  ba3319ea  ok
+    mandel          106727       106753  4c25faf9  ok
+    norm             11077        11103  7703cd00  ok
+    total           169542       169672
 
 On the pipelined core, `make core CORE_PROGRAMS=float` gives:
 
@@ -576,7 +576,7 @@ On the pipelined core, `make core CORE_PROGRAMS=float` gives:
     norm             11679        40812  7703cd00  ok
     total           180304       617442
 
-That is 3.42 cycles per instruction. `make cycles` gives 612025. The
+That is 3.42 cycles per instruction. `make cycles` gives 594957. The
 FPU's unit takes 14 cycles for an `ADD` and 16 for a `MUL`, and the FPU
 about 4 more for the command. Issue
 [#164](https://github.com/MJoergen/nice_cpu/issues/164) lists ways to
@@ -584,20 +584,20 @@ make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
-of most calls of the float library. The program takes 10813 words, 263
+of most calls of the float library. The program takes 9060 words, 428
 more, and the emulator gives:
 
     phase      instructions       cycles  result
-    convert          28713        28741  97943df8  ok
-    dot32             2704         2732  c0c723f7  ok
-    dot64             3881         3909  ba3319ea  ok
-    mandel           41542        41570  4c25faf9  ok
-    norm              8319         8347  7703cd00  ok
-    total            85159        85299
+    convert          28199        28225  97943df8  ok
+    dot32             2700         2726  c0c723f7  ok
+    dot64             3877         3903  ba3319ea  ok
+    mandel           41540        41566  4c25faf9  ok
+    norm              8077         8103  7703cd00  ok
+    total            84393        84523
 
-That is 53% fewer instructions than with the calls. On the pipelined core
+That is 50% fewer instructions than with the calls. On the pipelined core
 it takes 355798 cycles, 42% fewer than 617442, at 4.18 per instruction,
-and `make cycles` gives 352416. The top-level `make slow` runs `float`
+and `make cycles` gives 351552. The top-level `make slow` runs `float`
 and `float_inline` on both cores, and `release.py figures` checks that
 this section quotes their cycles on the pipelined core.
 

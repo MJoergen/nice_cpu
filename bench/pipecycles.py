@@ -332,6 +332,23 @@ def decode(iw: int, c: int = 0) -> Info:
     info.src = (((iw >> 11) & 7, (iw >> 7) & 15), ((iw >> 4) & 7, iw & 15))
     info.nreads = h.mem_reads
     info.shift_late, info.shift_regs, info.sum_regs, info.adjust = 0, [], [], False
+    if hazards.is_short(iw):
+        # MOVE R15, d[R15], or for a call MOVE @--R13, R15, which writes
+        # d[R15] to R15 too (hazards.decode).
+        op = Uop()
+        op.bypass = False
+        if (iw >> 21) & 0x1F == 6:
+            info.dm, info.dr = 5, 13
+            info.src = ((0, 15), (3, 15))
+            op.store, op.store_base = True, 13
+            op.writes, op.sidefx = [13, 15], [True, False]
+            info.sum_regs = [13]
+        else:
+            info.dm, info.dr = 0, 15
+            info.src = ((3, 15), (0, 0))
+            op.writes, op.sidefx = [15], [False]
+        info.uops = [op]
+        return info
     if h.control:
         u = Uop()
         u.sr_write = True
@@ -1094,6 +1111,60 @@ c               HALT
      # (word 6) and c (word 9, one word) cost 3 each: done 15 and 19.
      # 4 instructions + 6 (start) + 9 + 1 = 20.
      4, 20, {"startup": 6, "early": 9, "fetch": 1}),
+    ("the one-word JMP: DECODE redirect, 3-cycle bubble",
+     """                JMP     a
+                HALT
+a               JMP     b
+                HALT
+b               JMP     c
+                HALT
+c               HALT
+""",
+     # Each jump is 1 word, DECODE at d, the target fetched at d + 2 and in
+     # DECODE at d + 4: a bubble of 3. Jump 1 is in DECODE at 3, done at 6.
+     # a (word 2), b (word 4), and c (word 6) are even, one word each, so
+     # each costs 3: done 10, 14, and 18. 4 instructions + 6 (start) + 9 =
+     # 19.
+     4, 19, {"startup": 6, "early": 9}),
+    ("a counted loop with ?!Z JMPR back: DECODE predicts it taken",
+     """                MOVE    R1, 10
+loop            SUB[M]  R1, R1, 1
+        ?!Z     JMPR    loop
+                HALT
+""",
+     # As the loop with ADD R15, R15, offset, but WRITE takes the JMPR in
+     # one cycle, so nothing hides the bubble: early 3 for each of the 9
+     # taken jumps. The last jump is skipped: WRITE flushes, and FETCH
+     # refetches the HALT, a flush of 7. 22 instructions + 6 (start) + 27
+     # + 7 = 62.
+     22, 62, {"startup": 6, "early": 27, "flush": 7}),
+    ("a counted loop with ?!Z JMP back: no prediction, each taken jump flushes",
+     """                MOVE    R1, 10
+loop            SUB[M]  R1, R1, 1
+        ?!Z     JMP     loop
+                HALT
+""",
+     # As the loop with ?!Z MOVE R15, loop: a JMP is never predicted, so
+     # each of the 9 taken jumps flushes, a gap of 7, and the untaken last
+     # one costs nothing. 22 instructions + 6 (start) + 63 = 91.
+     22, 91, {"startup": 6, "flush": 63}),
+    ("the one-word CALL: a store through R13 and a DECODE redirect",
+     """                MOVE    R13, 0x200
+                CALL    f
+                HALT
+f               MOVE    R15, @R13++
+""",
+     # MOVE R13 is done at 6. The CALL (word 2) is in DECODE at 4 and
+     # redirects FETCH, so f (word 4) is in DECODE at 8. Its store address,
+     # @--R13, waits a cycle for R13 (sumwait 1): done 8. The bubble of 3
+     # before f, from 5 to 8, overlaps that cycle: early 2. The RET is two
+     # micro-ops (multi 1). Its read of @R13 is loaded at 10, on the bus at
+     # 11, a cycle after the CALL's store, and its data is there in 12
+     # (readbus 1): done 12 and 13. The return is resolved in WRITE: a
+     # flush of 7, and the HALT is done at 21. 4 instructions + 6 (start)
+     # + 1 + 2 + 1 + 1 + 7 = 22.
+     4, 22, {"startup": 6, "multi": 1, "sumwait": 1, "early": 2, "readbus": 1,
+             "flush": 7}),
     ("a store, then a jump DECODE resolves: FETCH waits for the store",
      """                MOVE    R11, 0x200
                 MOVE    @R11++, 0

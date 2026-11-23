@@ -54,8 +54,8 @@ def translate(wasm: str, tmp: str) -> List[str]:
 
 # --test: a snippet whose words are counted by hand. An instruction is one
 # word, and each constant one more (ISA.md §3): MOVE R1, 0x1234 is 2, and
-# the CALL of the undefined label is 4, its ADD with the constant 2 and its
-# jump with the label. .RES emits nothing, and .DAT one word. So 7 words.
+# the CALL of the undefined label is 1, the distance in the instruction
+# word (ISA.md §5.3). .RES emits nothing, and .DAT one word. So 4 words.
 TEST = """                MOVE    R1, 0x1234
                 CALL    __helper
                 .RES    10
@@ -65,8 +65,8 @@ x               .DAT    7
 
 def test() -> None:
     n = words(TEST.splitlines(keepends=True), "test")
-    if n != 7:
-        sys.exit(f"FAIL words.py --test: {n} words, expected 7")
+    if n != 4:
+        sys.exit(f"FAIL words.py --test: {n} words, expected 4")
     print("PASS words.py --test")
 
 

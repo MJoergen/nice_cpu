@@ -73,7 +73,8 @@ def profile(lines: List[str], binpath: str, name: str
     pipecycles.run_model(m, hazards.trace_lines(binpath))
     runs: "collections.Counter[int]" = collections.Counter()
     costs: Costs = collections.defaultdict(collections.Counter)
-    # A line of two instructions, CALL, runs as often as each of them.
+    # A line of two instructions, such as CALL R1, runs as often as each
+    # of them.
     for pc, n in m.runs.items():
         if pc in line_of:
             runs[line_of[pc]] = max(runs[line_of[pc]], n)
@@ -103,15 +104,17 @@ loop            SUB[M]  R1, R1, 1
 """
 TEST_LINES = [(1, 6, {"startup": 6}), (10, 63, {"flush": 63}), (10, 0, {}), (1, 0, {})]
 
-# And the runs of a CALL, a line of two instructions, which runs once for
-# each call, and of the RET it reaches twice.
+# And the runs of a CALL of a register, a line of two instructions, which
+# runs once for each call, of the one-word CALL, and of the RET each
+# reaches.
 CALL_TEST = """                MOVE    R13, 0x1000
-                CALL    f
+                MOVE    R1, f
+                CALL    R1
                 CALL    f
                 HALT
 f               RET
 """
-CALL_RUNS = [1, 1, 1, 1, 2]
+CALL_RUNS = [1, 1, 1, 1, 1, 2]
 
 
 def run_snippet(text: str) -> Tuple["collections.Counter[int]", Costs]:

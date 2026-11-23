@@ -9,13 +9,13 @@
 ;   unit used directly, with an operand left in place where it does not
 ;   change.
 ; - A conditional jump back that is mostly taken, such as a loop's back
-;   edge, is JMPR label, which assembles as ADD PC, PC, label-next
-;   (ISA.md §10.1). DECODE predicts it taken, so it costs what an
-;   unconditional jump does (MICROARCH.md §5.4). One that is mostly
-;   skipped stays a MOVE PC, label, which costs nothing when skipped. A
+;   edge, is JMPR label, one word (ISA.md §5.3). DECODE predicts it
+;   taken, so it costs what an unconditional jump does (MICROARCH.md
+;   §5.4). One that is mostly skipped stays a JMP label, which DECODE
+;   never predicts, and which costs nothing when skipped. A
 ;   loop is laid out so that its hot jump goes back: a block that is
 ;   mostly reached by a jump is placed before the jump (str.diff).
-; - A conditional return is a MOVE PC, label to a RET that others share
+; - A conditional return is a JMP to a RET that others share
 ;   (hs.ret). Skipped, it costs nothing, where a conditional RET costs
 ;   the two cycles of its read and its jump.
 ; - The data layout is the natural one for a word-addressed machine. The

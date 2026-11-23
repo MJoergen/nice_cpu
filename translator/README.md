@@ -150,7 +150,7 @@ the module `nice`. Zig and Rust take one source file, the root of the
 program, and a Rust program that wants `nice.rs` mounts it itself (runtime
 README). The float library, `runtime/float_fpu.nasm`, which uses the FPU
 of DEVICES.md §11, is joined if the program calls it, for a float
-operation or a function of `math.h`: all of it, 483 words. A function of
+operation or a function of `math.h`: all of it, 400 words. A function of
 the program's own with the name of one of the library's, such as an
 exported `log`, is no call of it. A wasm trap writes a line with its code
 and address to the console before the processor halts, as `trapmsg.nasm`
@@ -170,7 +170,7 @@ On `bench/bench.c` the translated code then takes 23% fewer words, and
 the phases 13% fewer cycles on the pipelined core, by `pipecycles.py` at
 889c202. With `--no-bounds-checks` as well, which gives up the traps of
 an access out of bounds, it takes 48% fewer words and 22% fewer cycles.
-A C program that prints no floats saves another 3052 words with
+A C program that prints no floats saves another 2578 words with
 `iprintf` in place of `printf` (runtime README). Code where every word
 or cycle counts is best written in assembly by hand: `bench/hand.nasm`
 takes 47% fewer cycles than the default.
@@ -242,7 +242,7 @@ ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
-about 5900 words built with ReleaseSafe, and about 11900 built with
+about 4900 words built with ReleaseSafe, and about 11900 built with
 Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
@@ -304,10 +304,10 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
 The optimizations change nothing in WASM.md. The size of translated code
-is measured in words (`make words` in `bench/`): `test/safe.zig` is 5903
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 4909
 words. The benchmark of [bench/](../bench/)
-runs 1652811 instructions in its phases, from a module of 11604 words,
-3052 of them the float conversions of the C library's `printf`.
+runs 1650702 instructions in its phases, from a module of 9625 words,
+2578 of them the float conversions of the C library's `printf`.
 [doc/review/code-size-plan.md](../doc/review/code-size-plan.md) has the
 measurements of the plan, and [doc/HISTORY.md](../doc/HISTORY.md) lists
 the steps that got the code here.

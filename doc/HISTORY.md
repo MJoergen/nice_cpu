@@ -963,3 +963,31 @@ a new major, without the saved PC and SR, the NMI request, bits 6 to
 10 of its control register, and the halt reasons 3, for `INT` inside an
 interrupt routine, and 4, for `RTI` outside one. The interrupt counter
 of the performance counters went too.
+
+## Jumps and calls in one word
+
+Until `V3.0`, a jump to a label was two words, `MOVE PC, label` or
+`ADD PC, PC, offset`, with the target in a constant word, and a call
+was two instructions in four words, `ADD @--SP, 2, PC` and
+`MOVE PC, label`. The assembler wrote them for `JMP`, `JMPR`, and
+`CALL`.
+
+A census of the monitor of NiceMonMEGA65 on 2026-11-16, 23570 words,
+found that its calls, jumps, and returns took 36% of its code, and that
+1698 of the 4217 constant words of its hand-written part belonged to a
+jump or a call (#192). So `V3.0` added `JMP`, `JMPR`, and `CALL` as
+control commands 4, 5, and 6, one word each, with a signed distance of
+21 bits in the instruction word. The commands were free after the
+interrupts went. `JMPR` stayed apart from `JMP` because the pipelined
+core predicts a backward `JMPR` with a condition, and `hand.nasm` lost
+10% of its speed without the choice. The call pushes through R13, the
+first meaning that R13 has in the hardware.
+
+A prototype measured the gain before the change: 17% to 20% fewer words
+in every translated program, and 19.7% in the monitor, with a few dozen
+LUTs more, the same 100 MHz, and the same cycles to within the
+alignment of the jump targets. The assembler always writes the short
+form for an address, as the size of a statement depends only on its
+operand modes, and a target out of reach is an error. Nothing measured
+came near the reach of a million words: the farthest call was 41611
+words, in CoreMark.

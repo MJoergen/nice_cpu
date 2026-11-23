@@ -42,15 +42,16 @@ These rules let separately written C and assembly code call each other. Compiler
 
 A function may change a preserved register only if it restores it before it returns. Only code whose purpose is to change F1, F0, or U may leave them changed.
 
-**Calls.** A call pushes the address of the instruction after the jump and then jumps. A return pops it into PC. The pushed address depends on the size of the jump instruction:
+**Calls.** A call pushes the address of the instruction after the call and then jumps. A return pops it into PC:
 
 | Call | Code |
 |---|---|
-| To a label | `ADD @--SP, 2, PC` then `MOVE PC, label` |
+| To a label | `CALL label`, one word (ISA §5.3) |
+| To a label out of reach of `CALL` | `ADD @--SP, 2, PC` then `MOVE PC, label` |
 | Through a register | `ADD @--SP, 1, PC` then `MOVE PC, Rx` |
 | Return | `MOVE PC, @SP++` |
 
-The assembler writes these sequences for `CALL target` and `RET` (ISA.md §10.1), and the runtime's sources use them.
+The assembler writes these for `CALL target` and `RET` (ISA.md §10.1), and the runtime's sources use them. A `CALL` to a label reaches 2²⁰ words either way, and is an error farther away.
 
 On entry to a function, mem[SP] is the return address. The return pops it, so after the call SP is the same as it was just before the call sequence.
 
@@ -124,7 +125,7 @@ On entry to a function, mem[SP] is the return address. The return pops it, so af
 
 Division by zero is undefined in C, so these routines may return any value for it.
 
-**The FPU.** A routine may use 8 values of the FPU's stack ([DEVICES.md §11.5](../doc/DEVICES.md#115-rules-for-programs)), and leaves the depth as it found it, so a caller may keep up to 8 values on the stack across a call. The routines of the float library for the functions of `math.h` that run a function of DEVICES.md §11.3, such as `_pow`, use up to 15, so a caller keeps at most one value across those. The FPU's flags are not preserved, and compiled and translated code never reads them. An interrupt service routine does not use the FPU.
+**The FPU.** A routine may use 8 values of the FPU's stack ([DEVICES.md §11.5](../doc/DEVICES.md#115-rules-for-programs)), and leaves the depth as it found it, so a caller may keep up to 8 values on the stack across a call. The routines of the float library for the functions of `math.h` that run a function of DEVICES.md §11.3, such as `_pow`, use up to 15, so a caller keeps at most one value across those. The FPU's flags are not preserved, and compiled and translated code never reads them.
 
 **Device routines.** The runtime library also has routines for the devices of the emulator and the FPGA implementation, so that programs need not use their addresses. They are the console ([DEVICES.md §1](../doc/DEVICES.md#1-console-screen-and-read-counter)), the performance counters ([DEVICES.md §3](../doc/DEVICES.md#3-performance-counters)), and the emulator's character screen at `0xFFFF0000` ([DEVICES.md §1](../doc/DEVICES.md#1-console-screen-and-read-counter)). Unlike the routines above, a program calls them by name, so they are ordinary C functions: `nice_putc` has the label `_nice_putc`. External C names that start with `nice_` are reserved for them.
 
@@ -175,7 +176,6 @@ compile to:
                     MOVE    R2, 2
                     MOVE    R3, 3
                     MOVE    R4, 4
-                    ADD     @--SP, 2, PC    ; call f
-                    MOVE    PC, _f
+                    CALL    _f              ; call f
                     ADD     SP, SP, 1       ; remove e
                     MOVE    @_x, R1         ; x = f(...)

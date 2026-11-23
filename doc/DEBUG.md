@@ -504,8 +504,10 @@ the reads and one for the writes. A data access of ISA §8.2 to the
 address of a watchpoint, of a kind that it enables, is a hit. Only the
 exact address matches, and there are no ranges, masks, or hit counts.
 
-- **The accesses.** The data accesses are the operand reads and the
-  destination writes (ISA §8.2). So the read of an operand
+- **The accesses.** The data accesses are the operand reads, the
+  destination writes, and the push of the one-word `CALL` (ISA §8.2).
+  So a write watchpoint on a word of the stack sees a `CALL` that
+  pushes there, and the read of an operand
   that the operation ignores is a hit, and `ADD R1, @R2, @R2` reads, and
   hits, twice. A skipped instruction makes no data access. An instruction
   fetch, a constant word, and the link's own accesses are not data

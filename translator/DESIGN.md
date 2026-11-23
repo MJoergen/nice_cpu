@@ -573,15 +573,30 @@ R15, f`. Once a function's code and the helpers are lines, nicewasm
 writes the idioms as the pseudo-instructions of ISA.md §10.1, so that
 the output reads like hand-written NICE assembly: `JMP`, `JMPR`, `CMP`,
 `TST`, `PUSH`, `POP`, `CLR`, `NOP`, `RET`, and `CALL`. Each assembles to
-the same words. A `CALL` stands for the two instructions only where they
+the words of its idiom, but for `JMP`, `JMPR`, and `CALL` with an
+address, which are one word (ISA.md §5.3) and do the same. A `CALL`
+stands for the two instructions only where they
 follow each other with one condition, and the `ADD` pushes the size of
 the jump in words. A `JMPR top` stands for `ADD R15, R15, top-next` only
 where the label `next` comes right after it and nothing else names it,
-and that label goes. A line with a comment stays as it is. So a call and
+and that label goes. A `MOVE R15, x` right after an instruction that
+reads R15, such as a push of a return address that is not a `CALL`,
+stays as it is, since that instruction counts on its size. A line with a
+comment stays as it is. So a call and
 the return are:
 
                     CALL    W.f12
                     RET
+
+A jump or a call of one word reaches 2²⁰ words either way, and niceasm
+reports a target that is farther. The memory comes last in the output,
+and the files joined after the output, the runtime library among them,
+come after the memory. So when the memory in the output has 2¹⁹ words
+or more, which is 32 pages, a jump or a call to a label that the output
+does not define, a runtime routine or an import, stays in the long form,
+which reaches any address (`FAR_MEMORY`). The other half of the reach is
+for the code on both sides of the memory. A target in the output is
+always one word, so a module with more code than that does not assemble.
 
 Then the labels of short loops become the anonymous labels of ISA.md
 §10.1, as hand-written code has them. A short loop is a jump back to a

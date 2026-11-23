@@ -829,7 +829,17 @@ INSTR_LINE = re.compile(r" {8}(\?\S+)? *([A-Z][\w\[\]]*) +([^;]*?)\Z")
 RELATIVE = re.compile(r"([A-Za-z_.][\w.]*)-([A-Za-z_.][\w.]*)")  # top-next of a jump back
 
 
-def pseudo(lines: List[str]) -> List[str]:
+# A jump or a call of one word reaches 2^20 words either way (ISA.md
+# §5.3), and the assembler reports a target that is farther. A label that
+# the output does not define, a runtime routine or an import, is in a file
+# joined after the output, so the memory in the output lies between the
+# two. With FAR_MEMORY words of memory or more, half the reach, a jump or
+# a call to such a label keeps its long form (pseudo). The other half is
+# for the code on both sides of the memory.
+FAR_MEMORY = 1 << 19
+
+
+def pseudo(lines: List[str], far: bool = False) -> List[str]:
     """The output with the idioms written as the pseudo-instructions of
     ISA.md §10.1, which do what the idioms do. The passes see the idioms
     written out, and this runs on the lines once they are done. CALL
@@ -840,10 +850,20 @@ def pseudo(lines: List[str]) -> List[str]:
     goes. With an address, JMP, JMPR, and CALL are one word (ISA.md §5.3),
     so the code gets shorter. A MOVE R15 right after an instruction that
     reads R15, such as a push of a return address that is not a CALL,
-    stays a MOVE, as that instruction counts on its size."""
+    stays a MOVE, as that instruction counts on its size. With far, a jump
+    or a call to an address that names a label which the lines do not
+    define stays as it is, in the long form, which reaches any address
+    (FAR_MEMORY)."""
     def parse(line: str) -> Optional[Tuple[str, str, List[str]]]:
         m = INSTR_LINE.match(line)
         return None if m is None else (m.group(1) or "", m.group(2), m.group(3).split(", "))
+
+    defined = {m.group() for line in lines if (m := LABEL_NAME.match(line))}
+
+    def outside(target: str) -> bool:
+        return (far and has_word(target) and "@" not in target and "[" not in target
+                and any(not name[0].isdigit() and name not in defined
+                        for name in re.findall(r"[\w.]+", target)))
 
     uses: Dict[str, int] = {}  # how many lines name each word, labels included
     for line in lines:
@@ -867,7 +887,7 @@ def pseudo(lines: List[str]) -> List[str]:
         q = parse(lines[k]) if k < len(lines) else None
         if (op == "ADD" and ops[0] == "@--R13" and ops[2] == "R15" and q is not None
                 and q[:2] == (cond, "MOVE") and q[2][0] == "R15"
-                and ops[1] == str(1 + has_word(q[2][1]))):
+                and ops[1] == str(1 + has_word(q[2][1])) and not outside(q[2][1])):
             op, ops = "CALL", [q[2][1]]
             k += 1
             reads_pc = False
@@ -883,7 +903,7 @@ def pseudo(lines: List[str]) -> List[str]:
             op, ops = "RET", []
         elif op == "MOVE" and ops == ["R0", "R0"]:
             op, ops = "NOP", []
-        elif op == "MOVE" and ops[0] == "R15" and not after_pc:
+        elif op == "MOVE" and ops[0] == "R15" and not after_pc and not outside(ops[1]):
             op, ops = "JMP", ops[1:]
         elif op == "MOVE" and ops[0] == "@--R13":
             op, ops = "PUSH", ops[1:]
@@ -3149,7 +3169,17 @@ class Translator:
                 out.append(instr(".RES", str((self.cap - pages) * WORDS_PER_PAGE)))
             if self.windows:
                 out += ["; The word after the memory, for the check of ___wasm_start", "W.end"]
-        return anonymous_labels(pseudo(out))
+        return anonymous_labels(pseudo(out, self.memory_words(runs) >= FAR_MEMORY))
+
+    def memory_words(self, runs: List[Tuple[int, Union[int, List[int]]]]) -> int:
+        """The words of the memory in the output, which lie between the
+        code and the files joined after it (FAR_MEMORY): those of runs, and
+        the pages for memory.grow."""
+        if self.m.memory_pages is None or self.ram is not None:
+            return 0
+        assert self.cap is not None
+        return (sum(len(v) if isinstance(v, list) else v for _, v in runs)
+                + (self.cap - self.m.memory_pages) * WORDS_PER_PAGE)
 
     def needed_bytes(self) -> int:
         """The bytes of the memory that the module needs (WASM.md): up to

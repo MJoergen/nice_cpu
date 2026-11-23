@@ -3530,6 +3530,33 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
 # bulk and grow again without bounds checks, which give the same results.
 CASES += [(name + "_unchecked", wasm, extra, expected) for name, wasm, extra, expected in CASES
           if name in ("bulk", "grow")]
+# A memory of up to 64 pages has 2^20 words, more than a jump or a call
+# of one word reaches (ISA.md §5.3), and lies between the module's code
+# and the runtime library, which is joined after it. So the call of
+# __mul64 there must be in the long form, or the assembler reports it out
+# of reach (farcall). nicewasm writes the long form from 32 pages on, half
+# the reach, also for the call and the tail call of the import, a label
+# that the module does not define either, while the call of the module's
+# own function 2 is one word (farcall32). With 31 pages they all are
+# (nearcall). main gives 7 * 7 + 7 + 7 = 63.
+FAR_CALL = module(
+    types(MAIN_TYPE),
+    imports(("env", "seven", 0)),
+    funcs(0, 0),
+    memory(1),
+    exports(("main", 0, 1)),
+    code(([I64], call(0) + EXTEND_U + local_tee(0) + local_get(0) + b"\x7e" + WRAP
+          + call(0) + ADD + call(2) + ADD),
+         (0, return_call(0))))
+CASES += [(name, FAR_CALL, "_seven MOVE R1, 7\n MOVE R15, @R13++\n", 63)
+          for name in ("farcall", "farcall32", "nearcall")]
+OPTIONS["farcall"] = ["--memory-pages", "64"]
+OPTIONS["farcall32"] = ["--memory-pages", "32"]
+OPTIONS["nearcall"] = ["--memory-pages", "31"]
+SHAPES["farcall32"] = (r"^ +ADD +@--R13, 2, R15\n +MOVE +R15, __mul64\n(?:.*\n)* +CALL +W\.f2\n"
+                       r"(?:.*\n)* +MOVE +R15, _seven$", True)
+SHAPES["farcall"] = SHAPES["farcall32"]
+SHAPES["nearcall"] = (r"^ +MOVE +R15, _", False)
 # Accesses with the alignment hints 4 and 8 (trust_checks), which
 # --trust-alignment takes as promises, without and with bounds checks; a
 # misaligned access whose hint says 4, which then reaches the word that

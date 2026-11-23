@@ -219,6 +219,41 @@ def pseudo_instructions() -> None:
     assert len(assembled(out)) == len(assembled(lines)) - 5
 
 
+def far_labels_keep_the_long_form() -> None:
+    """With far, for an output with a memory of FAR_MEMORY words or more, a
+    jump or a call to a label that the lines do not define keeps its long
+    form, which reaches any address: such a label is in a file joined
+    after the memory, out of reach of one word (ISA.md §5.3). A label of
+    the lines, a number, a register, and a word of memory are as without
+    far, and so is everything else."""
+    lines = ["W.f0", instr("ADD", "@--R13", "2", "R15"), instr("MOVE", "R15", "__mul64"),
+             instr("ADD", "@--R13", "2", "R15"), instr("MOVE", "R15", "W.f1"),
+             instr("?Z MOVE", "R15", "_putc"), instr("MOVE", "R15", "W.f1+2"),
+             instr("MOVE", "R15", "_putc+1"), instr("MOVE", "R15", "0x8000"),
+             instr("ADD", "@--R13", "1", "R15"), instr("MOVE", "R15", "R3"),
+             instr("MOVE", "R15", "@___wasm_trap_vector"), instr("MOVE", "R15", "@W.t[R1]"),
+             instr("MOVE", "@--R13", "R7"), instr("MOVE", "R15", "@R13++"),
+             "W.f1", instr("MOVE", "R15", "W.f0")]
+    out = pseudo(lines, True)
+    assert [line.strip() for line in out] == [
+        "W.f0", "ADD     @--R13, 2, R15", "MOVE    R15, __mul64",
+        "CALL    W.f1", "?Z      MOVE    R15, _putc", "JMP     W.f1+2",
+        "MOVE    R15, _putc+1", "JMP     0x8000", "CALL    R3",
+        "JMP     @___wasm_trap_vector", "JMP     @W.t[R1]",
+        "PUSH    R7", "RET", "W.f1", "JMP     W.f0"], out
+    # Without far, the three with a label from outside are one word too.
+    near = pseudo(lines)
+    assert [line.strip() for line in near] == [
+        "W.f0", "CALL    __mul64",
+        "CALL    W.f1", "?Z      JMP     _putc", "JMP     W.f1+2",
+        "JMP     _putc+1", "JMP     0x8000", "CALL    R3",
+        "JMP     @___wasm_trap_vector", "JMP     @W.t[R1]",
+        "PUSH    R7", "RET", "W.f1", "JMP     W.f0"], near
+    # The long forms take 3 words more for the call, and 1 for each jump.
+    outside = ["__mul64", "_putc", "___wasm_trap_vector", "W.t"]
+    assert len(assembled(out + outside)) == len(assembled(near + outside)) + 5
+
+
 def anonymous_short_loops() -> None:
     """The labels of a short loop become anonymous (ISA.md §10.1), which
     assembles to the same words: its top, and its exit, that only jumps
@@ -250,7 +285,8 @@ def anonymous_short_loops() -> None:
     assert assembled(out) == assembled(lines)
 
 
-CASES: List[Callable[[], None]] = [anonymous_short_loops, pseudo_instructions, predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
+CASES: List[Callable[[], None]] = [anonymous_short_loops, pseudo_instructions, far_labels_keep_the_long_form,
+                                   predicted_back_edge, hoist_after_write, hoist_after_jump, tail_call_plain,
                                    tail_call_data, no_tail_copies_in_stubs, early_exit_flags,
                                    early_exit_call]
 

@@ -407,7 +407,13 @@ the steps that got the code here.
 - **Memory:** one memory at `___wasm_memory`, with words reserved up to
   the cap. A memory's or a table's minimum size above its maximum is an error, and so
   is a memory of more than 65536 pages. A function imported twice with different
-  types is an error.
+  types is an error. The memory lies after the module's code, and the
+  files joined after the module lie after the memory. A jump or a call
+  of one word reaches 2²⁰ words (ISA.md §5.3), so from 32 pages on,
+  nicewasm writes the long form for a jump or a call to a label outside
+  the module, such as a runtime routine (DESIGN.md, The output). The
+  code of a program must stay below 2¹⁹ words, or niceasm may report a
+  jump or a call that is out of reach.
 - **Data segments:** active ones, whose offset is an `i32.const`. The words
   they set are `.DAT` words in the program image, and a word that a
   segment sets only part of has its other bytes 0. A later segment

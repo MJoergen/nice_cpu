@@ -56,6 +56,7 @@ package pipe_pkg is
       op      : std_logic_vector(3 downto 0);    -- The operation
       mbit    : std_logic;                       -- Writes the flags
       cbit    : std_logic;                       -- Takes the carry in
+      call    : std_logic;                       -- A call of one word: also jumps to s1
    end record t_inst;
 
    constant C_INST_NONE : t_inst := (
@@ -74,7 +75,8 @@ package pipe_pkg is
       shift   => '0',
       op      => (others => '0'),
       mbit    => '0',
-      cbit    => '0'
+      cbit    => '0',
+      call    => '0'
    );
 
    -- Where WRITE takes a field's value or address from (MICROARCH.md
@@ -215,6 +217,11 @@ package pipe_pkg is
                  i  : natural range 1 to 2) return boolean;
 
    -- The first micro-operation of an instruction, and the one after k.
+   -- Whether DECODE redirects FETCH for a jump or a call of one word
+   -- (MICROARCH.md §5.4): always without a condition, and with one only
+   -- for a JMPR that goes back, which it predicts taken.
+   function short_early(iw : std_logic_vector(31 downto 0)) return boolean;
+
    function first_kind(iw : std_logic_vector(31 downto 0)) return t_kind;
 
    function next_kind(iw : std_logic_vector(31 downto 0);
@@ -378,9 +385,17 @@ package body pipe_pkg is
              (m_v = "001" or m_v = "010" or m_v = "101" or m_v = "110");
    end function side;
 
+   function short_early(iw : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      return is_short(iw) and
+             (iw(31 downto 28) = "0000" or (iw(22 downto 21) = "01" and iw(20) = '1'));
+   end function short_early;
+
    function first_kind(iw : std_logic_vector(31 downto 0)) return t_kind is
    begin
-      if is_ctrl(iw) then
+      if is_short(iw) then
+         return UOP_OP;
+      elsif is_ctrl(iw) then
          return UOP_CTRL;
       elsif side(iw, 1) then
          return UOP_S0;
@@ -418,6 +433,10 @@ package body pipe_pkg is
    begin
       mem0_v := mode(iw, 1)(2);
       mem1_v := mode(iw, 2)(2);
+      -- A jump or a call of one word reads nothing.
+      if is_short(iw) then
+         return res_v;
+      end if;
       case k is
          when UOP_S0 =>
             res_v(1) := mem0_v;
@@ -463,7 +482,14 @@ package body pipe_pkg is
             return reg(iw, 2);
          when UOP_OP =>
             m_v := mode(iw, 0);
-            if m_v = "011" or m_v = "100" or m_v = "111" then
+            if is_short(iw) then
+               -- A call writes R13, by its push, and a jump R15.
+               if iw(22) = '1' then
+                  return 13;
+               else
+                  return 15;
+               end if;
+            elsif m_v = "011" or m_v = "100" or m_v = "111" then
                return 0;
             else
                return reg(iw, 0);
@@ -478,6 +504,9 @@ package body pipe_pkg is
       variable m_v : std_logic_vector(2 downto 0);
    begin
       m_v := mode(iw, 0);
+      if is_short(iw) then
+         return k = UOP_OP and iw(22) = '1';
+      end if;
       return k = UOP_OP and (m_v(2) = '1' or m_v = "011");
    end function uop_store;
 
@@ -490,7 +519,7 @@ package body pipe_pkg is
    function uop_may_jump(iw : std_logic_vector(31 downto 0);
                          k  : t_kind) return boolean is
    begin
-      return k = UOP_CTRL or uop_wreg(iw, k) = 15;
+      return k = UOP_CTRL or uop_wreg(iw, k) = 15 or (k = UOP_OP and is_short(iw));
    end function uop_may_jump;
 
    function early_form(iw : std_logic_vector(31 downto 0);
@@ -533,7 +562,20 @@ package body pipe_pkg is
       variable ok_v : boolean;
    begin
       iw_v := inst.iw;
-      ok_v := inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
+      -- A jump is "MOVE R15, d[R15]", and a call "MOVE @--R13, R15" whose
+      -- s1, d[R15], WRITE also writes to R15.
+      if is_short(iw_v) then
+         ok_v := inst.side = "00" and inst.shift = '0' and inst.op = "0000" and
+                 inst.mbit = '0' and inst.cbit = '0' and inst.call = iw_v(22) and
+                 inst.consts(1 + to_nat(iw_v(22))) = short_dist(iw_v);
+         if iw_v(22) = '1' then
+            return ok_v and inst.m(0) = "101" and inst.x(0) = 13 and inst.m(1) = "000" and
+                   inst.x(1) = 15 and inst.m(2) = "011" and inst.x(2) = 15;
+         end if;
+         return ok_v and inst.m(0) = "000" and inst.x(0) = 15 and inst.m(1) = "011" and
+                inst.x(1) = 15 and inst.m(2) = "000" and inst.x(2) = 0;
+      end if;
+      ok_v := inst.call = '0' and inst.side = to_sl(side(iw_v, 1)) & to_sl(side(iw_v, 2)) and
               inst.shift = (iw_v(27) and not to_sl(is_ctrl(iw_v))) and
               inst.op = iw_v(24 downto 21) and
               inst.mbit = iw_v(25) and

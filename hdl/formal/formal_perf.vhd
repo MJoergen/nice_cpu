@@ -104,9 +104,10 @@ begin
       variable jump_v : boolean;
       variable step_v : boolean;
    begin
-      -- A control instruction writes no register.
+      -- A control instruction writes no register, but for the jump and
+      -- the call of one word, commands 4 to 6, which write R15.
       if r_iw_i(27 downto 26) = "11" then
-         jump_v := false;
+         jump_v := r_iw_i(25 downto 23) = "001" and r_iw_i(22 downto 21) /= "11";
       else
          -- dest in mode 000, 001, 010, 101, or 110; s0 or s1 in mode 001,
          -- 010, 101, or 110; register 15 in each

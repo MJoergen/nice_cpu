@@ -186,16 +186,47 @@ begin
       inst_v.mbit  := iw_v(25);
       inst_v.cbit  := iw_v(26);
 
+      -- A jump of one word is "MOVE R15, d[R15]", and a call of one word
+      -- "MOVE @--R13, R15" whose s1, d[R15], WRITE also writes to R15
+      -- (ISA.md §5.3). So they run on the paths of the other instructions.
+      if is_short(iw_v) then
+         inst_v.m     := (others => "000");
+         inst_v.x     := (others => 0);
+         inst_v.side  := "00";
+         inst_v.shift := '0';
+         inst_v.op    := "0000";
+         inst_v.mbit  := '0';
+         inst_v.cbit  := '0';
+         if iw_v(22) = '1' then
+            inst_v.m(0)      := "101";
+            inst_v.x(0)      := 13;
+            inst_v.x(1)      := 15;
+            inst_v.m(2)      := "011";
+            inst_v.x(2)      := 15;
+            inst_v.consts(2) := short_dist(iw_v);
+            inst_v.call      := '1';
+         else
+            inst_v.x(0)      := 15;
+            inst_v.m(1)      := "011";
+            inst_v.x(1)      := 15;
+            inst_v.consts(1) := short_dist(iw_v);
+         end if;
+      end if;
+
       -- The jumps that DECODE redirects FETCH for (MICROARCH.md §5.4),
       -- early_form of src/pipe_pkg.vhd: "MOVE R15, c" and "ADD R15, R15,
       -- c", and a conditional "ADD R15, R15, c" with c negative, which it
       -- predicts taken. They read no register but R15, and nothing changes
       -- R15 before them in the instruction. Each is two words, the
       -- constant the second, so the target is c or the address plus 2
-      -- plus c, with one adder after the words.
-      early_v := to_sl(early_form(iw_v, f_words_i(1)));
+      -- plus c, with one adder after the words. A jump or a call of one
+      -- word has its distance d in the word, and its target is the
+      -- address plus 1 plus d (short_early of src/pipe_pkg.vhd).
+      early_v := to_sl(early_form(iw_v, f_words_i(1)) or short_early(iw_v));
       dest_v  := f_words_i(1);
-      if early_v = '1' and iw_v(24 downto 21) = "0011" then
+      if is_short(iw_v) then
+         dest_v := d_next(1) + short_dist(iw_v);
+      elsif early_v = '1' and iw_v(24 downto 21) = "0011" then
          dest_v := d_next(2) + f_words_i(1);
       end if;
       inst_v.early := early_v;
@@ -350,7 +381,8 @@ begin
          return inst_fields_ok(inst) and
                 inst.next_pc = inst.addr + inst_len(inst.iw) and
                 inst.blk = next_block(inst.addr, 2) and
-                inst.early = to_sl(early_form(inst.iw, first_const(inst)));
+                inst.early = to_sl(early_form(inst.iw, first_const(inst)) or
+                                   short_early(inst.iw));
       end function inst_ok;
 
       -- The constant word of field i of the instruction in f_words_i(0),
@@ -375,6 +407,9 @@ begin
       function early_target(addr  : std_logic_vector(31 downto 0);
                             words : t_words4) return std_logic_vector is
       begin
+         if is_short(words(0)) then
+            return addr + 1 + short_dist(words(0));
+         end if;
          if words(0)(24 downto 21) = "0000" then
             return words(1);
          end if;
@@ -439,9 +474,10 @@ begin
 
       -- The jumps DECODE resolves
       -- psl f_redirect : assert always (rst_i = '0' and d_load = '1') ->
-      --    (d_inst.early = to_sl(early_form(f_words_i(0), f_words_i(1))));
+      --    (d_inst.early = to_sl(early_form(f_words_i(0), f_words_i(1)) or
+      --                          short_early(f_words_i(0))));
       -- psl f_target : assert always (rst_i = '0' and redirect_o = '1') ->
-      --    (consume_o = 2 and d_dest = early_target(f_addr_i, f_words_i));
+      --    (consume_o = inst_len(f_words_i(0)) and d_dest = early_target(f_addr_i, f_words_i));
 
       -- A flush empties the stage
       -- psl f_flushed : assert always {flush_i and not rst_i} |=>

@@ -383,6 +383,18 @@ begin
                if condition(iw, regs(14)) = '0' then
                   rep_skipped <= '1';
                   state       <= RETIRE_ST;
+               elsif is_short(iw) then
+                  -- ISA.md §5.3: a jump or a call of one word. R15 already
+                  -- holds the next instruction's address. A call pushes it
+                  -- through R13 and then jumps.
+                  set_reg(regs_v, 15, regs(15) + short_dist(iw));
+                  state <= RETIRE_ST;
+                  if iw(22) = '1' then
+                     set_reg(regs_v, 13, regs(13) - 1);
+                     dbus_start('1', regs(13) - 1, regs(15));
+                     rep_mem_we <= '1';
+                     state      <= DEST_WAIT_ST;
+                  end if;
                elsif is_ctrl(iw) then
                   -- ISA.md §5.3: HALT is command 0 with bits 20..0 at 0,
                   -- and every other control word is reserved and halts too.

@@ -499,6 +499,10 @@ begin
                         if (m_v = "101" or m_v = "110") and x_v = 15 then
                            target_v := regval(15, wval_v);
                         end if;
+                        -- A call of one word jumps to its s1.
+                        if u_v.inst.call = '1' then
+                           target_v := v1_v;
+                        end if;
                         store_v := u_v.store = '1';
 
                         -- A MOVE into a register writes its source as it
@@ -520,6 +524,10 @@ begin
                   end if;
                   if u_v.wreg = 15 then
                      n_v.jump := '1';
+                  end if;
+                  if u_v.kind = UOP_OP and u_v.inst.call = '1' then
+                     n_v.regs(15) := v1_v;
+                     n_v.jump     := '1';
                   end if;
 
                   -- The flags (ISA.md §6), after the destination

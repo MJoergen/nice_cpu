@@ -44,10 +44,19 @@ package nice_pkg is
    -- Whether the instruction is a control instruction (ISA.md §5.3).
    function is_ctrl(iw : std_logic_vector(31 downto 0)) return boolean;
 
+   -- Whether the instruction is a jump or a call of one word (ISA.md §5.3):
+   -- command 4 (JMP), 5 (JMPR), or 6 (CALL).
+   function is_short(iw : std_logic_vector(31 downto 0)) return boolean;
+
+   -- The signed distance of a jump or a call of one word, bits 20..0
+   -- sign-extended, from the address of the next instruction.
+   function short_dist(iw : std_logic_vector(31 downto 0)) return std_logic_vector;
+
    -- Whether the instruction writes R15 when it runs, for the jump counter
    -- of DEVICES.md §3: a field of register 15 in a mode that writes the
    -- register, the destination in mode 000, 001, 010, 101, or 110, and
-   -- a source in mode 001, 010, 101, or 110 (ISA.md §4).
+   -- a source in mode 001, 010, 101, or 110 (ISA.md §4), or a jump or a
+   -- call of one word.
    function writes_r15(iw : std_logic_vector(31 downto 0)) return boolean;
 
    -- The value of register x after a write of v (ISA.md §4.3).
@@ -174,11 +183,26 @@ package body nice_pkg is
       return iw(27 downto 26) = "11";
    end function is_ctrl;
 
+   function is_short(iw : std_logic_vector(31 downto 0)) return boolean is
+   begin
+      return iw(27 downto 23) = "11001" and iw(22 downto 21) /= "11";
+   end function is_short;
+
+   function short_dist(iw : std_logic_vector(31 downto 0)) return std_logic_vector is
+      variable res_v : std_logic_vector(31 downto 0);
+   begin
+      res_v              := (others => iw(20));
+      res_v(20 downto 0) := iw(20 downto 0);
+      return res_v;
+   end function short_dist;
+
    function writes_r15(iw : std_logic_vector(31 downto 0)) return boolean is
       variable f_v   : std_logic_vector(6 downto 0);
       variable res_v : boolean := false;
    begin
-      if not is_ctrl(iw) then
+      if is_short(iw) then
+         res_v := true;
+      elsif not is_ctrl(iw) then
          for i in 0 to 2 loop
             f_v := field(iw, i);
             if f_v(3 downto 0) = "1111" then

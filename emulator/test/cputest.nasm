@@ -1033,7 +1033,7 @@ pcA             HALT                    ; never runs: jumped over
         ?!1     HALT
                 .DAT    0x8C200000      ; ?!1 command 1, RTI before #162
                 .DAT    0x8C400003      ; ?!1 command 2, INT 3 before #162
-                .DAT    0x8C800000      ; ?!1 reserved command 00100
+                .DAT    0x8CE00000      ; ?!1 reserved command 00111
                 .DAT    0x8C000100      ; ?!1 HALT with bit 8 set: reserved
                 CMP     R4, 0
         ?!Z     HALT

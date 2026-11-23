@@ -16,7 +16,7 @@
 ;                                         = 111 1111
 ;   18         ?!1 0x8C0FFFFF             a reserved HALT with bits 20..8 set:
 ;                                         dest 011 1111, s0 and s1 111 1111
-;   19         ?Z 0x3C800000              reserved command 4, Z = 0: skipped
+;   19         ?Z 0x3CE00000              reserved command 7, Z = 0: skipped
 ;   20,21      MOVE R3, 1                 runs: R3 = 1
 ;   22         0x0C000033                 a reserved HALT with bits 6..0 =
 ;                                         011 0011, mode 011, which runs and
@@ -37,7 +37,7 @@ H               .EQU    0x0C000000
         ?!1     MOVE    R1, @H[R2]      ; words 15,16
                 .DAT    0x8C4000FF      ; word 17
                 .DAT    0x8C0FFFFF      ; word 18
-                .DAT    0x3C800000      ; word 19
+                .DAT    0x3CE00000      ; word 19
                 MOVE    R3, 1           ; words 20,21
                 .DAT    0x0C000033      ; word 22
                 .DAT    H               ; word 23

@@ -1914,7 +1914,7 @@ test "reserved control words halt, unless skipped (§5.3)" {
     var cpu = try run(&.{ 0x0C00_0001, HALT });
     try testing.expectEqual(.reserved, cpu.halt_reason);
     cpu.deinit();
-    cpu = try run(&.{ 0x8C80_0000, HALT }); // never-executed command 4
+    cpu = try run(&.{ 0x8CE0_0000, HALT }); // never-executed command 7
     try testing.expectEqual(.halt, cpu.halt_reason);
     try testing.expectEqual(2, cpu.regs[15]);
     cpu.deinit();

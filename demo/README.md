@@ -90,7 +90,7 @@ part has a sieve of Eratosthenes on the numbers below 2048, which runs
 again before each update of the screen: the runs, the primes it finds,
 which are 309, and the instructions, cycles, and microseconds of the last
 run, with the cycles per instruction and the instructions per
-microsecond. On the MEGA65, the sieve's 30058 instructions take about
+microsecond. On the MEGA65, the sieve's 30056 instructions take about
 79000 cycles, 2.6 per instruction, and about 38 instructions a
 microsecond. That is usual for the pipelined core on code written by hand
 ([bench/README.md](../bench/README.md)): each turn of its loops ends with a

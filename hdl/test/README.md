@@ -41,7 +41,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [r15mix.nasm](r15mix.nasm) | R15 in several fields of one instruction, as a shift count, and as a store's base. |
 | [r14cond.nasm](r14cond.nasm) | SR written by side effects and adjusted destinations, then conditional instructions and reads. |
 | [r0odd.nasm](r0odd.nasm) | R0 in every mode as count, source, and destination. |
-| [smclate.nasm](smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, and into the constants of early jumps. |
+| [smclate.nasm](smclate.nasm) | Stores into fetched code from late shifts and two-cycle instructions, into the constants of early jumps, and into an early jump of one word. |
 | [smcskid.nasm](smcskid.nasm) | Stores into the target of an early jump while it waits in DECODE, in `dec_r` and in `skid_r`. |
 | [predict.nasm](predict.nasm) | Predicted jumps in the shapes of loops: two back to back, flags from the instruction before, stores into the target, into the jump's offset, and into the word after it, and a nested loop. |
 | [readorder.nasm](readorder.nasm) | The number and order of the data reads of late shifts, adjusted destinations, and skipped instructions, through the read counter. |

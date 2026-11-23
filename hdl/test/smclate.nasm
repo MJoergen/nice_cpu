@@ -1,5 +1,8 @@
 ; Stores into fetched code from late shifts and two-cycle instructions, and
-; stores into the constant words of early jumps and of late shifts.
+; stores into the constant words of early jumps and of late shifts, and
+; into an early jump of one word. A store that goes wrong ends the run at
+; bad, a reserved word, so the emulator's exit status is 2, not 0, which
+; the Makefile checks.
                 MOVE    R1, 0
                 MOVE    R2, cnt
                 0<0     @R15, R1, @cnt  ; a three-cycle store (late count) into the next word
@@ -10,9 +13,11 @@
                 MOVE    R3, 1
                 HALT
                 MOVE    @e1+1, good1    ; the constant of an early jump already in DECODE
-e1              JMP     bad
+e1              MOVE    R15, bad        ; the long form: a JMP has no constant word
                 HALT
-good1           MOVE    @e2+1, 4        ; the offset of an early relative jump
+good1           MOVE    @e3, 0          ; an early jump of one word becomes a NOP
+e3              JMP     bad
+                MOVE    @e2+1, 4        ; the offset of an early relative jump
 e2              ADD     R15, R15, 1
                 HALT
                 HALT

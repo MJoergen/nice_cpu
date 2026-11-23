@@ -1175,7 +1175,11 @@ program.
   opcode is `MOVE`'s. `test/samereg_prog.py` writes one more, with one
   register in all three fields of a shift, for every pair of source
   modes and six destination modes. None of them checks itself; the
-  core's trace is compared with the emulator's.
+  core's trace is compared with the emulator's. So the emulator's run of
+  each program from `latecount.nasm` on must get to its end, which its
+  exit status shows: 0 for a `HALT`, or 2 for `jumpwords.nasm`, which
+  ends on a reserved word. `smclate.nasm` jumps to a reserved word when
+  a store into its code goes wrong, so it fails then.
 - `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `fpu`, `perf`, `events`, and `sd` again, on a memory that
   stalls in 30% of the cycles, and `sd` with pauses held for a random time.
   `sd` runs with an image in slot 0 that `make test` makes in the run's

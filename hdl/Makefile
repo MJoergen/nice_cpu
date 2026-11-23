@@ -282,6 +282,23 @@ define check_selfcheck
 
 endef
 
+# A program of HAZARD_PROGS does not check itself, and its run on a core
+# is only compared with the emulator's. So the emulator's run must get to
+# the program's end before the core's trace means anything: its exit
+# status is 0, for a HALT, or the END_ of the program. jumpwords.nasm
+# ends on a reserved word, with status 2. A program whose store into its
+# own code goes wrong ends on a reserved word too, as smclate.nasm does at
+# its bad. $(1) is the name of the run.
+END_jumpwords = 2
+
+define check_end
+	@if tail -n 1 $(RUNDIR)/core.expected | grep -qx 'exit $(or $(END_$(1)),0)'; \
+	then echo "PASS emulator $(1)"; \
+	else echo "FAIL emulator $(1): the program did not run to its end"; \
+	  tail -n 6 $(RUNDIR)/core.expected; exit 1; fi
+
+endef
+
 # In front of a recipe line, $(JOBSERVER) is the "+" that gives a script
 # make's jobserver (test/core_runs.py). A "+" also runs its line under
 # make -n, -q, and -t, where a run of the programs would take minutes. So
@@ -446,7 +463,7 @@ $(eval $(call core_run,$(1),pcfx,$(BUILD)/pcfx.bin,,check_core check_selfcheck))
 $(eval $(call core_run,$(1),pcfx_stall,$(BUILD)/pcfx.bin,-gG_STALL=30 -gG_SEED=29))
 $(eval $(call core_run,$(1),smc,$(BUILD)/smc.bin,,check_core check_selfcheck))
 $(eval $(call core_run,$(1),smc_stall,$(BUILD)/smc.bin,-gG_STALL=30 -gG_SEED=21))
-$(foreach t,$(HAZARD_PROGS),$(eval $(call core_run,$(1),$(t),$(BUILD)/$(t).bin)))
+$(foreach t,$(HAZARD_PROGS),$(eval $(call core_run,$(1),$(t),$(BUILD)/$(t).bin,,check_core check_end)))
 $(foreach t,$(HAZARD_PROGS),$(eval $(call core_run,$(1),$(t)_stall,$(BUILD)/$(t).bin,-gG_STALL=30 -gG_SEED=25)))
 $(eval $(call core_run,$(1),samereg,$(BUILD)/samereg.bin))
 $(eval $(call core_run,$(1),samereg_stall,$(BUILD)/samereg.bin,-gG_STALL=30 -gG_SEED=27))

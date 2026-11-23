@@ -831,13 +831,16 @@ RELATIVE = re.compile(r"([A-Za-z_.][\w.]*)-([A-Za-z_.][\w.]*)")  # top-next of a
 
 def pseudo(lines: List[str]) -> List[str]:
     """The output with the idioms written as the pseudo-instructions of
-    ISA.md §10.1, which assemble to the same words. The passes see the
-    idioms written out, and this runs on the lines once they are done.
-    CALL stands for ADD @--R13, n, R15 then MOVE R15, target with the
-    same condition, where n is the size of the MOVE in words. JMPR top
-    stands for ADD R15, R15, top-next, where the label next comes right
-    after it, blank lines and comments aside, and nothing else names it:
-    that label goes."""
+    ISA.md §10.1, which do what the idioms do. The passes see the idioms
+    written out, and this runs on the lines once they are done. CALL
+    stands for ADD @--R13, n, R15 then MOVE R15, target with the same
+    condition, where n is the size of the MOVE in words. JMPR top stands
+    for ADD R15, R15, top-next, where the label next comes right after it,
+    blank lines and comments aside, and nothing else names it: that label
+    goes. With an address, JMP, JMPR, and CALL are one word (ISA.md §5.3),
+    so the code gets shorter. A MOVE R15 right after an instruction that
+    reads R15, such as a push of a return address that is not a CALL,
+    stays a MOVE, as that instruction counts on its size."""
     def parse(line: str) -> Optional[Tuple[str, str, List[str]]]:
         m = INSTR_LINE.match(line)
         return None if m is None else (m.group(1) or "", m.group(2), m.group(3).split(", "))
@@ -849,6 +852,7 @@ def pseudo(lines: List[str]) -> List[str]:
     gone: Set[int] = set()  # the lines of the labels that go
     out: List[str] = []
     k = 0
+    reads_pc = False  # the instruction before reads R15
     while k < len(lines):
         if k in gone:
             k += 1
@@ -859,12 +863,14 @@ def pseudo(lines: List[str]) -> List[str]:
             out.append(lines[k - 1])
             continue
         cond, op, ops = p
+        after_pc, reads_pc = reads_pc, "R15" in ops[1:]
         q = parse(lines[k]) if k < len(lines) else None
         if (op == "ADD" and ops[0] == "@--R13" and ops[2] == "R15" and q is not None
                 and q[:2] == (cond, "MOVE") and q[2][0] == "R15"
                 and ops[1] == str(1 + has_word(q[2][1]))):
             op, ops = "CALL", [q[2][1]]
             k += 1
+            reads_pc = False
         elif (op == "ADD" and ops[:2] == ["R15", "R15"] and len(ops) == 3
               and (m := RELATIVE.fullmatch(ops[2])) is not None
               and (nxt := next((j for j in range(k, len(lines)) if lines[j].strip()
@@ -872,11 +878,12 @@ def pseudo(lines: List[str]) -> List[str]:
               and lines[nxt] == m.group(2) and uses.get(m.group(2)) == 2):
             op, ops = "JMPR", [m.group(1)]
             gone.add(nxt)
+            reads_pc = False
         elif op == "MOVE" and ops == ["R15", "@R13++"]:
             op, ops = "RET", []
         elif op == "MOVE" and ops == ["R0", "R0"]:
             op, ops = "NOP", []
-        elif op == "MOVE" and ops[0] == "R15":
+        elif op == "MOVE" and ops[0] == "R15" and not after_pc:
             op, ops = "JMP", ops[1:]
         elif op == "MOVE" and ops[0] == "@--R13":
             op, ops = "PUSH", ops[1:]

@@ -183,11 +183,14 @@ def assembled(lines: List[str]) -> List[int]:
 
 def pseudo_instructions() -> None:
     """The output's idioms become the pseudo-instructions of ISA.md §10.1,
-    which assemble to the same words. A CALL needs its two instructions
-    together, with one condition, and the size of the jump as the ADD's
-    constant. A relative jump becomes JMPR when the label of its next
-    comes right after it, comments aside, and nothing else names it; that
-    label goes. A line with a comment, or that is no idiom, stays."""
+    which do the same. A CALL needs its two instructions together, with
+    one condition, and the size of the jump as the ADD's constant. A
+    relative jump becomes JMPR when the label of its next comes right
+    after it, comments aside, and nothing else names it; that label goes.
+    A jump right after a push of R15 that is not a CALL stays a MOVE, as
+    the push counts on its size. A line with a comment, or that is no
+    idiom, stays. With an address, CALL, JMP, and JMPR are one word (ISA.md
+    §5.3): here CALL f saves 3 words, JMP x 1, and JMPR 1."""
     lines = [instr("ADD", "@--R13", "2", "R15"), instr("MOVE", "R15", "f"),
              instr("?Z ADD", "@--R13", "1", "R15"), instr("?Z MOVE", "R15", "R3"),
              instr("ADD", "@--R13", "2", "R15"), instr("?Z MOVE", "R15", "f"),
@@ -204,8 +207,8 @@ def pseudo_instructions() -> None:
     out = pseudo(lines)
     assert [line.strip() for line in out] == [
         "CALL    f", "?Z      CALL    R3",
-        "ADD     @--R13, 2, R15", "?Z      JMP     f",
-        "ADD     @--R13, 1, R15", "JMP     f",
+        "ADD     @--R13, 2, R15", "?Z      MOVE    R15, f",
+        "ADD     @--R13, 1, R15", "MOVE    R15, f",
         "?!C     JMP     x", "RET", "CMP     R1, 7", "TST     R2",
         "PUSH    R7", "POP     R7", "CLR     R4", "NOP",
         "SUB[CM] R0, R1, 7", "MOVE    R5, R6",
@@ -213,7 +216,7 @@ def pseudo_instructions() -> None:
         "W.f0.T", "?!Z     JMPR    W.f0.T", "; the next",
         "ADD     R15, R15, W.f0.T-W.f0.M", "W.f0.M", "MOVE    R2, W.f0.M",
         "?C      ADD     R15, R15, W.f0.T-W.f0.P", "MOVE    R1, R2", "W.f0.P"], out
-    assert assembled(out) == assembled(lines)
+    assert len(assembled(out)) == len(assembled(lines)) - 5
 
 
 def anonymous_short_loops() -> None:

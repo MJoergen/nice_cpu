@@ -144,35 +144,30 @@ A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (WASM.md).
 
 On the multi-cycle core, which takes about ten cycles for a plain
-instruction, the two programs run like this, measured at commit 3064119:
+instruction, the two programs run like this, with the jumps and calls
+of one word (#192):
 
 | Program | Instructions | Cycles | Cycles per instruction | GHDL time |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1652811 | 18780501 | 11.4 | 57 minutes for both, on an idle machine |
-| `hand.nasm` | 491309 | 5645640 | 11.5 | |
+| `bench.c` through nicewasm | 1650702 | 17741994 | 10.7 | 57 minutes for both, on an idle machine |
+| `hand.nasm` | 488749 | 5314113 | 10.9 | |
 
 So the hand-written program is 3.4 times shorter in instructions and 3.3
 times faster in cycles. In the translated program, `rng64` and `vm` have
-the most cycles per instruction, 12.0 and 11.7, and `vm` in the
+the most cycles per instruction, 11.7 and 11.2, and `vm` in the
 hand-written one, 12.8.
 
 `make core` runs them on the pipelined core (the default), on the same
-programs as the multi-cycle core above, at commit 1a41b0c, which leaves
-the multi-cycle core as it was:
+programs as the multi-cycle core above:
 
 | Program | Instructions | Cycles | Cycles per instruction | Faster than the multi-cycle core |
 |---|---|---|---|---|
-| `bench.c` through nicewasm | 1681080 | 2384635 | 1.42 | 8.0 times |
-| `hand.nasm` | 491617 | 1384879 | 2.82 | 4.0 times |
+| `bench.c` through nicewasm | 1650702 | 2341190 | 1.42 | 7.6 times |
+| `hand.nasm` | 488749 | 1247655 | 2.55 | 4.3 times |
 
-Since DECODE predicts backward conditional jumps taken
-([MICROARCH.md](../doc/MICROARCH.md) §5.4), and `hand.nasm` closes its
-loops with them, `hand.nasm` takes 1252613 cycles on the pipelined
-core at commit 98d2bed, 2.55 per instruction and 9.6% fewer than the 1384879 of the
-program at that commit. `bench.c` closes its loops the same way
-(translator/README.md), and at commit 7b98bfa takes 2351494 cycles for 1652811
-instructions, 1.42 per instruction and 1.4% fewer than the 2384635
-above.
+Both programs close their loops with `JMPR`, a backward conditional
+jump that DECODE predicts taken ([MICROARCH.md](../doc/MICROARCH.md)
+§5.4, translator/README.md).
 
 On the pipelined core, `make core` also prints how long data reads waited
 for their condition or for an older micro-operation, the waits that
@@ -180,10 +175,10 @@ speculative reads would remove ([hdl/README.md](../hdl/README.md), The
 pipelined core). The cycles count from reset, so they include the start-up
 and the output:
 
-    bench: Read waits: 2436331 cycles; went on: 80 for the condition, 0 for an older micro-operation; dropped: 0, 66
-    hand:  Read waits: 1260303 cycles; went on: 269 for the condition, 2002 for an older micro-operation; dropped: 0, 52002
+    bench: Read waits: 2425267 cycles; went on: 80 for the condition, 0 for an older micro-operation; dropped: 0, 4
+    hand:  Read waits: 1255263 cycles; went on: 269 for the condition, 0 for an older micro-operation; dropped: 0, 52002
 
-So such waits cost 0.003% and 0.18% of the cycles (MICROARCH.md §5.3).
+So such waits cost 0.003% and 0.02% of the cycles (MICROARCH.md §5.3).
 
 
 The hand-written program gains less, because more of its time goes to
@@ -210,26 +205,26 @@ byte per word, as `unsigned char buf[]` is with `CHAR_BIT` = 32. The
 other four phases are those of `hand.nasm`.
 
 The two phases, in instructions on the emulator and in cycles by
-`make cycles`, at commit 98d2bed:
+`make cycles`, with the jumps and calls of one word (#192):
 
 | Phase | nicewasm | `simple.nasm` | `hand.nasm` |
 |---|---|---|---|
-| `vm`, instructions | 840049 | 314016 | 112013 |
-| `vm`, cycles | 1248112 | 768069 | 602050 |
-| `strings`, instructions | 101281 | 47293 | 20321 |
-| `strings`, cycles | 163528 | 110956 | 48723 |
+| `vm`, instructions | 840047 | 314016 | 112013 |
+| `vm`, cycles | 1238108 | 760067 | 604050 |
+| `strings`, instructions | 100207 | 45729 | 20321 |
+| `strings`, cycles | 161502 | 109384 | 47393 |
 
-So such a compiler would take 1.62 times fewer cycles than nicewasm in
-`vm` and 1.47 times fewer in `strings`, about three quarters and half of
+So such a compiler would take 1.63 times fewer cycles than nicewasm in
+`vm` and 1.48 times fewer in `strings`, about three quarters and half of
 what `hand.nasm` saves. `make test` checks its results as it checks the
 others'. `make core` does not run it.
 
 Such a compiler was decided against (#66,
 [doc/review/decisions.md](../doc/review/decisions.md)). nicewasm with
-`--trust-alignment --byte-windows --no-bounds-checks` takes 1839157
-cycles in the six phases of `bench.c` at 889c202, by `make cycles`,
+`--trust-alignment --byte-windows --no-bounds-checks` takes 1833670
+cycles in the six phases of `bench.c`, by `pipecycles.py`,
 which is within the plan's estimate of 1.75 to 1.9 million for a whole
-simple compiler. `simple.nasm` itself takes fewer, 1480786, as its other
+simple compiler. `simple.nasm` itself takes fewer, 1459737, as its other
 four phases are those of `hand.nasm`.
 
 ## The hazard profile
@@ -403,23 +398,25 @@ phases.
 phase by phase, with the difference in percent, from the output of `make
 core`, which must have run first, on the same `.bin`: for `bench` and
 `hand`, and for `float` and `float_inline` when `make core` has run them,
-as the top-level `make slow` does. With the core that
-predicts backward jumps (MICROARCH.md §5.4), and both programs closing
-their loops with them:
+as the top-level `make slow` does. With the jumps and calls of one
+word (#192):
 
 | Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 82004 | 82060 | −56 | 62257 | 62270 | −13 |
-| `crc32` | 83012 | 83069 | −57 | 40233 | 40246 | −13 |
-| `bst` | 403350 | 403407 | −57 | 225654 | 225667 | −13 |
-| `heapsort` | 370956 | 371012 | −56 | 273617 | 273630 | −13 |
-| `vm` | 1248112 | 1248168 | −56 | 602050 | 602064 | −14 |
-| `strings` | 163721 | 163778 | −57 | 48723 | 48736 | −13 |
-| total | 2351155 | 2351494 | −339 | 1252534 | 1252613 | −79 |
+| `rng64` | 82002 | 82057 | −55 | 61493 | 61761 | −268 |
+| `crc32` | 80705 | 80761 | −56 | 40235 | 40248 | −13 |
+| `bst` | 401803 | 401859 | −56 | 225136 | 225149 | −13 |
+| `heapsort` | 376737 | 376792 | −55 | 269014 | 269027 | −13 |
+| `vm` | 1238108 | 1238163 | −55 | 604050 | 604064 | −14 |
+| `strings` | 161502 | 161558 | −56 | 47393 | 47406 | −13 |
+| total | 2340857 | 2341190 | −333 | 1247321 | 1247655 | −334 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
-timing the model does not follow exactly, and not in the phases.
+timing the model does not follow exactly, and not in the phases. The
+exception is `rng64` of `hand.nasm`, where the core takes a cycle more
+than the model at `rng.buf`, an odd address, after each of the 256
+jumps back to it.
 
 `make compare` also sets the model's cycles beside the core's by cause,
 phase by phase, with `pipecycles.py --causes`, from the retire log of
@@ -441,17 +438,18 @@ the core to what WRITE did in it, so they compare in groups:
 | adjust | adjust | ADJUST |
 | other | | OTHER |
 
-At commit 31f740e, both programs have the same cycles in each phase by
-both counts, and the same in every group but two pairs, where each
-counts a cycle in the other's group. The model's fetch cycles after a
-redirect, where the target is not yet fetched, are the core's refill or
-bubble, which last until the target reaches WRITE: 9035 of the
-translated program's 10155 and all but 3 of `hand.nasm`'s 9607. And the
-model's wait for a product of the math unit is the core's BUS, since
-PREPARE's read of it waits for the store to `MPU_A` while WRITE is
-empty: one cycle for each of rng64's 1536 values with three reads, 4608,
-in both programs, and 1023 to 2048 in each other phase but crc32, the
-same in both programs. Every other group agrees to the cycle.
+Both programs have the same cycles in each phase by both counts, but
+for the 255 cycles of `hand.nasm`'s `rng64` above, and the same in every
+group but two pairs, where each counts a cycle in the other's group.
+The model's fetch cycles after a redirect, where the target is not yet
+fetched, are the core's refill or bubble, which last until the target
+reaches WRITE: 22208 of the translated program's 23296 and all but 4 of
+`hand.nasm`'s 11993. And the model's wait for a product of the math
+unit is the core's BUS, since PREPARE's read of it waits for the store
+to `MPU_A` while WRITE is empty: one cycle for each of rng64's 1536
+values with three reads, 4608, in both programs, and 1023 to 2048 in
+each other phase but crc32, the same in both programs. Every other
+group agrees to the cycle.
 
 `make core` also has the testbench write a retire log,
 `hdl/build/bench_pipeline.retires` and `hand_pipeline.retires`
@@ -466,10 +464,10 @@ differ from the emulator's, and the comparison stops there:
 
     python3 pipecycles.py --retires ../hdl/build/hand_pipeline.retires build/hand.bin
 
-At commit 98d2bed the model is 289 cycles below the core over the first
-1588218 steps of the translated program, which take the core 2258468
-cycles, and 21 above it over the 493904 steps of `hand.nasm`, which take
-1260090.
+The model is 291 cycles below the core over the first 1586297 steps of
+the translated program, which take the core 2245913 cycles, and 234
+below it over the 491303 steps of `hand.nasm`, which take 1255051, 255
+of them at `rng.buf`.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
@@ -569,14 +567,14 @@ from the emulator:
 On the pipelined core, `make core CORE_PROGRAMS=float` gives:
 
     phase      instructions       cycles  result
-    convert          42793       119127  97943df8  ok
-    dot32             4946        16752  c0c723f7  ok
-    dot64             6569        18964  ba3319ea  ok
-    mandel          114317       421787  4c25faf9  ok
-    norm             11679        40812  7703cd00  ok
-    total           180304       617442
+    convert          40743       116180  97943df8  ok
+    dot32             4686        16234  c0c723f7  ok
+    dot64             6309        18381  ba3319ea  ok
+    mandel          106727       409813  4c25faf9  ok
+    norm             11077        39930  7703cd00  ok
+    total           169542       600538
 
-That is 3.42 cycles per instruction. `make cycles` gives 594957. The
+That is 3.54 cycles per instruction. `make cycles` gives 594957. The
 FPU's unit takes 14 cycles for an `ADD` and 16 for a `MUL`, and the FPU
 about 4 more for the command. Issue
 [#164](https://github.com/MJoergen/nice_cpu/issues/164) lists ways to
@@ -596,7 +594,7 @@ more, and the emulator gives:
     total            84393        84523
 
 That is 50% fewer instructions than with the calls. On the pipelined core
-it takes 355798 cycles, 42% fewer than 617442, at 4.18 per instruction,
+it takes 354930 cycles, 41% fewer than 600538, at 4.21 per instruction,
 and `make cycles` gives 351552. The top-level `make slow` runs `float`
 and `float_inline` on both cores, and `release.py figures` checks that
 this section quotes their cycles on the pipelined core.
@@ -638,13 +636,13 @@ gives it from `dhry.input`; and the three result lines, which must agree
 with each other and with the number of runs. `make test` runs it on the
 emulator's output and `make core-dhry` on the core's.
 
-100 runs, measured at commit 7b98bfa:
+100 runs, with the jumps and calls of one word (#192):
 
 | Where | Cycles per run | DMIPS/MHz |
 |---|---|---|
-| emulator (one cycle per instruction) | 1508 | 0.377 |
-| multi-cycle core | 17431 | 0.032 |
-| pipelined core | 2278 | 0.249 |
+| emulator (one cycle per instruction) | 1491 | 0.381 |
+| multi-cycle core | 16249 | 0.035 |
+| pipelined core | 2253 | 0.252 |
 
 The emulator's row counts instructions. The program prints DMIPS/MHz truncated to three decimals. For comparison, Arm gives 0.87
 DMIPS/MHz for the Cortex-M0 under the ground rules, on its Cortex-M0
@@ -714,17 +712,18 @@ runs it on both cores ([release/RELEASE.md](../release/RELEASE.md)).
 The run rules ask for at least 10 seconds for a result that is
 reported, and for a simulator a fixed number of iterations instead. So
 the figures here count cycles and are not CoreMark scores; that needs a
-board and the run of 0 iterations. Measured at commit 7b98bfa:
+board and the run of 0 iterations. With the jumps and calls of one
+word (#192):
 
 | Where | Iterations | Cycles per iteration | CoreMark/MHz |
 |---|---|---|---|
-| emulator (one cycle per instruction) | 10 | 675095 | 1.481 |
-| multi-cycle core | 1 | 7898812 | 0.126 |
-| pipelined core | 1 | 1078661 | 0.927 |
+| emulator (one cycle per instruction) | 10 | 673546 | 1.484 |
+| multi-cycle core | 1 | 7402540 | 0.135 |
+| pipelined core | 1 | 1068822 | 0.935 |
 
-The pipelined core takes 1.60 cycles per instruction, against 1.51 in
+The pipelined core takes 1.59 cycles per instruction, against 1.51 in
 Dhrystone. On the emulator the run of 0 iterations makes 2000, which
-take 1350217511 instructions. For comparison, Arm gives 2.33
+take 1347121256 instructions. For comparison, Arm gives 2.33
 CoreMark/MHz for the Cortex-M0, in its Cortex-M Processor Comparison
 Table of 2023. As with Dhrystone, the translation
 through wasm accounts for much of the gap.

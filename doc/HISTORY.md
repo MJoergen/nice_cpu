@@ -991,3 +991,10 @@ form for an address, as the size of a statement depends only on its
 operand modes, and a target out of reach is an error. Nothing measured
 came near the reach of a million words: the farthest call was 41611
 words, in CoreMark.
+
+On the pipelined core, `bench.c` took 2351494 cycles before the change
+and 2341190 after, 0.4% fewer, and `hand.nasm` 1252613 and 1247655,
+0.4% fewer. Dhrystone took 2278 cycles a run on it before and 2253
+after, and CoreMark 1078661 cycles an iteration before and 1068822
+after. The 2002 cycles that reads of `hand.nasm` waited for an older
+micro-operation went to 0.

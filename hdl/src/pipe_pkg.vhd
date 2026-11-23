@@ -216,12 +216,12 @@ package pipe_pkg is
    function side(iw : std_logic_vector(31 downto 0);
                  i  : natural range 1 to 2) return boolean;
 
-   -- The first micro-operation of an instruction, and the one after k.
    -- Whether DECODE redirects FETCH for a jump or a call of one word
    -- (MICROARCH.md §5.4): always without a condition, and with one only
    -- for a JMPR that goes back, which it predicts taken.
    function short_early(iw : std_logic_vector(31 downto 0)) return boolean;
 
+   -- The first micro-operation of an instruction, and the one after k.
    function first_kind(iw : std_logic_vector(31 downto 0)) return t_kind;
 
    function next_kind(iw : std_logic_vector(31 downto 0);

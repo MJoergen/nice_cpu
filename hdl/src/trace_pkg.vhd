@@ -2,12 +2,12 @@
 --
 -- THEORY OF OPERATION
 -- The core reports each step as it retires it, in a t_retire. A step is one
--- instruction, skipped or not, as in the emulator. The report carries the register values after the step,
--- not the register writes. The trace writer keeps the values of the step
--- before and prints the registers whose values differ, which is what
--- "niceemu --trace" prints. So the core need not count or order its register
--- writes, and a write of an unchanged value prints nothing, as in the
--- emulator.
+-- instruction, skipped or not, as in the emulator. The report carries the
+-- register values after the step, not the register writes. The trace
+-- writer keeps the values of the step before and prints the registers whose
+-- values differ, which is what "niceemu --trace" prints. So the core need
+-- not count or order its register writes, and a write of an unchanged value
+-- prints nothing, as in the emulator.
 --
 -- A step makes at most one memory write: the destination of an instruction.
 --

@@ -88,10 +88,12 @@
 --
 -- PAUSE (MICROARCH.md §6.1). While pause_i is '1', WRITE stops at the next
 -- step boundary: before an instruction's first micro-operation runs, if
--- no data read of it is issued yet. It flushes the pipeline there, so that FETCH waits at R15 with no request. PREPARE issues no
--- first data read of a new instruction while pause_i is '1', but for the
--- first step after a pause. When pause_i is '0' in PAUSED_ST, the core
--- goes on, and runs one step, whatever pause_i is then: w_r.after_go marks it until it is reported.
+-- no data read of it is issued yet. It flushes the pipeline there, so that
+-- FETCH waits at R15 with no request. PREPARE issues no first data read of
+-- a new instruction while pause_i is '1', but for the first step after a
+-- pause. When pause_i is '0' in PAUSED_ST, the core goes on, and runs one
+-- step, whatever pause_i is then: w_r.after_go marks it until it is
+-- reported.
 --
 -- BREAKPOINTS (doc/DEBUG.md §6). DECODE compares the address of each
 -- instruction it takes with the enabled breakpoints, and marks a hit in

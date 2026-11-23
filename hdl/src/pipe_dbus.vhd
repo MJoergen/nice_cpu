@@ -3,15 +3,15 @@
 -- THEORY OF OPERATION
 -- Two stages make data accesses: PREPARE its reads, from a request
 -- register that holds each until the bus accepts it; and WRITE its stores,
--- through the register st_r here. WRITE puts a store into st_r, which drives the bus from the next cycle on, until the
--- bus accepts it (MICROARCH.md §5.3). So no path runs from WRITE's
--- decisions to the bus. The two never compete (see src/pipeline.vhd). The
--- bus is pipelined Wishbone, and the ACKs come
--- back in order. A FIFO of tags, one for each request accepted and not yet
--- acknowledged, tells reads from writes. A second FIFO holds the data of
--- the reads that WRITE has not used yet. WRITE may also use the data of a
--- read in the cycle its ACK comes, ack_read_o, if it only goes into a
--- register (MICROARCH.md §5.3).
+-- through the register st_r here. WRITE puts a store into st_r, which
+-- drives the bus from the next cycle on, until the bus accepts it
+-- (MICROARCH.md §5.3). So no path runs from WRITE's decisions to the bus.
+-- The two never compete (see src/pipeline.vhd). The bus is pipelined
+-- Wishbone, and the ACKs come back in order. A FIFO of tags, one for each
+-- request accepted and not yet acknowledged, tells reads from writes. A
+-- second FIFO holds the data of the reads that WRITE has not used yet.
+-- WRITE may also use the data of a read in the cycle its ACK comes,
+-- ack_read_o, if it only goes into a register (MICROARCH.md §5.3).
 --
 -- The registers are the two FIFOs and st_r. The bus outputs and ack_read_o
 -- depend combinationally on st_r, on PREPARE's read, and on the bus. DAT_O

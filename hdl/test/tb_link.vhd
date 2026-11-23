@@ -1121,7 +1121,8 @@ begin
       -- words read 0 and take no write.
       send(C_ESC & "WFFFFFFD0000400000005" & "00000005" & "00000005" & "00000005#" &
            cc("WFFFFFFD0000400000005" & "00000005" & "00000005" & "00000005"));
-      expect(C_ESC & "kFFFFFFD00004#" & cc("kFFFFFFD00004"), "W of the reserved words while running");
+      expect(C_ESC & "kFFFFFFD00004#" & cc("kFFFFFFD00004"),
+             "W of the reserved words while running");
       send(C_ESC & "WFFFFFFD7000100000103#" & cc("WFFFFFFD7000100000103"));
       expect(C_ESC & "kFFFFFFD70001#" & cc("kFFFFFFD70001"), "W of 0xFFFFFFD7 while running");
       word_is(X"FFFFFFD0", X"00000000", "0xFFFFFFD0 while running");

@@ -26,10 +26,10 @@
 -- store counter count the data reads and the stores that the core's data
 -- bus accepts. The skip and jump counters count the steps that the core
 -- reports on retire_i: a skipped instruction, and one that writes R15
--- (writes_r15 of nice_pkg), but no step that halts. A core reports a step no later than the cycle in which it
--- counts its instruction on instret_i, and issues no read of a younger
--- instruction before then, so a read of a counter counts what came before
--- it, as a read of INSTR_LO does.
+-- (writes_r15 of nice_pkg), but no step that halts. A core reports a step
+-- no later than the cycle in which it counts its instruction on instret_i,
+-- and issues no read of a younger instruction before then, so a read of a
+-- counter counts what came before it, as a read of INSTR_LO does.
 --
 -- A read of a low word returns the low word of its counter as it is in the
 -- cycle the read is accepted, and copies the whole counter into the

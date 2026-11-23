@@ -325,7 +325,7 @@ architecture synthesis of debug_link is
    constant C_TAG_W : t_byte := X"57";   -- 'W', a write
    constant C_HASH  : t_byte := X"23";   -- '#', before the checksum
 
-   -- Major 0, minor 8 (DEBUG.md §9)
+   -- Major 1, minor 0 (DEBUG.md §9)
    constant C_VERSION : t_word := X"00000010";
 
    function is_hex(b : t_byte) return boolean is

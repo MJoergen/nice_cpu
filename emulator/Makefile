@@ -24,7 +24,7 @@ OPTS_wrap      = -d 0xffffffff:1
 PROBES = logic dest carry r15 cond rotate selfmod addr cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events input r15modes r0dest r14mem skipconst carryin shiftc \
   wrapmem smcown scrbound time trapsym sd font net eth bytewin skip clock clockhost stack \
-  fpu fpustack fpudec fpufunc chunky
+  fpu fpustack fpudec fpufunc chunky short shortfar
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -58,6 +58,8 @@ OPTS_stack_none = --stack
 OPTS_input   = --input test/input.txt
 OPTS_r15modes = -d 6:1 -d 0xa:1
 OPTS_r0dest  = -d 0:2
+OPTS_short   = -d 0xff:1
+OPTS_shortfar = -d 0xff:1
 OPTS_r14mem  = -d 0x01000010:2 -d 0x01ffffff:1
 OPTS_carryin = -d 0x200:16
 OPTS_shiftc  = -d 0x200:28

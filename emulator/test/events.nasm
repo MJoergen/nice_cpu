@@ -24,7 +24,7 @@
 ;   16     13                          MOVE R13, @SKIP_LO    R13 = 2
 ;   17                                 HALT
 ;
-; 18 steps. PC = 0x26 after the HALT at 0x25. The dump reads the counters
+; 18 steps. PC = 0x24 after the HALT at 0x23. The dump reads the counters
 ; without taking snapshots: 13 = 0xD reads, 2 stores, 2 skips, 2 jumps,
 ; and INTR_LO 0, and the snapshots' high words, 0. The store to data
 ; shows in memory; the one to READ_LO does not.
@@ -42,17 +42,17 @@ PC              .EQU    R15
                 MOVE    R3, @STORE_LO   ; words 11,12
         ?Z      MOVE    R4, @READ_LO    ; words 13,14
                 MOVE    R4, @SKIP_LO    ; words 15,16
-                JMP     next            ; words 17,18
-next            MOVE    R5, @JUMP_LO    ; words 19,20
-        ?Z      JMP     fail            ; words 21,22
-                MOVE    R6, @PC++       ; word 23
-                .DAT    0x00001234      ; word 24
-                MOVE    R7, @JUMP_LO    ; words 25,26
-                MOVE    R8, @INTR_LO    ; words 27,28
-                MOVE    R10, @JUMP_LO   ; words 29,30
-                MOVE    R11, @READ_LO   ; words 31,32
-                MOVE    R12, @READ_HI   ; words 33,34
-                MOVE    R13, @SKIP_LO   ; words 35,36
-                HALT                    ; word 37
-data            .DAT    0               ; word 38
-fail            .DAT    0x0FE00000      ; word 39: a reserved word, which halts
+                JMP     next            ; word 17
+next            MOVE    R5, @JUMP_LO    ; words 18,19
+        ?Z      JMP     fail            ; word 20
+                MOVE    R6, @PC++       ; word 21
+                .DAT    0x00001234      ; word 22
+                MOVE    R7, @JUMP_LO    ; words 23,24
+                MOVE    R8, @INTR_LO    ; words 25,26
+                MOVE    R10, @JUMP_LO   ; words 27,28
+                MOVE    R11, @READ_LO   ; words 29,30
+                MOVE    R12, @READ_HI   ; words 31,32
+                MOVE    R13, @SKIP_LO   ; words 33,34
+                HALT                    ; word 35
+data            .DAT    0               ; word 36
+fail            .DAT    0x0FE00000      ; word 37: a reserved word, which halts

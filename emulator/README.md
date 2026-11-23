@@ -772,7 +772,9 @@ Some probes check corners that cputest leaves out: `r0dest` and
 an address, `skipconst` the constant words of skipped and control
 instructions, `carryin` and `shiftc` the carry input and the shift counts
 at their edges, `wrapmem` the wrap of addresses at `0xFFFFFFFF`, and
-`smcown` an instruction that overwrites its own constant word.
+`smcown` an instruction that overwrites its own constant word. `short`
+runs the one-word `JMP`, `JMPR`, and `CALL` of ISA.md §5.3, skipped and
+taken, forward and back, and `shortfar` the two ends of their reach.
 `bytewin` reads and writes through the byte windows of DEVICES.md §9.
 `scrbound` runs twice, with `-s` and with `-2004 -s`, to check the bounds
 of the screen.

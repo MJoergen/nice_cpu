@@ -46,7 +46,7 @@
                 MOVE    @0x60000000, 0x0C000000
                 MOVE    R11, 9
                 MOVE    R12, @0x20000800[R11]
-                JMP     0x5FFFFFFE
+                MOVE    R15, 0x5FFFFFFE  ; far: out of reach of the one-word JMP
 
                 .ORG    0x200
                 .DAT    0x80FF7F01

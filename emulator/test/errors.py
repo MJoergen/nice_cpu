@@ -131,12 +131,12 @@ ETH_FILES = {
 
 # Runs that succeed: (contents of the .bin file, arguments before it, exit
 # status, lines that stdout must have, or must not have if they start with
-# "!"). 0c000000 is HALT, and 0c200000, 0c400001, and 0c800000 are
-# reserved control words, commands 1, 2, and 4.
+# "!"). 0c000000 is HALT, and 0c200000, 0c400001, and 0ce00000 are
+# reserved control words, commands 1, 2, and 7.
 RUNS: List[Tuple[str, List[str], int, List[str]]] = [
     ("00000000 0c000000", [], 0, ["Halted (HALT) after 1 steps, PC=00000001"]),
     ("00000000 0c200000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
-    ("00000000 0c800000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
+    ("00000000 0ce00000", [], 2, ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
     ("00000000 0c400001\n00000001 00000002", [], 2,
      ["Halted (reserved control instruction) after 1 steps, PC=00000001"]),
     ("00000000 00000000", ["-n", "5", "--no-cycle-counter"], 3,
@@ -278,7 +278,7 @@ def main() -> None:
         for text, message in SYMBOL_FILES:
             with open(sym, "w", newline="") as f:
                 f.write(text)
-            p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0c800000")
+            p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0ce00000")
             problems = []
             if message is None:
                 if p.returncode != 2:

@@ -9,10 +9,9 @@
 ;    4  R13 += 5: FFFFFEFE
 ;    5  pop R1 = 2: FFFFFEFF
 ;    6  pop R2 = 1: FFFFFF00
-;    7  CALL, its ADD: FFFFFEFF
-;    8  CALL, its MOVE
-;    9  RET: FFFFFF00
-;   10  HALT, at word 0x10
+;    7  CALL, one word that pushes: FFFFFEFF
+;    8  RET: FFFFFF00
+;    9  HALT, at word 0xD
 ; So the report is first FFFFFF00, lowest FFFFFEF9, 7 words below.
                 MOVE    R13, 0xFFFFFF00
                 MOVE    @--R13, 1

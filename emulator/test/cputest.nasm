@@ -22,7 +22,7 @@
 SP              .EQU    R13
 PC              .EQU    R15
 
-                JMP     start           ; word 0 is 0x0003D800, read by checks 84 and 97
+                MOVE    R15, start      ; word 0 is 0x0003D800, read by checks 84 and 97
 
 ; ---- 1. The checking method itself (§3, §9.2) ---------------------------
 start           MOVE    R12, 1

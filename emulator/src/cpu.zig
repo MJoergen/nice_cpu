@@ -406,9 +406,10 @@ pub const Perf = struct {
 /// Whether the instruction `iw` writes R15 when it runs (DEVICES §3, the jump
 /// counter): a field of register 15 whose mode writes the register, the
 /// destination in mode 000, 001, 010, 101, or 110, a source in mode 001,
-/// 010, 101, or 110 (ISA §4). No control instruction writes it.
+/// 010, 101, or 110 (ISA §4), or the one-word JMP, JMPR, or CALL (ISA
+/// §5.3), commands 4 to 6. No other control instruction writes it.
 pub fn writesR15(iw: u32) bool {
-    if ((iw >> 26) & 0b11 == 0b11) return false;
+    if ((iw >> 26) & 0b11 == 0b11) return isShort(iw);
     for ([3]u5{ 14, 7, 0 }, 0..) |shift_by, i| {
         const f = (iw >> shift_by) & 0x7F;
         if (f & 0xF != 15) continue;
@@ -419,6 +420,20 @@ pub fn writesR15(iw: u32) bool {
         }
     }
     return false;
+}
+
+/// Whether `iw` is a one-word JMP, JMPR, or CALL: a control word with the
+/// command 4, 5, or 6 (ISA §5.3).
+pub fn isShort(iw: u32) bool {
+    const cmd = (iw >> 21) & 0x1F;
+    return (iw >> 26) & 0b11 == 0b11 and cmd >= 4 and cmd <= 6;
+}
+
+/// The signed distance of a one-word jump or call, bits 20..0 of `iw`, as
+/// a 32-bit word to add to the address of the next instruction.
+pub fn shortDistance(iw: u32) u32 {
+    const d: u21 = @truncate(iw);
+    return @bitCast(@as(i32, @as(i21, @bitCast(d))));
 }
 
 /// The host's clock for the microsecond counter (DEVICES §3): the host's
@@ -1230,7 +1245,7 @@ pub const Cpu = struct {
 
         // 4. Control.
         if (class == 0b11) {
-            self.control(iw);
+            try self.control(iw);
             return .{ .iw = iw, .executed = true };
         }
 
@@ -1327,9 +1342,20 @@ pub const Cpu = struct {
         }
     }
 
-    /// §5.3: HALT, and the reserved commands 1 to 31, which halt too.
-    /// Bits 20..0 must be 0.
-    fn control(self: *Cpu, iw: u32) void {
+    /// §5.3: HALT, the one-word JMP, JMPR, and CALL (commands 4 to 6), and
+    /// the reserved commands, which halt too. HALT's bits 20..0 must be 0.
+    fn control(self: *Cpu, iw: u32) Error!void {
+        if (isShort(iw)) {
+            // R15 is the address of the next instruction. A call pushes it
+            // through R13, one data write, before the jump.
+            const next = self.getReg(15);
+            if ((iw >> 21) & 0x1F == 6) {
+                self.setReg(13, self.getReg(13) -% 1);
+                try self.dataWrite(self.getReg(13), next);
+            }
+            self.setReg(15, next +% shortDistance(iw));
+            return;
+        }
         self.halt_reason = if (iw & 0x03FF_FFFF == 0) .halt else .reserved;
     }
 
@@ -1560,6 +1586,10 @@ test "writesR15: the modes that write R15, and no control word (DEVICES §3)" {
     try testing.expect(!writesR15(0x01 << 14 | 0x4F << 7)); // MOVE R1, @R15
     try testing.expect(!writesR15(OLD_RTI)); // reserved, was RTI
     try testing.expect(!writesR15(0x0C000000)); // HALT
+    try testing.expect(writesR15(0x0C80_0000)); // JMP, command 4 (ISA §5.3)
+    try testing.expect(writesR15(0x3CBF_FFFF)); // ?Z JMPR, command 5
+    try testing.expect(writesR15(0x0CC0_0001)); // CALL, command 6
+    try testing.expect(!writesR15(0x0CE0_0000)); // reserved, command 7
 }
 
 test "source order of §5: MOVE @R1, R1++" {
@@ -2508,14 +2538,14 @@ test "trace: write, jump, skip and halt" {
 }
 
 test "trace: control instructions, HALT and reserved (§5.3)" {
-    // A skipped control word, then a reserved one: command 4.
+    // A skipped control word, then a reserved one: command 7.
     var buf: [512]u8 = undefined;
     var cpu2 = Cpu.init(testing.allocator);
     defer cpu2.deinit();
-    try load(&cpu2, 0, &.{ 0x8C80_0000, 0x0C80_0000 });
+    try load(&cpu2, 0, &.{ 0x8CE0_0000, 0x0CE0_0000 });
     try testing.expectEqualStrings(
-        \\00000000 8c800000 skipped
-        \\00000001 0c800000 reserved control instruction
+        \\00000000 8ce00000 skipped
+        \\00000001 0ce00000 reserved control instruction
         \\
     , try traceSteps(&cpu2, &buf, 2));
 
@@ -2527,6 +2557,57 @@ test "trace: control instructions, HALT and reserved (§5.3)" {
         \\00000000 0c400002 reserved control instruction
         \\
     , try traceSteps(&cpu3, &buf, 1));
+}
+
+test "trace: the one-word CALL, JMPR, and JMP (§5.3)" {
+    var buf: [512]u8 = undefined;
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{
+        alu_iw(.always, MOVE, .none, reg(13), imm(0), reg(0)), 0x40, // 0: MOVE R13, 0x40
+        0x0CC0_0002, // 2: CALL 5, 5-3 = 2
+        HALT, // 3
+        HALT, // 4
+        0x0CBF_FFFD, // 5: JMPR 3, 3-6 = -3
+    });
+    // The call pushes 3, the address after it, to 0x3f, then jumps to 5.
+    try testing.expectEqualStrings(
+        \\00000000 00035800 R13=00000040
+        \\00000002 0cc00002 R13=0000003f R15=00000005 [0000003f]=00000003
+        \\00000005 0cbffffd R15=00000003
+        \\00000003 0c000000 HALT
+        \\
+    , try traceSteps(&cpu, &buf, 4));
+    try testing.expectEqual(1, cpu.perf.stores);
+    try testing.expectEqual(2, cpu.perf.jumps);
+}
+
+test "the one-word JMP, JMPR, and CALL: conditions, reach, and wrap (§5.3)" {
+    // ?Z JMP +5 skipped with Z = 0, then JMP to the farthest forward,
+    // 0xfffff from the next instruction, and from there JMP back -0x100000.
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    try load(&cpu, 0, &.{ 0x3C80_0005, 0x0C8F_FFFF });
+    try load(&cpu, 0x10_0001, &.{0x0C90_0000}); // to 0x100002 - 0x100000 = 2
+    try load(&cpu, 2, &.{HALT});
+    try runToHalt(&cpu);
+    try testing.expectEqual(.halt, cpu.halt_reason);
+    try testing.expectEqual(3, cpu.regs[15]);
+    try testing.expectEqual(4, cpu.perf.instrs);
+    try testing.expectEqual(1, cpu.perf.skips);
+    try testing.expectEqual(2, cpu.perf.jumps);
+
+    // A CALL with R13 = 0 pushes to 0xffffffff, and a JMP back from 0
+    // wraps to the top of memory: no read, one write.
+    var cpu2 = Cpu.init(testing.allocator);
+    defer cpu2.deinit();
+    try load(&cpu2, 0, &.{0x0CDF_FFFE}); // CALL -2: 1 - 2 = 0xffffffff
+    try cpu2.step();
+    try testing.expectEqual(0xFFFF_FFFF, cpu2.regs[13]);
+    try testing.expectEqual(0xFFFF_FFFF, cpu2.regs[15]);
+    try testing.expectEqual(1, cpu2.read(0xFFFF_FFFF));
+    try testing.expectEqual(0, cpu2.perf.reads);
+    try testing.expectEqual(1, cpu2.perf.stores);
 }
 
 test "trace: console output comes before the line of the instruction that wrote it" {

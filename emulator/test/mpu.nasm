@@ -33,7 +33,7 @@
 ; 0 in the three spare words. test/mpubits.nasm checks the bit counts.
 ;
 ; Steps: 3 + 9 * 13 + 9 = 129. R6 = 0x200 + 72 = 0x248, R7 = 0 with Z set
-; (R14 = 0x09000000), R8 = CASES + 18 = 0x3d, and R9 = MPU + 10.
+; (R14 = 0x09000000), R8 = CASES + 18 = 0x3c, and R9 = MPU + 10.
 MPU             .EQU    0xFFFFFF20
                 MOVE    R8, CASES
                 MOVE    R6, 0x200

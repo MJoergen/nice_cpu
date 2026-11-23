@@ -37,7 +37,7 @@
 ;   0x214  POW2 -1074, pushed above it: 2^-1074,
 ;          the smallest subnormal, exact            0x00000001 0x00000000
 ;
-; 105 steps, and PC = 0x9F after the HALT at 0x9E. R6 = 0x200 + 22 = 0x216.
+; 105 steps, and PC = 0x9E after the HALT at 0x9D. R6 = 0x200 + 22 = 0x216.
 FPU_X_LO        .EQU    0xFFFFFF88
 FPU_X_HI        .EQU    0xFFFFFF89
 FPU_X_S         .EQU    0xFFFFFF8A

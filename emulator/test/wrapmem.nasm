@@ -19,7 +19,7 @@
 ;   MOVE @--R9, 0x99         R9 = 0xFFFFFFFF, mem[0xFFFFFFFF] = 0x99
 ;   MOVE R10, @0xFFFFFFFF    R10 = 0x99
 ;
-; Steps: 5 + 256 + 2 + 10 = 273. HALT is word 0x1C, so PC = 0x1D. The
+; Steps: 5 + 256 + 2 + 10 = 273. HALT is word 0x1A, so PC = 0x1B. The
 ; flags are those of the second SUB[M]: Z, R14 = 0x09000000. The dumps show
 ; the read counter, 0x51, without counting, and 0x99 at 0xFFFFFFFF.
 COUNT           .EQU    0xFFFFFF01

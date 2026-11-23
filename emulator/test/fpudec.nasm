@@ -19,12 +19,12 @@
 ; as 6.02214076000000E+023.
 ;
 ; Steps: PRINT takes 12, 14 * 8 in its loop, and 15, 139 in all. The main
-; loop takes 6 + 139 for each of the 6 values, the read back 5, the CALL
-; 2, PRINT 139, and the HALT 1, and the start 3: 3 + 870 + 147 = 1020.
-; PC = 37 = 0x25 after the HALT at 36, where PRINT starts, 84 words long,
-; and VALUES at 121. After the last PRINT: R1 = '+' = 0x2B, R2 = 23 =
+; loop takes 5 + 139 for each of the 6 values, the read back 5, the CALL
+; 1, PRINT 139, and the HALT 1, and the start 3: 3 + 864 + 146 = 1013.
+; PC = 30 = 0x1E after the HALT at 29, where PRINT starts, 83 words long,
+; and VALUES at 113. After the last PRINT: R1 = '+' = 0x2B, R2 = 23 =
 ; 0x17, R3 and R4 = 0, as the 14 shifts of R3:R4 left by 4 leave its low
-; byte, 0x00, on top, R5 = 0, R10 = VALUES + 12 = 0x85, R11 = 0, and
+; byte, 0x00, on top, R5 = 0, R10 = VALUES + 12 = 0x7D, R11 = 0, and
 ; R13 = 0x1000. The last flags are those of MOVE[M] R0, R2 with 23: none,
 ; so R14 = 0x01000000.
 CONSOLE         .EQU    0xFFFFFF00

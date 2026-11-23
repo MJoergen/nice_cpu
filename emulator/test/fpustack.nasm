@@ -37,8 +37,8 @@
 ; negative, fits), REL 1 (Y = 3 > -2.5), and 0. STATUS again at 0x211 is
 ; the same, and so is the dump of the eight words.
 ;
-; Steps: 2 + 17 * 3 in the loop, and 40 after it, 93 in all. PC = 99 =
-; 0x63 after the HALT at 98. R6 = 0x212, R7 = 0 with Z set (R14 =
+; Steps: 2 + 17 * 3 in the loop, and 40 after it, 93 in all. PC = 98 =
+; 0x62 after the HALT at 97. R6 = 0x212, R7 = 0 with Z set (R14 =
 ; 0x09000000), R8 = 0x00300810, and R9 = 0xFFFFFF90.
 FPU             .EQU    0xFFFFFF88
 FPU_X_LO        .EQU    0xFFFFFF88

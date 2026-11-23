@@ -331,7 +331,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
     loop, done = at["LOOP"], at["DONE"]
     try:
         out = command(dbg, f"load {prog}")
-        check("dbg: load", out == "loaded 23 words; the processor is held "
+        check("dbg: load", out == "loaded 19 words; the processor is held "
               "in reset\n", repr(out))
         out = command(dbg, "status")
         check("dbg: status while held", out.startswith(
@@ -360,8 +360,8 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         check("dbg: bd of a huge number", out ==
               "error: no breakpoint ffffffff; they are 0 to 3\n", repr(out))
         out = command(dbg, "s")
-        check("dbg: a step", out == f"PC={loop + 2:08x} LOOP+0x2  ?!Z MOVE "
-              f"R15, 0x{loop:x}\n", repr(out))
+        check("dbg: a step", out == f"PC={loop + 2:08x} LOOP+0x2  ?!Z JMP "
+              f"0x{loop:x}\n", repr(out))
         out = command(dbg, "set R4 2")
         check("dbg: set a register", out == "R4 00000002\n", repr(out))
         out = command(dbg, "set r0 1")
@@ -416,7 +416,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         out = command(dbg, "d LOOP 2")
         check("dbg: the disassembly at a label", out == "LOOP:\n" +
               line(loop, "02210230 00000001", "SUB[M] R4, R4, 0x1") +
-              line(loop + 2, "b003d800 00000004", "?!Z MOVE R15, 0x4"),
+              line(loop + 2, "bc9ffffd", "?!Z JMP 0x4"),
               repr(out))
         # MOVE R5, with its constant word at DONE
         command(dbg, "w DONE-1 00015800")
@@ -510,7 +510,7 @@ def test_program(port: str, prog: str) -> None:
     check("nicedbg.py: exit status 0", p.returncode == 0,
           f"{p.returncode} {p.stderr!r}")
     check("nicedbg.py: the load at the start",
-          out.startswith("loaded 23 words"), repr(out))
+          out.startswith("loaded 19 words"), repr(out))
     check("nicedbg.py: the breakpoint at DONE", "[breakpoint 0, PC=" in out
           and " DONE  HALT]" in out, repr(out))
     check("nicedbg.py: R6 of AFTER and R7 of the routine",
@@ -560,7 +560,7 @@ def test_options(port: str, prog: str) -> None:
     check("run: the hooks", opened == [port] and loaded == [prog],
           f"{opened} {loaded}")
     check("run: the load, the breakpoint at DONE, and the registers",
-          text.startswith("loaded 23 words") and " DONE  HALT]" in text
+          text.startswith("loaded 19 words") and " DONE  HALT]" in text
           and "R7  00001234" in text, repr(text))
 
 

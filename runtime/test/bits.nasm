@@ -1,6 +1,6 @@
 ; Run after start.nasm. For each 64-bit number v in the table, calls
 ; __clz, __ctz, and __popcnt on its low word, then __clz64, __ctz64, and
-; __popcnt64 on v, and stores the 9 result words in results (0x56-0x8B):
+; __popcnt64 on v, and stores the 9 result words in results (0x40-0x75):
 ;
 ;   v                       clz ctz popcnt  clz64 ctz64 popcnt64
 ;   0                       32  32  0       64    64    0
@@ -12,24 +12,24 @@
 ;
 ; The 64-bit results are pairs, so R2 = 0 follows each.
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-73,
-; values 0x4A-0x55, and results 0x56.
+; Code: start.nasm is words 0-7, with its vectors at 6-7, main 8-51,
+; values 0x34-0x3F, and results 0x40.
 ; Steps, from the comments in lib.nasm, for the six routines on each value.
-; __popcnt64 includes __popcnt on both words, for example 10 + 6 + 6 = 22
+; __popcnt64 includes __popcnt on both words, for example 8 + 6 + 6 = 20
 ; for 0.
-;   0:          3 + 3 + 6 + 10 + 11 + 22                  = 55
-;   1:          19 + 6 + 6 + 26 + 12 + 22                 = 91
-;   0x80000000: 19 + 130 + 99 + 26 + 136 + 115            = 525
-;   2^48:       3 + 3 + 6 + 26 + 78 + 70                  = 186
-;   all ones:   19 + 6 + 99 + 26 + 12 + 208               = 370
-;   0x0F0F...:  19 + 22 + 27 + 26 + 28 + 124              = 246
-; which sum to 1473. A pass takes 33 steps besides them. The total is 5
-; (start up) + 6 (set up) + 6 * 33 + 1473 + 1 (return) + 1 (HALT) = 1684,
+;   0:          3 + 3 + 6 + 9 + 10 + 20                   = 51
+;   1:          19 + 6 + 6 + 25 + 11 + 20                 = 87
+;   0x80000000: 19 + 130 + 99 + 25 + 135 + 113            = 521
+;   2^48:       3 + 3 + 6 + 25 + 77 + 68                  = 182
+;   all ones:   19 + 6 + 99 + 25 + 11 + 206               = 366
+;   0x0F0F...:  19 + 22 + 27 + 25 + 27 + 122              = 242
+; which sum to 1449. A pass takes 27 steps besides them. The total is 4
+; (start up) + 6 (set up) + 6 * 27 + 1449 + 1 (return) + 1 (HALT) = 1623,
 ; with muldiv_soft.nasm (bits_soft.expected). With muldiv_mpu.nasm,
 ; __clz, __ctz, and __popcnt take 3 steps each, so the values take
-; 3 + 3 + 3 + 10 + 11 + 16 = 46 when the low word is 0 (0 and 2^48), and
-; 3 + 3 + 3 + 10 + 9 + 16 = 44 for the other four, 268 in all, and the
-; total is 5 + 6 + 6 * 33 + 268 + 1 + 1 = 479 (bits.expected).
+; 3 + 3 + 3 + 9 + 10 + 14 = 42 when the low word is 0 (0 and 2^48), and
+; 3 + 3 + 3 + 9 + 8 + 14 = 40 for the other four, 244 in all, and the
+; total is 4 + 6 + 6 * 27 + 244 + 1 + 1 = 418 (bits.expected).
 ;
 ; At the end R1 = 12 and R2 = 0 from the last __popcnt64, which leaves the
 ; low word's count, 4, in R3, and the high word in R4. R10-R12 survive the

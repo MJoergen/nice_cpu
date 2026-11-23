@@ -6,15 +6,14 @@
 ; written, and SP back at 0xFFFFFF00. R7 is 0: nice_print restored it, and
 ; f's push did not change it. Z is clear: mon.putc's last ADD[M] made 3.
 ;
-; The stand-in's call pushes 0xC at 0xFFFFFEFF, and the start-up code,
-; with its vectors at 0x800D-0x800E, jumps to main. main is 0x800F-0x801F:
-; its call of f pushes 0x801F at 0xFFFFFEFE. f is 0x8020-0x8027: it pushes
-; R7 at 0xFFFFFEFD, and its call of exit pushes 0x8027 at 0xFFFFFEFC. text
-; is 0x8028-0x802A. Steps: 6 in
-; the stand-in, 6 in the start-up code, 3 for nice_print's call and
-; 6 + 9 * 2 in it with mon.putc at 5 steps, 3 for nice_putc's call and 6
-; in it, 2 for the call of f, 4 in f, 2 in exit, and 2 in the
-; stand-in = 58.
+; The stand-in's call pushes 9 at 0xFFFFFEFF, and the start-up code,
+; with its vectors at 0x800C-0x800D, jumps to main. main is 0x800E-0x8015:
+; its call of f pushes 0x8015 at 0xFFFFFEFE. f is 0x8016-0x801A: it pushes
+; R7 at 0xFFFFFEFD, and its call of exit pushes 0x801A at 0xFFFFFEFC. text
+; is 0x801B-0x801D. Steps: 5 in the stand-in, 6 in the start-up code, 2
+; for nice_print's call and 6 + 9 * 2 in it with mon.putc at 5 steps, 2
+; for nice_putc's call and 6 in it, 1 for the call of f, 3 in f, 2 in
+; exit, and 2 in the stand-in = 53.
 
 _main           MOVE    R1, text
                 CALL    _nice_print

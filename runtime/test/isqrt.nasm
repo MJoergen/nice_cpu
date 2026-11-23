@@ -15,16 +15,16 @@
 ; each step. main then clears R1-R6, which the routine may change, so
 ; that the registers do not show how it works.
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10, main
-; 0x0B-0x2A, values 0x2B-0x42, and results 0x43-0x4E.
+; Code: start.nasm is words 0-7, with its vectors at 6-7, main
+; 0x08-0x23, values 0x24-0x3B, and results 0x3C-0x47.
 ;
-; Steps: a pass of the loop is 8 steps besides the routine. With
+; Steps: a pass of the loop is 7 steps besides the routine. With
 ; muldiv_soft.nasm (isqrt_soft.expected), _nice_isqrt64 takes 584 steps,
-; so the total is 5 (start up) + 3 (set up) + 12 * (8 + 584) + 6 (clear)
-; + 1 (return) + 1 (HALT) = 7120. With muldiv_mpu.nasm (isqrt.expected),
-; it takes 4, and the total is 5 + 3 + 12 * 12 + 6 + 2 = 160.
+; so the total is 4 (start up) + 3 (set up) + 12 * (7 + 584) + 6 (clear)
+; + 1 (return) + 1 (HALT) = 7107. With muldiv_mpu.nasm (isqrt.expected),
+; it takes 4, and the total is 4 + 3 + 12 * 11 + 6 + 2 = 147.
 ;
-; At the end R7 = 0x43, the end of the table, R8 = 0x4F, that of
+; At the end R7 = 0x3C, the end of the table, R8 = 0x48, that of
 ; results, and R9 = 0, with Z set (R14 = 0x09000000). R13 = 0xFFFFFF00:
 ; the routine leaves the stack as it found it.
 

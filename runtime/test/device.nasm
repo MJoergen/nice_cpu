@@ -1,12 +1,12 @@
 ; Run after start.nasm with test/device.input, "ab", as the console input,
 ; and with -s. Calls each device routine of lib.nasm (ABI.md).
 ;
-; The counters. The start-up code runs 5 instructions, 0-4, and main
-; starts with a call, 5 and 6. The read of INSTR_LO in nice_instructions
-; is instruction 7, so it returns 7. Then its MOVE and return (8, 9), two
-; stores (10, 11), and the call (12, 13): the read of CYCLE_LO is
-; instruction 14. With no interrupts, the emulator's cycle counter counts
-; the same steps, so it returns 14 = 0xE. Both high words are 0. The four
+; The counters. The start-up code runs 4 instructions, 0-3, and main
+; starts with a call, 4. The read of INSTR_LO in nice_instructions is
+; instruction 5, so it returns 5. Then its MOVE and return (6, 7), two
+; stores (8, 9), and the call (10): the read of CYCLE_LO is instruction
+; 11. With no interrupts, the emulator's cycle counter counts the same
+; steps, so it returns 11 = 0xB. Both high words are 0. The four
 ; words go to results (see below).
 ;
 ; The console. nice_print prints "Hi" and nice_putc a newline, from
@@ -24,16 +24,16 @@
 ; just "|". The dumps show the words, with the blank at 0xFFFF08BE that
 ; the clear wrote.
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10. main is 115
-; words, 11-0x7D: 57 instructions of 2 words and the return. text is
-; 0x7E-0x80, and results 0x81-0x88.
-; Steps, from the comments in lib.nasm: main itself runs 58 instructions,
+; Code: start.nasm is words 0-7, with its vectors at 6-7. main is 67
+; words, 8-0x4A: 25 instructions of 2 words, 16 calls of 1, and the
+; return. text is 0x4B-0x4D, and results 0x4E-0x55.
+; Steps, from the comments in lib.nasm: main itself runs 42 instructions,
 ; and the 16 calls 3 (nice_instructions) + 3 (nice_cycles) + 6 + 6 * 2
 ; (nice_print, through ___putc_vector) + 4 + 4 + 8 + 8 (nice_getc,
 ; nice_pollc, nice_pollc, nice_getc) + 4 * 3 (nice_putc, through the
 ; vector) + 6722 (nice_screen_clear) + 4 * 6 (nice_screen_put) = 6806
-; steps. With the 5 of the start-up code and HALT, that is
-; 5 + 58 + 6806 + 1 = 6870 steps. At the end R1 = 79 = 0x4F,
+; steps. With the 4 of the start-up code and HALT, that is
+; 4 + 42 + 6806 + 1 = 6853 steps. At the end R1 = 79 = 0x4F,
 ; R2 = 80 * 27 + 79 = 0x8BF, R3 = 0x5A, and R4 = 64 * 27 = 0x6C0, from the
 ; last nice_screen_put. R14 = 0x09000000: Z from the last DEC[M] of
 ; nice_screen_clear.

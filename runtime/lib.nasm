@@ -15,7 +15,7 @@ ___wasm_trap
 
 ; __clz64, __ctz64, __popcnt64: R1:R2 = the same counts for the 64-bit
 ; number in R1:R2. The result is at most 64, so R2 = 0.
-; __clz64 steps: 7 + __clz(R2) if R2 is not 0, else 7 + __clz(R1).
+; __clz64 steps: 6 + __clz(R2) if R2 is not 0, else 6 + __clz(R1).
 __clz64         TST     R2
         ?Z      JMP     __clz64.lo
                 MOVE    R1, R2
@@ -28,7 +28,7 @@ __clz64.lo
                 MOVE    R2, 0
                 RET
 
-; __ctz64 steps: 6 + __ctz(R1) if R1 is not 0, else 8 + __ctz(R2).
+; __ctz64 steps: 5 + __ctz(R1) if R1 is not 0, else 7 + __ctz(R2).
 __ctz64         TST     R1
         ?Z      JMP     __ctz64.hi
                 CALL    __ctz
@@ -41,7 +41,7 @@ __ctz64.hi
                 MOVE    R2, 0
                 RET
 
-; __popcnt64 steps: 10 + __popcnt(R1) + __popcnt(R2). Uses R3 and R4.
+; __popcnt64 steps: 8 + __popcnt(R1) + __popcnt(R2). Uses R3 and R4.
 __popcnt64
                 MOVE    R4, R2
                 CALL    __popcnt

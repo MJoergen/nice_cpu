@@ -4,7 +4,7 @@
 ; negative operands. Calls __udiv, __umod, __div, and __mod on each pair of
 ; pairs32, then __udiv64, __umod64, __div64, and __mod64 on each pair of
 ; pairs64, then __mul64 on each pair of pairs_mul, and stores the results
-; in that order in results (0xDA-0x155).
+; in that order in results (0xB9-0x134).
 ;
 ; One word, M = 0x80000000, the most negative number:
 ;
@@ -84,42 +84,42 @@
 ; 0xFFFFFFFF, 0xFFFFFFFE, and the low words of 0xFFFFFFFF * 1, twice:
 ; 0xFFFFFFFE + 0xFFFFFFFF + 0xFFFFFFFF = 0xFFFFFFFC mod 2^32.
 ;
-; Steps with muldiv_mpu.nasm: 5 (start up), 10 to set up the three loops,
-; 11 passes of 20 + 4 * 4 + 3 = 39, 9 passes of 32 + 4 * 7 + 3 = 63, 4
-; passes of 11 + 10 = 21, the return, and HALT: 5 + 10 + 429 + 567 + 84 +
-; 1 + 1 = 1097. At the end R1:R2 = the last product, R3:R4 its second
+; Steps with muldiv_mpu.nasm: 4 (start up), 10 to set up the three loops,
+; 11 passes of 16 + 4 * 4 + 3 = 35, 9 passes of 28 + 4 * 7 + 3 = 59, 4
+; passes of 10 + 10 = 20, the return, and HALT: 4 + 10 + 385 + 531 + 80 +
+; 1 + 1 = 1012. At the end R1:R2 = the last product, R3:R4 its second
 ; operand, and R5 = 0xFFFFFFFE + 0xFFFFFFFF = 0xFFFFFFFD, as in __mul64 of
 ; muldiv_mpu.nasm. R6 stays 0 (edge.expected).
 ;
 ; Steps with muldiv_soft.nasm, from the comments there. A pass of the
-; first loop takes 20 + 292 + 295 + 301 + 302 + 3 = 1213 steps, whatever
-; the operands, so 11 take 13343. The second loop takes 9 * 35 = 315
-; besides the routines, 9 * 839 = 7551 in __udiv64, and 9 * 843 = 7587 in
-; __umod64. __div64 takes 1 + a + b + 2 + 838 + q, and __mod64 2 more,
+; first loop takes 16 + 292 + 294 + 300 + 301 + 3 = 1206 steps, whatever
+; the operands, so 11 take 13266. The second loop takes 9 * 31 = 279
+; besides the routines, 9 * 839 = 7551 in __udiv64, and 9 * 842 = 7578 in
+; __umod64. __div64 takes 1 + a + b + 1 + 838 + q, and __mod64 2 more,
 ; with a and b 2 for an operand that is not negative and 4 for one that
 ; is, and q 2 for a result that is not negated and 5 for one that is:
 ; __div64 negates when the signs differ, __mod64 when the dividend is
 ; negative. So:
 ;
-;   7 / 0           a 2  b 2  __div64 q 2: 847   __mod64 q 2: 849
-;   -7 / 0          a 4  b 2  q 5: 852           q 5: 854
-;   N / 0           as -7 / 0: 852               854
-;   N / -1          a 4  b 4  q 2: 851           q 5: 856
-;   N / 1           852                          854
-;   (N - 1) / -1    a 2  b 4  q 5: 852           q 2: 851
-;   (N + 1) / 2, -2^32 / 3, -1 / 2^32: 852 each  854 each
+;   7 / 0           a 2  b 2  __div64 q 2: 846   __mod64 q 2: 848
+;   -7 / 0          a 4  b 2  q 5: 851           q 5: 853
+;   N / 0           as -7 / 0: 851               853
+;   N / -1          a 4  b 4  q 2: 850           q 5: 855
+;   N / 1           851                          853
+;   (N - 1) / -1    a 2  b 4  q 5: 851           q 2: 850
+;   (N + 1) / 2, -2^32 / 3, -1 / 2^32: 851 each  853 each
 ;
-; which sum to 7662 and 7680. So the second loop takes 315 + 7551 + 7587 +
-; 7662 + 7680 = 30795 steps. __mul64 takes 5 + 7k + 2j, where k is the
+; which sum to 7653 and 7671. So the second loop takes 279 + 7551 + 7578 +
+; 7653 + 7671 = 30732 steps. __mul64 takes 5 + 7k + 2j, where k is the
 ; number of bits of the second operand and j its number of 1 bits: k = 34,
 ; 64, 2, 33 and j = 3, 1, 1, 33, so 249 + 455 + 21 + 302 = 1027, and the
-; third loop 4 * 11 + 1027 = 1071. The total is 5 + 10 + 13343 + 30795 +
-; 1071 + 1 + 1 = 45226. At the end R1:R2 and R5:R6 hold the last product,
+; third loop 4 * 10 + 1027 = 1067. The total is 4 + 10 + 13266 + 30732 +
+; 1067 + 1 + 1 = 45081. At the end R1:R2 and R5:R6 hold the last product,
 ; and R3:R4 = 0, shifted out (edge_soft.expected).
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-0x8F,
-; pairs32 0x90, pairs64 0xA6, pairs_mul 0xCA, and results 0xDA. Both:
-; R7 = 0xDA, the end of pairs_mul, R8 = 0x156, the end of results, R9 = 0,
+; Code: start.nasm is words 0-7, with its vectors at 6-7, main 8-0x6E,
+; pairs32 0x6F, pairs64 0x85, pairs_mul 0xA9, and results 0xB9. Both:
+; R7 = 0xB9, the end of pairs_mul, R8 = 0x135, the end of results, R9 = 0,
 ; and R10-R12 survive the calls. R14 = 0x09000000: Z from the last DEC[M].
 
 _main           MOVE    R7, pairs32

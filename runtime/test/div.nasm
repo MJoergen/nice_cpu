@@ -1,5 +1,5 @@
 ; Run after start.nasm. Calls __udiv, __umod, __div, and __mod on each pair
-; in the table and stores the four results in results (0x4D-0x6C):
+; in the table and stores the four results in results (0x3D-0x5C):
 ;
 ;                            __udiv      __umod      __div       __mod
 ;   100 / 7                  0x0000000E  0x00000002  0x0000000E  0x00000002
@@ -19,20 +19,20 @@
 ; The divisors 0xC0000000 and 0x80000001 are above 2^31, so the remainder
 ; needs its bit 32 there.
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-60,
-; pairs 0x3D-0x4C, and results 0x4D.
-; Each call takes 5 steps besides the routine, which takes 292, 295, 301,
-; and 302 steps, and the loop 3 more, so a pass takes 20 + 1190 + 3 = 1213.
-; The total is 5 (start up) + 6 (set up) + 8 * 1213 + 1 (return) + 1 (HALT)
-; = 9717.
+; Code: start.nasm is words 0-7, with its vectors at 6-7, main 8-44,
+; pairs 0x2D-0x3C, and results 0x3D.
+; Each call takes 4 steps besides the routine, which takes 292, 294, 300,
+; and 301 steps, and the loop 3 more, so a pass takes 16 + 1187 + 3 = 1206.
+; The total is 4 (start up) + 6 (set up) + 8 * 1206 + 1 (return) + 1 (HALT)
+; = 9660.
 ;
 ; At the end R1 = R3 = 6, the last remainder, and R2 = 13. R4 = 0 after 32
 ; passes. The last quotient bit is 1, so the last pass subtracted: R5 = 6,
 ; and R6 = 0, as no remainder needed bit 32. R10-R12 survive the calls.
 ;
 ; That is div_soft.expected, with muldiv_soft.nasm. With muldiv_mpu.nasm,
-; each routine takes 4 steps, so a pass takes 20 + 16 + 3 = 39, and the
-; total is 5 + 6 + 8 * 39 + 1 + 1 = 325. R3-R6 stay 0 (div.expected).
+; each routine takes 4 steps, so a pass takes 16 + 16 + 3 = 35, and the
+; total is 4 + 6 + 8 * 35 + 1 + 1 = 292. R3-R6 stay 0 (div.expected).
 ; R14 = 0x09000000: Z from the last DEC[M].
 
 _main           MOVE    R7, pairs

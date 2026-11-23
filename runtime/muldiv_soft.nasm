@@ -39,13 +39,13 @@ __udivmod
 ; __udiv: R1 = R1 / R2, unsigned. 1 + 291 = 292 steps.
 __udiv          JMP     __udivmod       ; which returns to our caller
 
-; __umod: R1 = R1 % R2, unsigned. 4 + 291 = 295 steps.
+; __umod: R1 = R1 % R2, unsigned. 3 + 291 = 294 steps.
 __umod          CALL    __udivmod
                 MOVE    R1, R3
                 RET
 
 ; __div: R1 = R1 / R2, signed, rounding toward zero. Divides the absolute
-; values, then negates the quotient if the signs differ. 10 + 291 = 301
+; values, then negates the quotient if the signs differ. 9 + 291 = 300
 ; steps. The most negative number divided by -1 overflows; the result is
 ; then the most negative number, which C allows, as the case is undefined.
 __div           XOR     @--R13, R1, R2  ; bit 31: the signs differ
@@ -59,7 +59,7 @@ __div           XOR     @--R13, R1, R2  ; bit 31: the signs differ
                 RET
 
 ; __mod: R1 = R1 % R2, signed. The remainder has the dividend's sign, as C
-; requires. 11 + 291 = 302 steps.
+; requires. 10 + 291 = 301 steps.
 __mod           PUSH    R1              ; bit 31: the dividend's sign
                 MOVE[M] R1, R1
         ?N      SUB     R1, 0, R1
@@ -124,7 +124,7 @@ __udivmod64.loop
 __udiv64
                 JMP     __udivmod64     ; which returns to our caller
 
-; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 5 + 838 = 843 steps.
+; __umod64: R1:R2 = R1:R2 % R3:R4, unsigned. 4 + 838 = 842 steps.
 __umod64
                 CALL    __udivmod64
                 MOVE    R1, R5
@@ -133,7 +133,7 @@ __umod64
 
 ; __div64: R1:R2 = R1:R2 / R3:R4, signed, rounding toward zero. Like __div.
 ; Negating a pair takes two instructions, so the signs are tested with
-; jumps. Steps: 1 + a + b + 2 + 838 + q, where a and b are 2 for an
+; jumps. Steps: 1 + a + b + 1 + 838 + q, where a and b are 2 for an
 ; operand that is not negative and 4 for one that is, and q is 2 for a
 ; quotient that is not negated and 5 for one that is.
 __div64         XOR     @--R13, R2, R4  ; bit 31: the signs differ
@@ -155,7 +155,7 @@ __div64.b
                 RET
 
 ; __mod64: R1:R2 = R1:R2 % R3:R4, signed, with the dividend's sign. Steps:
-; 1 + a + b + 2 + 838 + 2 + q, with a, b, and q as for __div64.
+; 1 + a + b + 1 + 838 + 2 + q, with a, b, and q as for __div64.
 __mod64         PUSH    R2              ; bit 31: the dividend's sign
                 MOVE[M] R2, R2
         ?!N     JMP     __mod64.a

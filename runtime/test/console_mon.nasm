@@ -3,16 +3,16 @@
 ; ___console_putc. main prints "Hi" with nice_print and a newline with
 ; nice_putc, which reach the console, and returns 5. The stand-in halts
 ; with R1 = 5, R2 = 0, as nothing went through its putc routine, R3 =
-; 0x19, its argv, and SP back at 0xFFFFFF00. R7 is 0: nice_print restored
+; 0x16, its argv, and SP back at 0xFFFFFF00. R7 is 0: nice_print restored
 ; it. Z is set, and the other flags are clear: the last instruction with
 ; the M bit is nice_print's read of the 0 after "Hi".
 ;
-; The stand-in's call pushes 0xC at 0xFFFFFEFF, and the start-up code
-; jumps to main, so main returns to the stand-in. Steps: 6 in the
+; The stand-in's call pushes 9 at 0xFFFFFEFF, and the start-up code
+; jumps to main, so main returns to the stand-in. Steps: 5 in the
 ; stand-in, 6 in the start-up code, with the skipped store of the vector,
-; 1 to load R1, 2 for the call of nice_print and 6 + 6 * 2 in it with
-; ___console_putc, 1 to load R1, 2 for the call of nice_putc and 3 in it,
-; 1 for the result, main's return, and 2 in the stand-in = 43.
+; 1 to load R1, 1 for the call of nice_print and 6 + 6 * 2 in it with
+; ___console_putc, 1 to load R1, 1 for the call of nice_putc and 3 in it,
+; 1 for the result, main's return, and 2 in the stand-in = 40.
 
 _main           MOVE    R1, text
                 CALL    _nice_print

@@ -1,22 +1,22 @@
 ; Run after start.nasm. Calls __clz on 2^k and on 2^(k+1) - 1 for k from 0
 ; to 31, which have the same count, 31 - k, and so reach every count from
 ; 31 to 0 down each path of the search by halves. 2^32 - 1 is 0xFFFFFFFF,
-; as 2 * 2^31 wraps to 0. The 64 results go to results (0x24-0x63), in
+; as 2 * 2^31 wraps to 0. The 64 results go to results (0x1A-0x59), in
 ; pairs: 31, 31, 30, 30, and so on down to 0, 0.
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10, main
-; 0x0B-0x23, and results 0x24.
+; Code: start.nasm is words 0-7, with its vectors at 6-7, main
+; 0x08-0x19, and results 0x1A.
 ;
-; Steps: a call is 2 steps, and a pass is 10 instructions, of which two
-; are calls, so 12 steps and two of __clz. With muldiv_soft.nasm
+; Steps: a call is 1 step, and a pass is 10 instructions, of which two
+; are calls, so 10 steps and two of __clz. With muldiv_soft.nasm
 ; (clz_soft.expected), __clz searches by halves in 19 steps for a value
-; other than 0, so a pass is 12 + 2 * 19 = 50 steps, and the total is 5
-; (start up) + 3 (set up) + 32 * 50 + 1 (return) + 1 (HALT) = 1610. With
+; other than 0, so a pass is 10 + 2 * 19 = 48 steps, and the total is 4
+; (start up) + 3 (set up) + 32 * 48 + 1 (return) + 1 (HALT) = 1545. With
 ; muldiv_mpu.nasm (clz.expected), __clz reads CLZ of the math unit in 3
-; steps, so a pass is 18, and the total is 5 + 3 + 32 * 18 + 2 = 586.
+; steps, so a pass is 16, and the total is 4 + 3 + 32 * 16 + 2 = 521.
 ;
 ; At the end R1 = 0, the last count, R7 = 0, as 2^31 is shifted out,
-; R8 = 0x64, and R9 = 0. R14 = 0x09000000: Z from the last DEC[M]. R2 =
+; R8 = 0x5A, and R9 = 0. R14 = 0x09000000: Z from the last DEC[M]. R2 =
 ; 1 with muldiv_soft.nasm, bit 31 of 0xFFFFFFFF, which __clz leaves
 ; there, and 0 with muldiv_mpu.nasm, whose __clz does not use it.
 

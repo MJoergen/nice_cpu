@@ -1,6 +1,6 @@
 ; Run after start.nasm. Calls __udiv64, __umod64, __div64, and __mod64 on
 ; each pair of 64-bit numbers in the table, and stores the four results,
-; low word first, in results (0x71-0xB0):
+; low word first, in results (0x61-0xA0):
 ;
 ;   a / b                     __udiv64  __umod64  __div64  __mod64
 ;   100 / 7                   14        2         14       2
@@ -19,23 +19,23 @@
 ; The divisors 0xC000000000000000 and 2^63 + 1 are above 2^63, so the
 ; remainder needs its bit 64 there.
 ;
-; Code: start.nasm is words 0-10, with its vectors at 9-10, main 11-80,
-; pairs 0x51-0x70, and results 0x71.
-; Each call takes 8 steps besides the routine, and the loop 3 more. The
-; routines take 839 (__udiv64), 843 (__umod64), and for __div64 and
-; __mod64 1 + a + b + 2 + 838 + q and 1 + a + b + 2 + 838 + 2 + q (see
-; muldiv_soft.nasm). So the passes take 3378, 3388, 3378, 3378, 3389, 3389, 3378,
-; and 3385 steps in the routines, 27063 in all, plus 8 * 35 = 280. The
-; total is 5 (start up) + 6 (set up) + 27063 + 280 + 1 (return) + 1 (HALT)
-; = 27356.
+; Code: start.nasm is words 0-7, with its vectors at 6-7, main 8-64,
+; pairs 0x41-0x60, and results 0x61.
+; Each call takes 7 steps besides the routine, and the loop 3 more. The
+; routines take 839 (__udiv64), 842 (__umod64), and for __div64 and
+; __mod64 1 + a + b + 1 + 838 + q and 1 + a + b + 1 + 838 + 2 + q (see
+; muldiv_soft.nasm). So the passes take 3375, 3385, 3375, 3375, 3386, 3386,
+; 3375, and 3382 steps in the routines, 27039 in all, plus 8 * 31 = 248.
+; The total is 4 (start up) + 6 (set up) + 27039 + 248 + 1 (return) + 1
+; (HALT) = 27299.
 ;
 ; At the end R1:R2 = 1, the last remainder, which R5:R6 also holds, and
 ; R3:R4 = 2, the divisor's absolute value. R10-R12 survive the calls. R14 =
 ; 0x09000000: Z from the last DEC[M].
 ;
 ; That is div64_soft.expected, with muldiv_soft.nasm. With muldiv_mpu.nasm,
-; each routine takes 7 steps, so the total is 5 + 6 + 8 * (35 + 4 * 7) + 1
-; + 1 = 517. R3:R4 keep the last divisor, -2, and R5:R6 stay 0
+; each routine takes 7 steps, so the total is 4 + 6 + 8 * (31 + 4 * 7) + 1
+; + 1 = 484. R3:R4 keep the last divisor, -2, and R5:R6 stay 0
 ; (div64.expected).
 
 _main           MOVE    R7, pairs

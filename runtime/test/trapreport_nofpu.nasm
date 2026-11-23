@@ -4,9 +4,9 @@
 ; below 10, and the last name of its table. The processor halts as there,
 ; with exit status 2, R1 = 9, R2 = 0x1abc, R10 = 9, and R11 = 0x1abc.
 ;
-; The steps are those of trapreport.nasm, 379, less the 27 characters of
+; The steps are those of trapreport.nasm, 363, less the 27 characters of
 ; "memory access out of bounds" and plus the 6 of "no FPU", each character
-; costing 6 steps: 379 - 6 * 21 = 253.
+; costing 6 steps: 363 - 6 * 21 = 237.
 
 ___wasm_start
                 RET

@@ -6,18 +6,18 @@
 ; the processor halts at ___wasm_trap as in trap.nasm, with exit status 2,
 ; R1 = 2, and R2 = 0x1abc.
 ;
-; The start-up code is 15 words, with its vectors at 13-14, so
-; ___wasm_start is at 15 and the .ORG moves main to 0x1abc. lib.nasm
+; The start-up code is 9 words, with its vectors at 7-8, so
+; ___wasm_start is at 9 and the .ORG moves main to 0x1abc. lib.nasm
 ; follows main's 7 words, with ___wasm_trap at 0x1ac3, so PC = 0x1ac4 after
 ; the halt. The
 ; report leaves R9 = 0, R10 = 2, R11 = 0x1abc, and the flag Z set by its
 ; last DEC: the console routine behind ___putc_vector changes no flags.
-; SP = 0xFFFFFEFF, as in trap.nasm. Steps, with a call of nice_putc at 5
-; and of nice_print at 8 + 6n for n characters: 11 up to the jump to the
-; report, 2 to save R1 and R2, 3 + 36 for "trap " and 3 + 5 for the digit,
-; 3 + 18 for ": ", 6 + 168 for the name, 3 + 30 for " at ", 1 + 8 * 10 for
-; the 8 digits, 1 + 5 for the newline, 3 to restore and jump, and the
-; reserved word = 379.
+; SP = 0xFFFFFEFF, as in trap.nasm. Steps, with a call of nice_putc at 4
+; and of nice_print at 7 + 6n for n characters: 9 up to the jump to the
+; report, 2 to save R1 and R2, 2 + 36 for "trap " and 3 + 4 for the digit,
+; 2 + 18 for ": ", 5 + 168 for the name, 2 + 30 for " at ", 1 + 8 * 9 for
+; the 8 digits, 1 + 4 for the newline, 3 to restore and jump, and the
+; reserved word = 363.
 
 ___wasm_start
                 RET

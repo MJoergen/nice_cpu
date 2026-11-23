@@ -61,8 +61,11 @@ arrow, or a picture of half blocks needs no font RAM.
   NiceMonMEGA65 follows in MJoergen/NiceMonMEGA65#171, and until then
   its ROM has them blank.
 - `hdl/src` has the same files and the same ports, and nothing in
-  `hdl/` changes, so the timing is that of `V2.4`. The address map is
-  that of `V2.5`. The debug link stays version 8, and Zig stays 0.17.0.
+  `hdl/` changes, so the timing is that of `V2.4`: the core meets its
+  budget, and the FPU misses its budget out of context as in `V2.4`,
+  with +0.424 ns on its own paths in the default flow, where the budget
+  is 1.0 ns. It still meets 100 MHz. The address map is that of `V2.5`.
+  The debug link stays version 8, and Zig stays 0.17.0.
 
 **Specification and documents**
 

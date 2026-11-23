@@ -182,17 +182,26 @@ one write port. DECODE emits:
 |---|---|---|
 | `S0` | s0 has a side effect on a register other than R0 (modes 001, 010, 101, and 110) | Reads s0 if it is in memory. Writes Rx ± 1. |
 | `S1` | the same for s1 | Reads s0 first, if it is a memory operand not yet read. Then reads s1 if it is in memory, and writes Ry ± 1. |
-| `OP` | always, for ALU and SHIFT instructions | Reads the memory sources not yet read. Computes r. Writes the destination and applies its side effect. Updates the flags. |
-| `CTRL` | control instructions | `HALT`, or a reserved control word, which halts too (ISA §5.3). |
+| `OP` | always, for ALU and SHIFT instructions, and for the jump and the call of one word | Reads the memory sources not yet read. Computes r. Writes the destination and applies its side effect. Updates the flags. |
+| `CTRL` | the other control instructions | `HALT`, or a reserved control word, which halts too (ISA §5.3). |
 
 Reads happen in field order, s0 then s1, as ISA §8.2 requires. That is why `S1`
 also reads an s0 that has no micro-op of its own.
 
+**The jump and the call of one word** (ISA §5.3) are `OP`s that DECODE
+fills in from the instruction word alone, as if they were other
+instructions. A jump is `MOVE R15, d[R15]`, with the distance d of the
+word as the constant of s0. A call is `MOVE @--R13, R15`, the push of the
+next instruction's address, with `d[R15]` as its s1, which the operation
+ignores and WRITE also writes to R15 when the call retires. So both run
+on the paths that the other instructions use: PREPARE forms R15 + d as
+for any constant operand, and the call's push is an ordinary store.
+
 The common instructions need one micro-op: `ADD R1, R2, R3`, `MOVE R1, 5`,
-the push `MOVE @--SP, x`, and the call `ADD @--SP, 2, PC`. A pop
+the push `MOVE @--SP, x`, and the jump and the call of one word. A pop
 `MOVE x, @SP++` and a return `MOVE PC, @SP++` need two. The most any
 instruction needs is three. In the benchmark programs an instruction has
-1.00 micro-ops on average when translated and 1.18 when written by hand
+1.00 micro-ops on average when translated and 1.15 when written by hand
 (§5.6), so splitting them seldom adds a cycle.
 
 **One write per micro-op is enough** because the two writes of a register
@@ -325,12 +334,12 @@ issued its read early enough. That is 7% of the cycles of the translated
 benchmark and 12% of the hand-written one's.
 
 A data read directly after a store is 0.8% of the translated benchmark's
-instructions and 8% of the hand-written one's (§5.6). So rule 3 matters:
+instructions and 9% of the hand-written one's (§5.6). So rule 3 matters:
 PREPARE may load the read in the cycle the bus accepts the store, so that
 the read is on the bus in the next cycle. That is still a cycle after the
 store's instruction retires, because the store waits a cycle in DBUS.
 That costs at most 0.9% of the cycles of the translated benchmark and
-3.5% of the hand-written one's.
+3.6% of the hand-written one's.
 
 Rules 1 and 2 cost little. A read after a skipped jump does not wait, since
 PREPARE issues it in the cycle the jump retires. The testbench counts the
@@ -369,23 +378,28 @@ runs from WRITE's decisions through FETCH's adders
 FETCH goes on with the old stream for that cycle, and DECODE drops what
 it takes from it. That costs a cycle per jump that WRITE resolves: a
 taken jump in WRITE costs 7 cycles over a fall-through
-(`hdl/test/bubble.nasm`). The translated benchmark takes 1.5% more
-cycles for it, and the hand-written one 2.8%.
+(`hdl/test/bubble.nasm`). By the model of `bench/pipecycles.py`, the
+translated benchmark takes 1.6% more cycles for it, and the hand-written
+one 2.8%.
 
 DECODE redirects early for the jumps it can resolve itself, with the
-condition "always" and the C bit clear: `MOVE PC, label`, with M clear
-too, and `ADD PC, PC, offset`, in either order of the sources. Their
-target is a constant, or the next instruction's address plus a
-constant. Both are two words, so the target is the constant word, or the
+condition "always": the jump and the call of one word (ISA §5.3), and,
+with the C bit clear, `MOVE PC, label`, with M clear too, and
+`ADD PC, PC, offset`, in either order of the sources. Their target is a
+constant, or the next instruction's address plus a constant. The jump
+and the call of one word have the distance in the instruction word, so
+the target is the instruction's address plus 1 plus the distance. The
+other two are two words, so the target is the constant word, or the
 instruction's address plus 2 plus that word. DECODE forms the
 instruction's address plus 1 to 4 beside the read of its words, so that
 one adder follows them. Every other jump, `MOVE PC, R3` included, is resolved in WRITE,
-but for the one that DECODE predicts.
+but for the ones that DECODE predicts.
 
-DECODE also predicts one kind of conditional jump: `ADD PC, PC, offset`,
-with any other condition and the C bit clear, is predicted taken when
-the offset is negative, so when the jump goes backward, as a loop's back
-edge does. DECODE redirects FETCH for it as for an unconditional jump.
+DECODE also predicts two kinds of conditional jump, with any other
+condition: `JMPR` of one word, and `ADD PC, PC, offset` with the C bit
+clear. Each is predicted taken when its distance or offset is negative,
+so when the jump goes backward, as a loop's back edge does. The `JMP`
+and the call of one word are never predicted. DECODE redirects FETCH for it as for an unconditional jump.
 WRITE then checks the condition. If it is true, the jump retires with no
 flush. If it is false, WRITE flushes and redirects FETCH to the next
 instruction, as for a taken jump that it resolves: a mispredict costs
@@ -395,18 +409,18 @@ after the jump until it retires, and stores happen only in WRITE, so the
 predicted path has no side effect before the jump is resolved. §5.5
 already covers FETCH's two ranges after an early redirect.
 
-The prediction is static. It looks only at the sign bit of the constant
-word, and only in this form. For `MOVE PC, label` it would need a 32-bit
-compare of the constant with the instruction's address in DECODE, beside
-the adder of the target, which is a timing risk. A program gains from it
-when its loops end with a conditional backward jump, written as `JMPR
-label`, which assembles as `ADD PC, PC, label-next`, where next is the
-address after the jump (ISA.md §10.1). A jump back that is mostly skipped is better written as `MOVE PC, label`,
-which costs nothing when skipped. The hand-written benchmark does both,
-and saves 9.6% of its cycles. The
-translated benchmark closes its loops with the predicted form too, and
-saves 1.2% of its cycles over putting an unconditional jump back after a
-skipped conditional one.
+The prediction is static. It looks only at the sign bit of the distance
+or the constant word, and only in these forms. For `MOVE PC, label` it
+would need a 32-bit compare of the constant with the instruction's
+address in DECODE, beside the adder of the target, which is a timing
+risk. A program gains from it when its loops end with a conditional
+backward jump, written as `JMPR label` (ISA.md §10.1). A jump back that is
+mostly skipped is better written as `JMP label`, which costs nothing when
+skipped. The two one-word jumps differ only in this, so a program
+chooses the prediction by the name. The hand-written benchmark does both.
+By the model of `bench/pipecycles.py`, its jumps written `JMPR` save 7.7%
+of its cycles over the same jumps written `JMP`. The translated benchmark
+closes its loops with `JMPR` too, which saves it 4.4%.
 
 A side effect on R15 in `S0` or `S1`, such as `MOVE R1, @R15++`, must not
 flush the instruction's own later micro-ops. So the flush waits
@@ -481,19 +495,19 @@ the condition is known. These are the shares of all instructions:
 
 | | `bench.c` through nicewasm | `hand.nasm` |
 |---|---|---|
-| Instructions | 1697007 | 493964 |
+| Instructions | 1694067 | 491363 |
 | Skipped | 19.1% | 18.4% |
-| Words per instruction, mean | 1.85 | 1.66 |
-| Micro-ops per instruction, mean | 1.00 | 1.14 |
+| Words per instruction, mean | 1.68 | 1.51 |
+| Micro-ops per instruction, mean | 1.00 | 1.15 |
 | Conditional | 22.7% | 27.7% |
-| Data read | 12.1% | 38.3% |
-| Store | 5.9% | 15.5% |
-| Jump: writes R15, or a control instruction | 18.8% | 21.0% |
-| Reads a register the previous instruction writes | 30.4% | 30.2% |
-| Reads a register written two back, not one | 8.3% | 13.9% |
-| Conditional, SR written by the previous instruction | 20.4% | 20.3% |
+| Data read | 12.2% | 38.5% |
+| Store | 5.9% | 15.6% |
+| Jump: writes R15, or a control instruction | 18.8% | 21.1% |
+| Reads a register the previous instruction writes | 30.5% | 30.5% |
+| Reads a register written two back, not one | 8.2% | 14.2% |
+| Conditional, SR written by the previous instruction | 20.5% | 20.4% |
 | Conditional with a data read, SR written by the previous | 0.0% | 0.0% |
-| Data read after a store | 0.8% | 8.1% |
+| Data read after a store | 0.8% | 8.6% |
 | Data read after a conditional jump | 5.8% | 7.9% |
 | R14 read as an operand | 3.0% | 6.6% |
 | R15 as a pointer, or with a side effect | 0% | 0% |

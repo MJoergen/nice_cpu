@@ -553,7 +553,7 @@ hdl/README.md (The floating-point unit), such as 1552 for `COS` and 3018
 for `POW`. The emulator counts no such wait. Each function in C also
 brings the words below into the program: its own and those of the
 routines it calls, the float library not counted, which has the others.
-A program that uses all of them gets 7268 words, as `make words` in
+A program that uses all of them gets 5723 words, as `make words` in
 `bench/` prints, almost all of them the reduction of a huge argument,
 which costs `sin` up to some 6000 steps and `sinf` up to 5500. `frexp`
 and `modf` are 199 and 261 words, and their float versions 189 and 187.

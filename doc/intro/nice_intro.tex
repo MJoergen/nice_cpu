@@ -279,7 +279,6 @@
       \begin{itemize}
        \item There is no \code{CMP}. Subtract into \code{R0} instead,
         which keeps only the flags (see ``Comparisons'').
-       \item There is no \code{JMP}. Write to \code{PC} instead.
        \item There is no multiply or divide. The runtime library has
         routines for that, such as \code{\_\_mul}, and the emulator and
         the FPGA cores have a math unit at \code{0xFFFFFF20} that does
@@ -546,22 +545,22 @@
    \begin{frame}
     \frametitle{Jumps}
     \begin{itemize}
-     \item \code{R15} is the program counter. A jump is just a write to
+     \item \code{R15} is the program counter. A jump is a write to
       \code{R15}. With \mbox{\code{PC .EQU R15}}:
       \begin{center}
        \begin{tabular}{ll}
-        \code{MOVE PC, LOOP}&Jump to \code{LOOP}\\
-        \code{?!Z MOVE PC, LOOP}&Jump if \code{Z} is not set\\
+        \code{JMP LOOP}&Jump to \code{LOOP}, in one word\\
+        \code{?!Z JMP LOOP}&Jump if \code{Z} is not set\\
+        \code{MOVE PC, LOOP}&Jump to any address, in two words\\
         \code{ADD PC, PC, 10}&Jump forward by 10 words\\
        \end{tabular}
       \end{center}
-     \item The assembler accepts \code{JMP LOOP} for \code{MOVE PC, LOOP},
-      and \code{?!Z JMP LOOP} too.
+     \item \code{JMP LOOP} holds the distance to \code{LOOP} in its one
+      word, up to a million words either way. The assembler works it out.
      \item When an instruction reads \code{R15}, it gets the address of the
-      \textbf{next} instruction, after all constant words.
-     \item So \code{ADD PC, PC, 10} jumps to 10 words after the end of the
-      \code{ADD}. The assembler accepts \code{JMPR LOOP} for such an
-      \code{ADD}, and works out the distance to \code{LOOP}.
+      \textbf{next} instruction, after all constant words. So
+      \code{ADD PC, PC, 10} jumps to 10 words after the end of the
+      \code{ADD}.
      \item Any write to \code{R15} jumps, even with other addressing modes.
       For example, \code{MOVE PC, @R13++} pops an address off the stack
       and jumps there.
@@ -571,8 +570,11 @@
    \begin{frame}
     \frametitle{Subroutine calls}
     \begin{itemize}
-     \item There is no call instruction. A call is two instructions, with
-      \mbox{\code{SP .EQU R13}}:
+     \item \code{CALL ROUTINE} is one word. It pushes the return address,
+      the address after the \code{CALL}, with \mbox{\code{SP .EQU R13}} as
+      the stack pointer, and jumps.
+     \item It is the same as two instructions, which still work, and which
+      reach any address:
       \begin{center}
        \begin{tabular}{ll}
         \code{ADD ~@--SP, 2, PC}&Push the return address\\
@@ -583,12 +585,7 @@
       \code{ADD}, which is where the 2 word \code{MOVE} starts. The return
       address is after the \code{MOVE}.
      \item To return, pop the return address into the program counter:
-      \begin{center}
-       \code{MOVE PC, @SP++}
-      \end{center}
-     \item The assembler accepts \code{CALL ROUTINE} and \code{RET} for
-      these sequences, and picks the constant: \code{CALL R1} pushes with
-      \code{ADD @--SP, 1, PC}, since \code{MOVE PC, R1} is one word.
+      \code{MOVE PC, @SP++}, or \code{RET} for short.
      \item The stack grows down, and \code{SP} points at the last word
       pushed. \code{PUSH x} and \code{POP x} stand for
       \code{MOVE @--SP, x} and \code{MOVE x, @SP++}.
@@ -662,15 +659,16 @@
 00000002 00009800 00001000                  MOVE    R2, 0x1000
 00000004 00604082           LOOP            ADD     R1, R1, R2
 00000005 02a08100                           DEC[M]  R2, R2
-00000006 b003d800 00000004          ?!Z     JMP     LOOP
-00000008 0c000000                           HALT
+00000006 bc9ffffd                   ?!Z     JMP     LOOP
+00000007 0c000000                           HALT
    \end{verbatim}
    }
    \begin{itemize}
     \item \code{R1} collects the sum, and \code{R2} counts down from
      \code{0x1000}.
     \item \code{DEC[M]} sets \code{Z} when \code{R2} reaches 0. Until
-     then, \code{?!Z JMP LOOP} jumps back.
+     then, \code{?!Z JMP LOOP} jumps back. Its word holds the distance,
+     \code{0x1FFFFD}, that is $-3$: from 7, the next address, to 4.
     \item At the end, \code{R1} = \code{0x800800} = 4096 $\cdot$ 4097 / 2.
    \end{itemize}
   \end{frame}
@@ -816,11 +814,11 @@ $ cat sum.bin
    {\footnotesize
    \begin{verbatim}
 $ emulator/zig-out/bin/niceemu sum.bin
-Halted (HALT) after 12291 steps, PC=00000009
+Halted (HALT) after 12291 steps, PC=00000008
 R0  00000000 R1  00800800 R2  00000000 R3  00000000
 R4  00000000 R5  00000000 R6  00000000 R7  00000000
 R8  00000000 R9  00000000 R10 00000000 R11 00000000
-R12 00000000 R13 00000000 R14 09000000 R15 00000009
+R12 00000000 R13 00000000 R14 09000000 R15 00000008
    \end{verbatim}
    }
    \code{R14} = \code{0x09000000}: bit 24 is always set, and bit 27 is
@@ -838,10 +836,10 @@ $ emulator/zig-out/bin/niceemu --trace -n 8 sum.bin
 00000002 00009800 R2=00001000
 00000004 00604082 R1=00001000
 00000005 02a08100 R2=00000fff
-00000006 b003d800 R15=00000004
+00000006 bc9ffffd R15=00000004
 00000004 00604082 R1=00001fff
 00000005 02a08100 R2=00000ffe
-00000006 b003d800 R15=00000004
+00000006 bc9ffffd R15=00000004
 Stopped at the step limit after 8 steps, PC=00000004
 ...
    \end{verbatim}
@@ -887,10 +885,9 @@ $ emulator/zig-out/bin/niceemu --window keys.bin
      character per word.
     \item \code{R0} is always 0, and \code{R15} reads as the address of the
      next instruction.
-    \item A comparison is \code{SUB[M] R0, a, b}, a jump is a write to
-     \code{PC}, and a call is \code{ADD @--SP, 2, PC} followed by
-     \code{MOVE PC, label}. The assembler writes them for \code{CMP},
-     \code{JMP}, and \code{CALL}.
+    \item A comparison is \code{SUB[M] R0, a, b}, which the assembler
+     writes for \code{CMP}. A jump is a write to \code{PC}, or
+     \code{JMP label} in one word, and a call is \code{CALL label}.
     \item Every instruction can be conditional, so short \code{if}s need
      no jumps:
      \begin{center}

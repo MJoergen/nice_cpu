@@ -69,6 +69,9 @@ arrow, or a picture of half blocks needs no font RAM.
 - DEVICES.md §1.8 has the glyphs, the rows of the blocks, and the word
   at `0xFFFE3000`, and §8 says that NiceMonMEGA65's ROM does not have
   them yet (#204).
+- DEVICES.md §8 and demo/README.md say that NiceMonMEGA65 shows 28
+  rows and 160×112 pixels from its `V2.5`, where they said that it shows
+  25 and 160×100 until MJoergen/NiceMonMEGA65#157.
 - The note on the font's license in README.md names the four diagonal
   arrows, which are not Spleen's.
 

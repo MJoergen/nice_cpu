@@ -1005,8 +1005,9 @@ from outside the program, so the diff is exact on both cores.
    past the end of FETCH's range (§5.5), and the programs against the
    operand rules of §7.4 that hdl/README.md lists, `latecount.nasm` to
    `shiftjump.nasm`, with `samereg_prog.py`.
-5. The control words: `HALT`, and `INT`, `RTI`, `WAIT`, and every other
-   reserved control word, which halt with reason 2 (`cputest`,
+5. The control words: `HALT`, the jumps and the call of one word, `JMP`,
+   `JMPR`, and `CALL` (`short`, `shortfar`, and `cputest`), and the
+   reserved control words, which halt with reason 2 (`cputest`,
    `reserved`, `tb_trace`, and `tb_link`).
 6. Pauses (§6.1): probes and random programs with random pauses, short and
    held, and one step at a time, which must not change the trace, and a

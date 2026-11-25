@@ -47,6 +47,15 @@ files with `cat`, in this order:
 6. `trapmsg.nasm`, with `start_wasm_trap.nasm` or
    `start_wasm_trap_mon.nasm`.
 
+A `JMP` or a `CALL` to a label reaches 2²⁰ words either way (ISA.md
+§5.3), and niceasm reports a target that is farther. A translated
+module ends with its memory, so a hand-written file on one side of a
+memory of 2¹⁹ words or more reaches a label on the other side, such as
+`_exit` of the start-up code from a file after the module, with
+`MOVE R15, label` and the long call of ABI.md. nicewasm does the same
+for the module's calls of the library
+([translator README](../translator/README.md), Supported features).
+
 For example:
 
     cat runtime/start.nasm prog.nasm runtime/lib.nasm runtime/muldiv_mpu.nasm > full.nasm

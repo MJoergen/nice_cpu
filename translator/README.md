@@ -138,7 +138,7 @@ of the inputs picks the language: `.c`, `.zig`, or `.rs`.
 | `--memory BYTES` | The initial memory, 65536 by default. It must be positive. The stack is in the memory, so a larger `--stack` needs a larger `--memory` too: `--stack 131072` alone fails with wasm-ld's "initial memory too small", and `--memory 262144` fixes it. |
 | `--no-mpu`, `--inline-fpu`, `--no-bounds-checks`, `--trust-alignment`, `--byte-windows`, `--memory-pages N` | Passed on to `nicewasm.py` (above). With `--no-mpu`, the program is joined with `muldiv_soft.nasm`. |
 | `--memory-bytes BYTES` | Passed on to `nicewasm.py`, with BYTES a number or `auto`. The module is then linked with `--export=__heap_base`, so that `auto` reserves the memory up to the end of the static data. That leaves no room for a heap, so `malloc` fails: a number leaves the bytes past `__heap_base` for it. Not with `--memory-pages`. |
-| `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. |
+| `--asm FILE` | Join a NICE assembly file after the program, so that the program can call a function that the file defines, as the label `_name` of ABI.md; for C it also lets the link leave the function undefined. The option can repeat. The file lies after the module's memory, so with a memory of 2¹⁹ reserved words or more it jumps to and calls the start-up code and the module in the long forms (Memory, under [Supported features](#supported-features)). |
 | `--no-trap-report` | Leave out the trap report, so that a trap halts silently (see below). |
 | `--monitor` | Build a program for a monitor in ROM, which loads it at `0x8000` and calls it, and to which it returns (ABI.md, "Programs under a monitor"): the start-up code is `runtime/start_wasm_trap_mon.nasm`, or `start_wasm_mon.nasm` with `--no-trap-report`, and the `.bin` file starts at `0x8000`. The monitor's own routines, if the program calls them, come as stubs in a file of the monitor's, joined with `--asm`. niceemu runs such a program only behind a monitor, as it has no word at 0 ([emulator README](../emulator/README.md#usage)). |
 | `--ram ADDR` | Build a program whose code runs from a ROM, as nicewasm's `--ram ADDR` does (see [Code in a ROM](#code-in-a-rom)): the words that it writes are in RAM from ADDR, and `___wasm_start` gives them their initial values. The module is linked with `--export=__heap_base`, so that nicewasm reserves the memory up to the end of the static data. The start-up code is the same as without the option, and the `.bin` file starts at 0, for a ROM there. Not with `--monitor` or `--memory-pages`. |
@@ -411,11 +411,16 @@ the steps that got the code here.
   is a memory of more than 65536 pages. A function imported twice with different
   types is an error. The memory lies after the module's code, and the
   files joined after the module lie after the memory. A jump or a call
-  of one word reaches 2²⁰ words (ISA.md §5.3), so from 32 pages on,
-  nicewasm writes the long form for a jump or a call to a label outside
-  the module, such as a runtime routine (DESIGN.md, The output). The
-  code of a program must stay below 2¹⁹ words, or niceasm may report a
-  jump or a call that is out of reach.
+  of one word reaches 2²⁰ words (ISA.md §5.3), so from 2¹⁹ reserved
+  words on, which is 32 pages, nicewasm writes the long form for a jump
+  or a call to a label outside the module, such as a runtime routine
+  (DESIGN.md, The output). A hand-written file that is joined after the
+  module, as `nicebuild.py --asm` joins it, lies after the memory too,
+  and its jumps and calls are the writer's: after such a memory it
+  reaches the start-up code and the module with `MOVE R15, label` and
+  the long call of ABI.md, where niceasm reports a `JMP` or a `CALL`
+  that is out of reach. The code of a program must stay below 2¹⁹
+  words, or niceasm may report one in the module too.
 - **Data segments:** active ones, whose offset is an `i32.const`. The words
   they set are `.DAT` words in the program image, and a word that a
   segment sets only part of has its other bytes 0. A later segment

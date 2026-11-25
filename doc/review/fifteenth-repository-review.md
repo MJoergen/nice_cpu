@@ -347,6 +347,8 @@ The limit itself is worded two ways. translator/README.md: "so from 32 pages on,
 
 **Fix:** a sentence under `--asm` and under the memory limit, and "from 2¹⁹ reserved words on, 32 pages" in the README.
 
+**Resolved.** translator/README.md says under `--asm` and under the memory limit that a hand-written file joined after a memory of 2¹⁹ reserved words or more reaches the start-up code and the module in the long forms, and the limit is worded as in DESIGN.md. "Joining a program" of runtime/README.md says the same for a program joined by hand. The example above builds and runs with `MOVE R15, _exit`.
+
 ### 4.5 `nicedis` does not name a jump's target below address 16
 
 assembler/README.md: "A constant of 16 or more that is the address of a label is shown as the label … So is the target of a one-word jump or call. Smaller constants, such as the 2 of a call, stay numbers". The limit is there so that a small immediate is not taken for a label. It holds for a target too, which the README does not say:

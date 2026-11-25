@@ -330,6 +330,8 @@ The fourteenth review found the same for #203 (its §3.1).
 
 **Fix:** a paragraph for each, or one for each issue.
 
+**Resolved.** decisions.md has a paragraph for each of the nine, with the figure that decided it where the issue has one.
+
 ### 4.4 A hand-written file joined after a large memory
 
 2f6eca7 makes nicewasm keep the long form for a jump or a call out of the module when the memory has 2¹⁹ words or more, and translator/README.md and DESIGN.md describe it. A file that `nicebuild.py --asm` joins lies after the memory too, and its own jumps back are the writer's:

@@ -337,3 +337,51 @@ proposed again. The open items are the
   program, which sees two or three instructions in 8 to 12 cycles. Both
   would mostly check again what the trace diff checks on every run,
   with random stalls, pauses, and holds.
+- **SR bits 31, 30, and 23..0 that read 0** (#162), once the interrupts
+  no longer used them. They stay as storage, `F1`, `F0`, and `U` (ISA.md
+  §1.3). Bits that read 0 would make `?F1` and `?F0` a second "never"
+  and `?!F1` and `?!F0` a second "always", a quarter of the condition
+  codes, and would put a second mask on every write of R14, side
+  effects included, in the emulator, both cores, and the proofs. The
+  tests use SR as a pointer and as 32 bits of data. The cost is the
+  same: in synthesis the core with the bits as storage came out 77 LUTs
+  smaller, inside the noise of ±100, and the other has 20 registers
+  fewer.
+- **The timer kept as a counter that a program polls** (#162). The
+  performance counters already count cycles and microseconds (DEVICES.md
+  §3), and a program that waits reads `TIME_LO`.
+- **Removing only IRQ, only NMI, or only `WAIT`** (#162). A copy of the
+  pipelined core without IRQ, NMI, and `WAIT` saved nothing that could
+  be measured. The cost of the interrupts was the saved PC and SR, the
+  read of the vector, and the restore by `RTI`, which `INT` alone
+  needs. So it was all of the old ISA.md §7 or none of it.
+- **The control commands 1 to 3 for the jump and the call of one word**
+  (#192), which the interrupts left free. They stay reserved, and `JMP`,
+  `JMPR`, and `CALL` are the commands 4, 5, and 6, so that a binary from
+  before `V3.0` with `RTI`, `INT`, or `WAIT` halts, where it would
+  otherwise jump or call (HISTORY.md, Jumps and calls in one word).
+- **One relative jump of one word, in place of `JMP` and `JMPR`**
+  (#192). The two differ in the prediction: the pipelined core predicts
+  a backward `JMPR` with a condition as taken, and never a `JMP`, and
+  nicewasm and `hand.nasm` choose between them on purpose. With one
+  jump, predicted whenever it has a condition and goes back,
+  `hand.nasm` took 10.0% more cycles, and its heapsort 45.7% more.
+- **An assembler that picks the long or the one-word form by the
+  distance** (#192). The size of every statement depends only on its
+  operand modes, which keeps the two passes in agreement. So `JMP`,
+  `JMPR`, and `CALL` with an address are always one word, a target out
+  of reach is an error, and the source says `MOVE PC, label` for one
+  (ISA.md §10.1).
+- **A distance of 16 bits, or an absolute target, in the one-word
+  forms** (#192). The farthest call measured, in CoreMark, is 41611
+  words away, beyond the 32768 that 16 bits reach. 21 bits as an
+  address would reach the first two million words, where the boards
+  have their ROM and RAM, but a distance keeps DECODE's rule for a jump
+  back, and the code can be moved.
+- **No early redirect for the long forms** (#192), `MOVE PC, label` and
+  `ADD PC, PC, offset`, now that the one-word forms have it. It saved
+  81 LUTs of the pipelined core, and gained no slack.
+- **The interrupt sweeps in shares, and CI's `hdl` job as a matrix over
+  the cores** (#196), to shorten `make -C hdl test`, which the sweeps of
+  `hazard.bin` bounded. The sweeps went with the interrupts, and the
+  test fell from 13 minutes to 5.

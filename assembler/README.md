@@ -99,9 +99,10 @@ skipped:
   right when it has a label.
 - A constant of 16 or more that is the address of a label is shown as the
   label, with the value in the comment: `MOVE R15, loop ; loop =
-  0x00000123`. So is the target of a one-word jump or call. Smaller constants, such as
+  0x00000123`. Smaller constants, such as
   the 2 of a call, stay numbers, and so does the count of a SHIFT
-  instruction. Of several labels at one
+  instruction. The target of a one-word jump or call is always an
+  address, so it is shown as its label wherever it lies, also below 16. Of several labels at one
   address, the first one in the file that `niceasm` accepts is shown.
 - A name that `niceasm` does not accept as a label, such as the `::` or `$`
   names of Rust and Zig functions that `nicebuild.py` writes, a mnemonic,

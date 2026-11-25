@@ -364,6 +364,8 @@ assembler/README.md: "A constant of 16 or more that is the address of a label is
 
 **Fix:** name every target of a one-word jump or call that has a label, in `name()` of `nicedis.py`, with a case in `test/dis.py`. Or say in the README that the limit of 16 holds for a target too.
 
+**Resolved.** `nicedis.py` names the target of a one-word jump or call by its label wherever it lies: the limit of 16 is now in `operand_text()`, for the constants alone, and `disassemble()` and the listing share it. `test/dis.py` has three cases of `disassemble()` and a listing with `fn` at 3 and `far` at 4, whose constant 3 stays a number. The README says that a target has no limit. The round trip of every `.bin` file still passes. nicedbg's `d` and its line after a step show the names too, and two cases of `debugger/test/link.py` that expected `JMP 0x4` for a jump to `LOOP` at 4 now expect `JMP LOOP`.
+
 ### 4.6 The slides teach no `JMPR`, and no program of theirs calls with `CALL`
 
 - `JMPR` is on no slide. The slide on jumps shows `JMP` and `ADD PC, PC, 10`.

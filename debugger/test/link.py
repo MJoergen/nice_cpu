@@ -361,7 +361,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
               "error: no breakpoint ffffffff; they are 0 to 3\n", repr(out))
         out = command(dbg, "s")
         check("dbg: a step", out == f"PC={loop + 2:08x} LOOP+0x2  ?!Z JMP "
-              f"0x{loop:x}\n", repr(out))
+              "LOOP\n", repr(out))
         out = command(dbg, "set R4 2")
         check("dbg: set a register", out == "R4 00000002\n", repr(out))
         out = command(dbg, "set r0 1")
@@ -416,7 +416,7 @@ def test_commands(port: str, prog: str, at: dict[str, int]) -> None:
         out = command(dbg, "d LOOP 2")
         check("dbg: the disassembly at a label", out == "LOOP:\n" +
               line(loop, "02210230 00000001", "SUB[M] R4, R4, 0x1") +
-              line(loop + 2, "bc9ffffd", "?!Z JMP 0x4"),
+              line(loop + 2, "bc9ffffd", "?!Z JMP LOOP"),
               repr(out))
         # MOVE R5, with its constant word at DONE
         command(dbg, "w DONE-1 00015800")

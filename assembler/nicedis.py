@@ -36,7 +36,8 @@ FIELD_NAMES = ["dest", "s0", "s1"]
 SHORT_NAMES = {v: k for k, v in niceasm.SHORT.items()}
 
 # The constant of a label is only shown as one from this value on, so that
-# small numbers, such as the 2 of a call, stay numbers.
+# small numbers, such as the 2 of a call, stay numbers. The target of a
+# one-word jump or call is always an address, and has no such limit.
 MIN_LABEL = 16
 
 BIN_LINE = re.compile(r"([0-9a-fA-F]{1,8})[ \t]+([0-9a-fA-F]{1,8})$")
@@ -138,7 +139,8 @@ def operand_text(op: Operand, name: Namer) -> str:
         if op.const is None:
             c = "?"
         else:
-            c = (None if op.shift_count else name(op.const)) or f"0x{op.const:x}"
+            named = None if op.shift_count or op.const < MIN_LABEL else name(op.const)
+            c = named or f"0x{op.const:x}"
         text = c if reg == "R0" else f"{c}[{reg}]"
     elif mode & 3 == 2:
         text = f"{reg}++"
@@ -177,14 +179,15 @@ def disassemble(addr: int, read: Reader,
                 symbols: Optional[Mapping[int, str]] = None) -> Tuple[str, int]:
     """Disassembles the instruction at addr. read(a) returns the word at a,
     or None if there is none. symbols maps an address to a name, which is
-    shown in place of a constant of 16 or more at that address; any name
-    will do, since nothing reassembles the text. Returns the text and the
-    number of words it used. A .DAT has its meaning as a comment."""
+    shown in place of a constant of 16 or more at that address, and of the
+    target of a one-word jump or call there; any name will do, since
+    nothing reassembles the text. Returns the text and the number of words
+    it used. A .DAT has its meaning as a comment."""
     syms = symbols or {}
     insn = decode(addr, read)
     if insn.dat():
         return f"{dat(insn.words)} ; {meaning(insn)}", len(insn.words)
-    return statement(insn, lambda v: syms.get(v) if v >= MIN_LABEL else None), len(insn.words)
+    return statement(insn, syms.get), len(insn.words)
 
 
 # -- Listing -----------------------------------------------------------------
@@ -213,7 +216,7 @@ def listing(words: Mapping[int, int], symbols: List[Tuple[int, str]],
     starts = sorted(at)
 
     def shown(v: int) -> Optional[str]:
-        """The name shown for the constant v: the first good one at v, else the first."""
+        """The name shown for the address v: the first good one at v, else the first."""
         names = at.get(v, [])
         return next((n for n in names if n in good), names[0] if names else None)
 
@@ -222,8 +225,9 @@ def listing(words: Mapping[int, int], symbols: List[Tuple[int, str]],
     notes: List[str] = []
 
     def name(v: int) -> Optional[str]:
-        """The label for the constant v, noting it for the comment."""
-        n = shown(v) if v >= MIN_LABEL else None
+        """The label for the constant or the target v, noting it for the
+        comment."""
+        n = shown(v)
         if n is None:
             return None
         notes.append(f"{n} = 0x{v:08x}")

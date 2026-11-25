@@ -61,6 +61,11 @@ API: List[Tuple[List[Optional[int]], Dict[int, str], Tuple[str, int]]] = [
     ([0x0CC0000F], {0x10: "sub"}, ("CALL sub", 1)),
     ([0x3CDFFFFE], {}, ("?Z CALL 0xffffffff", 1)),
     ([0x0C8FFFFF], {}, ("JMP 0x100000", 1)),
+    # A target is an address, so a label below 16 names it, where the 3
+    # of a constant word stays a number
+    ([0x0CC00002], {0x03: "fn"}, ("CALL fn", 1)),
+    ([0x3C9FFFFF], {0x00: "top"}, ("?Z JMP top", 1)),
+    ([0x00005800, 0x03], {0x03: "fn"}, ("MOVE R1, 0x3", 2)),
     ([0x0C900000], {}, ("JMP 0xfff00001", 1)),
     # ADD R15, R15, c is an ADD: JMPR is one word now
     ([0xB063C7B0, 0xFFFFFFFE], {}, ("?!Z ADD R15, R15, 0xfffffffe", 2)),
@@ -200,6 +205,29 @@ def main() -> None:
         if r.stdout != want:
             print(f"FAIL a lenient symbols file:\n{r.stdout}")
             failed += 1
+
+        # A target below 16 has its label, and a constant below 16 has
+        # none: CALL fn, two HALTs, fn's RET at 3, JMP fn and JMP far at 4
+        # and 5, and MOVE R1, 3.
+        path, sym = os.path.join(d, "low.bin"), os.path.join(d, "low.sym")
+        with open(path, "w") as f:
+            f.write("0 0cc00002\n1 0c000000\n2 0c000000\n3 0003f680\n"
+                    "4 0c9ffffe\n5 0c9ffffe\n6 00005800\n7 00000003\n")
+        with open(sym, "w") as f:
+            f.write("00000003 fn\n00000004 far\n")
+        r = run([NICEDIS, path, "--symbols", sym])
+        want = ("                CALL    fn              ; fn = 0x00000003\n"
+                "                HALT\n"
+                "                HALT\n"
+                "fn              MOVE    R15, @R13++\n"
+                "far             JMP     fn              ; fn = 0x00000003\n"
+                "                JMP     far             ; far = 0x00000004\n"
+                "                MOVE    R1, 0x3\n")
+        if r.stdout != want:
+            print(f"FAIL a target below 16:\n{r.stdout}")
+            failed += 1
+        else:
+            print("PASS a target below 16 has its label")
 
         for words, syms, result in API:
             got = nicedis.disassemble(0, lambda a: words[a] if a < len(words) else None, syms)

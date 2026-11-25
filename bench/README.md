@@ -482,7 +482,8 @@ below it over the 491303 steps of `hand.nasm`, which take 1255051, 255
 of them at `rng.buf`.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
-and `make profile` writes `build/bench.cyc.txt` and `build/hand.cyc.txt`.
+and `make profile` writes `build/bench.cyc.txt`, `build/hand.cyc.txt`,
+and `build/float.cyc.txt`.
 It takes the assembly of the whole program and the `.bin` assembled from
 it, runs the model as `pipecycles.py` does, and writes the source with
 two columns in front of each line, how often its instruction ran and the

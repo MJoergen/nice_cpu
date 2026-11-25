@@ -69,7 +69,7 @@ formal:
 # The emulator, the VHDL, and the programs are built first, and the runs
 # are told so with PREBUILT=1, as two builds at once would race. Each
 # simulation takes a CPU. SIM is the simulator (hdl/sim.mk): nvc, which
-# takes minutes where GHDL takes more than half an hour, or ghdl.
+# takes 4 minutes where GHDL takes nearly an hour, or ghdl.
 CORES ?= pipeline multicycle
 SIM ?= nvc
 SLOW_RUNS = $(foreach c,$(CORES),$(foreach r,bench hand dhry coremark float,slow/$(c)/$(r))) \

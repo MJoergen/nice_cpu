@@ -531,7 +531,10 @@ halted again. The board stops the counters while the core is paused, and
 not during a step. The clock of the time of day does not stop,
 and a start, which resets the core, leaves it. While the processor runs, a read of R0 to
 R15 returns `regs_i` of that cycle, and otherwise the copy of the last halt
-or pause.
+or pause. The generic `G_HAS_ROM` is false on a system without a ROM:
+bit 3 of the control register then reads 1 and takes no write, and
+`rom_hide_o` is always 1. With the generic `G_BOOT_HELD`, a reset leaves
+the processor held, where it otherwise runs, with the ROM shown.
 
 While the processor is paused, a write of R1 to R15 pulses `reg_we_o` for
 one cycle, with `reg_idx_o` and `reg_data_o`, which connect to the core's
@@ -858,8 +861,9 @@ as an Init may take hundreds of milliseconds, and adds its own engine.
 `net_regs` holds the registers of the network station of DEVICES.md §6.
 Its bus port is a pipelined Wishbone slave with a 4-bit address, which
 never stalls. The bus decoder selects it for `0xFFFFFFB0`–`0xFFFFFFBF`.
-The IP and MAC addresses are registers, with their reset values, on
-`ip_o` and `mac_o`, and `wr_o` is high for one cycle after a write to
+The IP and MAC addresses are registers, with their reset values, 0 and
+the generic `G_MAC`, which is the 02:4E:49:43:45:00 of DEVICES.md §6
+by default, on `ip_o` and `mac_o`, and `wr_o` is high for one cycle after a write to
 one of them, so that a board's station can break a connection then. The
 counts of frames and the status of the debug link over TCP are inputs,
 which a board connects to its station. `tb_core` ties them to 0, as the
@@ -1737,7 +1741,8 @@ receiver, the accesses, the sender, and the parser together, so that
 k-induction of depth 4 proves it all in a few seconds. `G_TIMEOUT` is 3
 and `G_WAIT` 2, so both are reached.
 `prove_held` repeats the proof for a system without a ROM that boots
-held, where `rom_hide_o` is always 1. The `cover` task, with the side
+held, `G_HAS_ROM` false and `G_BOOT_HELD` true, where `rom_hide_o` is
+always 1. The `cover` task, with the side
 client tied off by `G_SIDE`, shows a write to
 the memory, a stalled request, an `h`, an `o`, the `p` of a stop of the
 core's own, a console byte for the program, one that waited for room and
@@ -1827,7 +1832,8 @@ requests accepted and not yet served must hold what the two registers
 hold. Its invariants say that each state, and each state to return to,
 is one there is. A reset leaves no function running: the cycle after it,
 the FPU is idle and runs no steps. The properties are in `src/fpu.vhd`, as they name its
-registers; `formal_fpu` has the assumptions on the master. `prove_stack`
+registers; `formal_fpu` has the assumptions on the master. `prove_stack`,
+with the generic `G_STACK` of both,
 lets the master write only the commands of the stack, NOP, CLEAR, DUP,
 DROP, SWAP, OVER, and PICK, with any n, and not X_S or X_W. A model of
 §11.4 then keeps the stack as values that shift, X first, with the

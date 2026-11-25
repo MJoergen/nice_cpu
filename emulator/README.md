@@ -37,6 +37,9 @@ Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
     make window-test  # build it so, and run test/window.py
     make dist     # the files of Download, in dist/
     make fpu-long # the FPU's vectors with a random sequence of a million accesses
+    make bincheck # fail if a probe's .bin is not what its .nasm assembles to
+    make bins     # reassemble the probes' .bin files, after a change to a .nasm
+    make typecheck  # mypy --strict on the Python of test/, tools/, and font/
 
 `make window` builds niceemu with `zig build -Dwindow`. The window uses
 [SDL 3](https://libsdl.org), which the build fetches from
@@ -692,7 +695,10 @@ while halted, held, and running. And it checks the network station's
 `NET_STATUS`, with the port and a host connected, and that a start, a
 clear, and a new connection keep `NET_IP`. And it checks a skip of
 `TIME_SKIP`: a single step through it, and a breakpoint at R15 that
-fires only at its end. And it checks that the reserved registers
+fires only at its end. And it checks that a host that knows only the
+minimum of major 1 works: one that checks the major, knows bits 0 to 3
+of the control register, writes 0 to its other bits, and gets no notice
+but `h` (DEBUG.md §9). And it checks that the reserved registers
 `0xFFFFFFD0`–`0xFFFFFFD3` and `0xFFFFFFD7`, and bits 6 to 10 of the
 control register, read 0 and take no write, and that the range answers
 while the program runs. And it checks the screen's mode word over

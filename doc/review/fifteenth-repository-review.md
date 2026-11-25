@@ -417,6 +417,8 @@ Four findings of this review are of a kind that a check could see.
 - **Generics**: `G_HAS_ROM` and `G_BOOT_HELD` of `debug_link`, `G_MAC` of `net_regs`, and `G_STACK` of `fpu` are in no document.
 - **RELEASE.md §5** no longer says how long `make slow` takes in nvc. Its "about half an hour" for `SIM=ghdl` is from before the sweeps went, and was not measured again.
 
+**Resolved.** Each is filled in. ISA.md §10.1 has the operand count (§2.10). translator/README.md names every case of `test/passes.py`, and says "tens of millions of steps per second". bench/README.md has `build/float.cyc.txt`. emulator/README.md lists `make bincheck`, `make bins`, and `make typecheck`, and the old host among the cases of `link.py`. The debugger's README and its `help` give `exit` beside `q`. hdl/README.md names `G_HAS_ROM`, `G_BOOT_HELD`, `G_MAC`, and `G_STACK` where it describes each unit. `make slow` was timed in scratch copies on 20 idle CPUs on 2026-11-25: 4 minutes in nvc, builds included, and 57 minutes with `SIM=ghdl`, where RELEASE.md said about half an hour. Every line passed in both, with the same cycles.
+
 ## 5. What was checked, and found right
 
 These are recorded so that the next review need not repeat them.

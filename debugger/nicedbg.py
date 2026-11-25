@@ -815,7 +815,7 @@ class Debugger(cmd.Cmd):
             link.send_console(queue)
 
     def do_quit(self, arg: str) -> bool:
-        """quit (q): leaves the processor as it is, and quits."""
+        """quit (q, exit): leaves the processor as it is, and quits."""
         return True
 
     def do_EOF(self, arg: str) -> bool:

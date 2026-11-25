@@ -256,8 +256,8 @@ The memory options keep the memory small. nicewasm reserves the module's
 initial memory with `.RES`, so the memory is not in the `.bin` file, and
 `___wasm_start` sets it to 0. Only the words that data segments set are in
 the `.bin` file. That takes 18 steps for every 16 words, or
-18434 steps for one page. The emulator runs about 70 million steps per
-second, so even Zig's default of 16 pages, or 17 with data, is cleared
+18434 steps for one page. The emulator runs tens of millions of steps
+per second, so even Zig's default of 16 pages, or 17 with data, is cleared
 in a few milliseconds. The real cost is space: each page is 16384 words, which an
 FPGA system with little RAM may not have. Without the options, clang asks
 for 2 pages and Zig for 16 or more.
@@ -672,11 +672,17 @@ shrinks a failing module and writes it with its translation. With `--keep DIR`, 
 
 `test/passes.py` runs some of the passes over a function's code on code
 built by hand: `hoist_into_slots` after the write of an address
-register, `tail_calls` with data between the call and the return,
-`duplicate_tails` in the stubs, and `early_exit` with a test that writes
-a saved register and with a call in the code that the jump goes to.
-These are rules that no module reaches today, so `run.py` and `fuzz.py`
-cannot test them.
+register and after a conditional jump, `tail_calls` with nothing, a
+comment, and data between the call and the return, `duplicate_tails` in
+the stubs, `early_exit` with a test that writes a saved register and
+with a call in the code that the jump goes to, and
+`predict_back_edges` on the jump back at the end of a loop. Most of
+these are rules that no module reaches today, so `run.py` and `fuzz.py`
+cannot test them. It also gives `pseudo`, which writes the
+pseudo-instructions of the output, lines by hand, without and with a
+memory of 2¹⁹ words, where a jump or a call out of the module keeps
+its long form (Memory, under Supported features), and
+`anonymous_labels` the labels of short loops.
 
 `make diff` compares the translator with an older version of itself,
 `OLD`, a git revision, `main` by default: `test/diff_fuzz.py` translates

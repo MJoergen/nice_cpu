@@ -86,7 +86,7 @@ one in full.
 | `send TEXT` | Sends text to the program, with escapes such as `\n` and `\x1b`. It waits up to 2 s for room in the program's input buffer, and a program that has not read it by then is an error. |
 | `eof` | Ends the program's input. |
 | `console` (`c`) | Passes the terminal through to the program until Ctrl-]. It needs a terminal. The Enter key sends CR (`0x0D`), as in the emulator's window and from a terminal on a board's UART. Keys that the program's input buffer has no room for wait until it reads them. |
-| `quit` (`q`) | Leaves the processor as it is, and quits. Ctrl-D quits too. |
+| `quit` (`q`, `exit`) | Leaves the processor as it is, and quits. Ctrl-D quits too. |
 
 The program's console output and the link's notices are shown as they
 arrive, above the prompt: `[breakpoint 0, PC=... LOOP  SUB[M] ...]`,

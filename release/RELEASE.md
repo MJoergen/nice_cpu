@@ -155,7 +155,8 @@ accesses) and `runtime/libc make fuzz` (the random tests of `printf`,
 `strtod`, and `math.h`, which need clang). Each benchmark run, Dhrystone, CoreMark, the float run,
 `fpu-long`, and the fuzz takes one CPU. `release.py figures` then checks that `bench/README.md`
 quotes the cycles of `float` and `float_inline` on the pipelined core.
-`SIM=ghdl` runs them in GHDL instead, which takes about half an hour,
+In nvc they take 4 minutes on 20 CPUs, builds included (2026-11-25).
+`SIM=ghdl` runs them in GHDL instead, which takes 57 minutes there,
 bound by the benchmark on the multi-cycle core.
 Every line must say `PASS`, and both cores must agree with
 `niceemu`.

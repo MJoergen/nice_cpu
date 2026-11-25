@@ -269,9 +269,9 @@ The emulator and the FPGA implementation map performance counters at `0xFFFFFF40
 - In the emulator, the cycle counter and the microsecond counter have no fixed ratio, unless with `--step-time`. A program that divides one by the other gets the rate at which the host runs steps, which varies from run to run.
 - The **event counters** count what the program does, not what the processor that runs it does. So the emulator and every FPGA core count the same, and a program reads the same counts on each:
   - The **data read counter** counts the data reads of ISA §8.2: the operand reads. A read of `READ_LO` returns the number of data reads before it, the earlier reads of its own instruction included.
-  - The **store counter** counts the destination writes of ISA §8.2, to a device too, and to a word that ignores them.
+  - The **store counter** counts the data writes of ISA §8.2: the destination writes, and the push of `CALL`. It counts a write to a device too, and to a word that ignores it.
   - The **skip counter** counts the instructions whose condition was false.
-  - The **jump counter** counts the instructions that are not skipped and write R15: as their register destination, in mode 000, 001, or 010, or by the side effect of a field, in mode 001, 010, 101, or 110 (ISA §4). It counts a jump to the next instruction too. It does not count an instruction that halts.
+  - The **jump counter** counts the instructions that are not skipped and write R15: as their register destination, in mode 000, 001, or 010, by the side effect of a field, in mode 001, 010, 101, or 110 (ISA §4), or as a one-word `JMP`, `JMPR`, or `CALL` (ISA §5.3). It counts a jump to the next instruction too. It does not count an instruction that halts.
   - A read of a counter's low word returns the events of the steps before its instruction, and for the data read counter also the earlier reads of its own instruction. The accesses of the debug link (DEBUG.md) are not the program's, and do not count.
 - Reset sets all the counters and their snapshots to 0. No counter can be written. A program measures an interval as the difference of two readings.
 - A counter wraps from `0xFFFFFFFF_FFFFFFFF` to 0. At one count per cycle at 100 MHz that takes over 5000 years.

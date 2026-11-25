@@ -976,8 +976,9 @@ stands still with it low, that the instruction
 counter counts the cycles with `instret_i` high, and that a read of a high
 word returns the snapshot of the last read of the low word, across the
 wrap. It checks that the event counters count the reads and stores that
-the bus accepts but not a stalled one, the skipped steps, and a jump but
-not one that halts or a control word, and that each has its own
+the bus accepts but not a stalled one, the skipped steps, and a jump,
+the one-word `JMP`, `JMPR`, and `CALL` among them, but not one that
+halts or a reserved control word, and that each has its own
 snapshot. It also checks the spare words, that
 writes change nothing, and reset.
 

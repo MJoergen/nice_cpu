@@ -14,7 +14,8 @@
 --   in 3 cycles, exactly, and also stops while run_i is low.
 -- * The event counters count the data reads and stores that the core's
 --   bus accepts, and the skipped instructions and the jumps of the steps
---   on retire_i, but no step that halts. Each has its snapshot.
+--   on retire_i, the jumps and the call of one word among them, but no
+--   step that halts. Each has its snapshot.
 -- * The spare words read 0, and writes change nothing.
 -- * Reset sets the counters and the snapshots to G_RESET.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -49,10 +50,15 @@ architecture simulation of tb_perf is
    constant C_JUMP_HI  : natural := 16#11#;
 
    -- Instruction words: MOVE R15, R2, a jump; MOVE R1, R2, none; control
-   -- command 2, reserved, which writes no register
+   -- command 2, reserved, which writes no register; and the JMP, the
+   -- JMPR, and the CALL of one word (ISA.md §5.3), each to the next
+   -- instruction
    constant C_JUMP_IW : std_logic_vector(31 downto 0) := X"0003C100";
    constant C_MOVE_IW : std_logic_vector(31 downto 0) := X"00004100";
    constant C_CTRL_IW : std_logic_vector(31 downto 0) := X"0C400040";
+   constant C_JMP_IW  : std_logic_vector(31 downto 0) := X"0C800000";
+   constant C_JMPR_IW : std_logic_vector(31 downto 0) := X"0CA00000";
+   constant C_CALL_IW : std_logic_vector(31 downto 0) := X"0CC00000";
 
    signal clk : std_logic;
    signal rst : std_logic := '1';
@@ -262,9 +268,10 @@ begin
       end if;
 
       -- The event counters: three reads and two stores accepted, one read
-      -- stalled; a skipped instruction, a skipped control command, a jump,
-      -- a jump that halts, an instruction that does not jump, and a control
-      -- command that halts. The low words wrap from 0xFFFFFFFF.
+      -- stalled; a skipped instruction, a skipped control command, a
+      -- skipped JMP of one word, a jump, a jump that halts, an instruction
+      -- that does not jump, a control command that halts, and the JMP, the
+      -- JMPR, and the CALL of one word. The low words wrap from 0xFFFFFFFF.
       check(C_READ_LO, X"FFFFFFF0", "no data read yet");
       for i in 1 to 3 loop
          bus_cycle('0', '0');
@@ -274,14 +281,18 @@ begin
       bus_cycle('1', '0');
       step(C_MOVE_IW, skipped => '1');
       step(C_CTRL_IW, skipped => '1');
+      step(C_JMP_IW, skipped => '1');
       step(C_JUMP_IW);
       step(C_JUMP_IW, halt => HALT_RESERVED);
       step(C_MOVE_IW);
       step(C_CTRL_IW, halt => HALT_RESERVED);
+      step(C_JMP_IW);
+      step(C_JMPR_IW);
+      step(C_CALL_IW);
       check(C_READ_LO, X"FFFFFFF3", "3 data reads");
       check(C_STORE_LO, X"FFFFFFF2", "2 stores");
-      check(C_SKIP_LO, X"FFFFFFF2", "2 skips");
-      check(C_JUMP_LO, X"FFFFFFF1", "a jump");
+      check(C_SKIP_LO, X"FFFFFFF3", "3 skips");
+      check(C_JUMP_LO, X"FFFFFFF4", "4 jumps");
       for i in 1 to 16 loop
          bus_cycle('0', '0');
       end loop;

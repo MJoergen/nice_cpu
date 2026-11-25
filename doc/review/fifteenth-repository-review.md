@@ -143,6 +143,8 @@ hdl/README.md says of `tb_perf` that it checks "a jump but not one that halts or
 
 **Fix:** "or as a one-word `JMP`, `JMPR`, or `CALL` (ISA §5.3)" for the jump counter, "the destination writes, and the push of `CALL`" for the store counter, and "a reserved control word" in hdl/README.md, with a `JMP` in `tb_perf`.
 
+**Resolved.** DEVICES.md §3 says that the jump counter counts a one-word `JMP`, `JMPR`, or `CALL` too, and that the store counter counts the data writes of ISA §8.2, the destination writes and the push of `CALL`. `tb_perf` steps the three one-word forms, and a skipped `JMP`, and checks 4 jumps and 3 skips. hdl/README.md says so, with "a reserved control word".
+
 ### 2.4 hdl/README.md: DECODE's early redirect
 
 The table of the stages says of DECODE: "Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always", and for a conditional `ADD R15, R15, c` with a negative `c`." The formal checks say that DECODE "redirects FETCH only as it takes `MOVE R15, c` or `ADD R15, R15, c`". Since aefdaf3 it also redirects for the `JMP` and the `CALL` of one word with the condition "always", and predicts a `JMPR` of one word with a condition that goes back: `early_form(...) or short_early(iw_v)` in `pipe_decode.vhd`. MICROARCH.md §5.4 and the header of `pipeline.vhd` have it. Three comments of `pipe_decode.vhd` do not, at lines 8, 345, and 404, and the comment of `uop_wreg` in `pipe_pkg.vhd` says that control instructions "write R14 and R15 in other ways", where the function now returns 13 for a call and 15 for a jump.

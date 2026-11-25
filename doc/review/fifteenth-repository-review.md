@@ -204,6 +204,8 @@ Programs under a monitor: "it pushes a return address and jumps to `0x8000`, wit
 
 **Fix:** drop "with E = 0 and", and write `JMP _main`.
 
+**Resolved.** ABI.md no longer names an E, and gives the jump to `main` as `JMP _main`, as the three start-up files have it.
+
 ### 2.8 HISTORY.md: a date, and "the commands were free"
 
 "On 2026-11-15 the interrupts were removed (#162)." That is the day the issue was accepted. The commits are of 2026-11-22, and the release is `V3.0`.

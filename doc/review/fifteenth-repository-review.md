@@ -24,7 +24,13 @@ On the unchanged tree, in the scratch copies, these ran and pass: `make test` in
 
 **Older errors were found in passing** (§3), none of them of this release: a port and a generic of the debug link that do not exist, a sentence of DEBUG.md §1 that says the opposite of DEVICES.md §1.5, an issue that MICROARCH.md calls open and that was closed on 2026-11-05, and some counts.
 
-No finding is in the behavior of a tool or a core. Two are at the edge: `nicedis` and the target below 16 (§4.5), and `tb_perf`, which has no one-word jump (§2.3). Nothing here is fixed, and no issue is filed.
+No finding is in the behavior of a tool or a core. Two are at the edge: `nicedis` and the target below 16 (§4.5), and `tb_perf`, which has no one-word jump (§2.3).
+
+**Every finding is closed** on `dev-V3.0`, with a commit for each, or one for two that belong together, and a **Resolved** paragraph under each. The branch stands on `origin/main` (§1.1). The release steps are done: the notes of `V3.0` (§1.2), the table of board tags (§1.3), the version (§1.4), the timing of both flows, with `SPREAD` and the table of what a system may add (§1.5), and the sentence of #208 (§1.6). The one-word forms are where they were missing: in README.md's worked example (§2.1), in the slides, whose `hello.nasm` now calls with `CALL` (§2.2, §4.6), in the event counters of DEVICES.md §3, with a test in `tb_perf` (§2.3), in DECODE's redirect in hdl/README.md and `pipe_decode.vhd` (§2.4), and in bench/README.md (§2.6). The sixteen figures are measured again (§2.5), and the words left from the interrupts are gone (§2.9). What no document said is said: what the board does until its `V3.0` (§4.1), why the commands 1 to 3 stay reserved (§4.2), the nine ideas that #162, #192, and #196 dropped (§4.3), and the long forms after a large memory (§4.4). `nicedis` names a target below address 16, which is the one change to the behavior of a tool, and has its tests (§4.5). Three checks are new: `doc/check_readme.py` for the README's worked example, and two warnings of `release.py preflight`, for a wait with a clause before its issue and for a board tag that the table lacks (§4.8). The older errors of §3 and the gaps of §2.7, §2.8, §2.10, §2.11, §4.7, and §4.9 are corrected.
+
+On the result every `make test` passes, with 1600 lines of `PASS` in the ten directories that print them, and so do the tests of `release.py`, every `make typecheck`, `make -C hdl lint`, `make -C doc/intro pdfcheck`, and `release.py figures`. `make slow` passed in nvc and with `SIM=ghdl`, in scratch copies of the tree, with the cycles of bench/README.md. No issue was filed or changed.
+
+What is left is the release's: the push, which rewrites `origin/dev-V3.0`, a green CI run on the new head, as CI has not run on the fixes, `release.py check`, and the date of the `V3.0` section, which is set at the tag. #208 closes when its commit reaches `main`, and has no milestone. #205 measures the steps of the math functions again (§2.5). The board follows in MJoergen/NiceMonMEGA65#169 and MJoergen/NiceMonMEGA65#172.
 
 ## 1. The release
 
@@ -110,7 +116,7 @@ DEVICES.md §8, **Font**: "Its ROM does not have the blocks and arrows of §1.8 
 
 **Fix:** change the sentence as #208 says, in this release, and close the issue with it.
 
-**Resolved.** The sentence is changed as #208 says: the board's ROM has the glyphs from its `V2.6` on, which builds its character ROM from niceemu's `font.zig`, and before that they are blank. The commit closes #208 when it is pushed. The issue's milestone is left as it is.
+**Resolved.** The sentence is changed as #208 says: the board's ROM has the glyphs from its `V2.6` on, which builds its character ROM from niceemu's `font.zig`, and before that they are blank. The commit closes #208 when it reaches `main`. The issue's milestone is left as it is.
 
 ## 2. What the documents say that is not so, since `V3.0`
 

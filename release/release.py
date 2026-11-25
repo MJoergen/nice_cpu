@@ -3,7 +3,9 @@
 
     release.py preflight        step 1: tree, branch, toolchain, tools, and
                                 a warning of a document that waits for a
-                                closed issue of another repository
+                                closed issue of another repository, and of
+                                a tag of the board that the table of
+                                RELEASE_NOTES.md lacks
     release.py check            steps 2.4 and 3 to 5: run the gates, write the stamp
                                 (the timing budget is shown, not a gate)
     release.py figures          step 2.4: the benchmark figures in bench/README.md
@@ -69,8 +71,19 @@ TOOLS = {
 }
 
 # A sentence that waits for an issue of another repository, such as a
-# board's: "not yet (OWNER/NAME#12)" or "until OWNER/NAME#12".
-WAITING = re.compile(r"\b(?:yet|until)\s*\(?\s*([\w.-]+/[\w.-]+)#(\d+)", re.I)
+# board's: "not yet (OWNER/NAME#12)" or "until OWNER/NAME#12". The issue
+# may follow a short clause, as in "not yet, so it reads 0 there
+# (OWNER/NAME#12)": up to WAIT_GAP characters of the same sentence. A
+# longer one is more often a sentence that cites the issue for what a
+# board has.
+WAIT_GAP = 80
+WAITING = re.compile(r"\b(?:yet|until)\b(?:(?!\.\s)[^#]){0,%d}?(?<![\w.-])([\w.-]+/[\w.-]+)#(\d+)" % WAIT_GAP,
+                     re.I)
+# The board repository, whose tags the table at the top of
+# RELEASE_NOTES.md lists, and the names of its release tags.
+BOARD = "MJoergen/NiceMonMEGA65"
+BOARD_TAG = re.compile(r"^(?:RC\d+|V\d+\.\d+(?:\.\d+)?)$")
+BOARD_ROW = re.compile(r"^\| `[\w.]+` \| (.*) \|$", re.M)
 # The documents that say what was true, and so may wait for a closed issue.
 PAST_DOCUMENTS = ("RELEASE_NOTES.md", "doc/HISTORY.md", "doc/review/")
 
@@ -141,7 +154,8 @@ def say(ok: bool, text: str) -> bool:
 def waiting_issues(text: str) -> list[tuple[str, int]]:
     """The issues of other repositories that text waits for: (OWNER/NAME,
     number) for each "yet (OWNER/NAME#n)" and "until OWNER/NAME#n", in
-    order, each once. The two parts may be on two lines."""
+    order, each once. The two parts may be on two lines, with up to
+    WAIT_GAP characters of the same sentence between them."""
     found: list[tuple[str, int]] = []
     for m in WAITING.finditer(text):
         issue = (m.group(1), int(m.group(2)))
@@ -172,6 +186,16 @@ def stale_waits(texts: dict[str, str]) -> list[str]:
             what = f"is {state}" if state else "gh cannot read"
             lines.append(f"{', '.join(names)}: waits for {repo}#{number}, which {what}")
     return lines
+
+
+def missing_board_tags(notes: str, tags: list[str]) -> list[str]:
+    """The release tags of the board among tags that the table at the top
+    of the release notes lacks, in the order of tags. The table is the
+    rows before the first section, and the board's tags are in the second
+    column."""
+    table = notes.split("\n## ", 1)[0]
+    have = {t for row in BOARD_ROW.findall(table) for t in re.findall(r"`([\w.]+)`", row)}
+    return [t for t in tags if BOARD_TAG.match(t) and t not in have]
 
 
 def check_preflight() -> bool:
@@ -205,6 +229,9 @@ def check_preflight() -> bool:
             # A warning and no gate: a release never waits for a board.
             for line in stale_waits(documents()):
                 print(f"  warn {line}")
+            tags = run(["gh", "api", f"repos/{BOARD}/tags", "--paginate", "--jq", ".[].name"], check=False)
+            for tag in missing_board_tags((ROOT / "RELEASE_NOTES.md").read_text(), tags.split()):
+                print(f"  warn RELEASE_NOTES.md: the table of board tags lacks {tag} of {BOARD}")
     p = subprocess.run([sys.executable, "-m", "mypy", "--version"], capture_output=True, text=True)
     ok &= say(p.returncode == 0, "mypy installed, for make typecheck")
     print(f"  next tag: {next_tag()}")

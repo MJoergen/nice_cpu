@@ -89,13 +89,40 @@ def test_next_tag() -> None:
 def test_waiting_issues() -> None:
     text = ("It does not have it yet (MJoergen/NiceMonMEGA65#104). It shows 25 rows until\n"
             "MJoergen/NiceMonMEGA65#157, and has the mode (MJoergen/NiceMonMEGA65#144).\n"
-            "Not yet (#12). Until then, see a/b#3. Until a-b/c.d#7 it waits, and\n"
+            "Not yet (#12). Until then. See a/b#3. Until a-b/c.d#7 it waits, and\n"
             "it does not wire it yet (MJoergen/NiceMonMEGA65#104).")
     board = "MJoergen/NiceMonMEGA65"
     check(release.waiting_issues(text) == [(board, 104), (board, 157), ("a-b/c.d", 7)],
           "yet and until before an issue of another repository, each once")
     check(release.waiting_issues("It has the FPU (MJoergen/NiceMonMEGA65#136).") == [],
           "an issue cited for what a board has")
+    check(release.waiting_issues("Until then, see a/b#3.") == [("a/b", 3)],
+          "an issue later in the sentence of an until")
+    # A clause between the "yet" and the issue, as in the sentence of #208
+    check(release.waiting_issues("Its ROM does not have the blocks at `0x80`–`0x99` yet, so\n"
+                                 "`0xFFFE3000` reads 0 there (MJoergen/NiceMonMEGA65#171).") == [(board, 171)],
+          "a short clause between the yet and the issue")
+    check(release.waiting_issues("It shows 25 rows until its `V2.5` is out (a/b#5).") == [("a/b", 5)],
+          "a version with a period is no end of the sentence")
+    check(release.waiting_issues("It is not there yet. It has the FPU (MJoergen/NiceMonMEGA65#136).") == [],
+          "the issue of the next sentence")
+    check(release.waiting_issues("It sets the clock when the clock is not set yet and the real-time clock has "
+                                 "not lost its time, and its command `time` writes the real-time clock too "
+                                 "(a/b#105).") == [],
+          "an issue more than WAIT_GAP characters on")
+    check(release.waiting_issues("yet (OWNER/NAME#N), until OWNER/NAME#N") == [],
+          "an example with no number")
+
+
+def test_missing_board_tags() -> None:
+    notes = ("# Release notes\n\nIts tags that pin each are:\n\n"
+             "| nice_cpu | NiceMonMEGA65 |\n|---|---|\n"
+             "| `V2.0` | none yet |\n| `V1.9` | `V1.9`, `V1.9.1` |\n| `V1.8` | none |\n| `RC06` | `RC06` |\n\n"
+             "## V2.0\n\n| `V1.9` | `V1.9.2` |\n")
+    tags = ["archive/old", "V1.9.2", "V1.9.1", "V1.9", "V1.8", "RC06", "RC05", "v1", "V2"]
+    check(release.missing_board_tags(notes, tags) == ["V1.9.2", "V1.8", "RC05"],
+          f"the board's tags that the table lacks: {release.missing_board_tags(notes, tags)}")
+    check(release.missing_board_tags(notes, []) == [], "no tags, as when gh cannot read them")
 
 
 def test_stale_waits() -> None:
@@ -257,6 +284,6 @@ def test_timing_dir() -> None:
         check(made == {release.timing_dir("mega65", unit)}, f"make timing UNIT={unit} writes to {made}")
 
 
-for t in (test_timing_dir, test_timing_budget, test_core_total, test_figure_lines, test_bench_totals, test_next_tag, test_waiting_issues, test_stale_waits, test_ci_status, test_notes_section, test_version, test_stamp_covers):
+for t in (test_timing_dir, test_timing_budget, test_core_total, test_figure_lines, test_bench_totals, test_next_tag, test_waiting_issues, test_missing_board_tags, test_stale_waits, test_ci_status, test_notes_section, test_version, test_stamp_covers):
     t()
 print("release tests passed")

@@ -398,6 +398,8 @@ Four findings of this review are of a kind that a check could see.
 
 **Fix, optional:** the test of the README's example is the one that would pay first.
 
+**Resolved.** Three of the four have a check now. `doc/check_readme.py` compares the README's worked example with the file and the tools, in `make -C doc/intro test` (§2.1). The pattern of `release.py preflight` takes up to 80 characters of the same sentence between the "yet" or the "until" and the issue, so it sees the sentence of #208, and the examples of RELEASE.md and release/README.md say `#N`, which it does not take for an issue. `preflight` also warns of a release tag of NiceMonMEGA65 that the table of board tags lacks: on this tree it named `V2.5.1`, `V2.4.1`, and `V2.2.1` (§1.3). `release/test.py` has the cases of both. The figures are still copied by hand, but for the two that `make -C bench words` prints since §2.5: `release.py figures` checks no more than before.
+
 ### 4.9 Small gaps
 
 - **ISA.md §10.1** does not give the operand count of `JMP`, `JMPR`, and `CALL` (§2.10).

@@ -61,10 +61,12 @@ tools. Item 2 is by hand.
    starts there, and Appendix B lists every departure from the sources.
 2. Each document says only what is true now. What used to be true is in
    [doc/HISTORY.md](../doc/HISTORY.md). A sentence that waits for an
-   issue of another repository, as "not yet (MJoergen/NiceMonMEGA65#12)"
-   or "until MJoergen/NiceMonMEGA65#12", is stale once that issue is
-   closed, and `release.py preflight` warns of it. That is no gate, as a
-   release never waits for a board.
+   issue of another repository, as "not yet (MJoergen/NiceMonMEGA65#N)"
+   or "until MJoergen/NiceMonMEGA65#N", is stale once that issue is
+   closed, and `release.py preflight` warns of it. It also warns of a
+   tag of NiceMonMEGA65 that the table of board tags at the top of
+   RELEASE_NOTES.md lacks. Neither is a gate, as a release never waits
+   for a board.
 3. Every README agrees with the options, formats, and error behavior of its
    tool.
 4. The figures quoted in the documents (the cycle counts of the benchmark,

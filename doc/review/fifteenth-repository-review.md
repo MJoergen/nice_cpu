@@ -74,6 +74,8 @@ The other rows are right.
 
 **Fix:** add `V2.5.1`, `V2.4.1`, and `V2.2.1`, with the row of `V3.0`.
 
+**Resolved.** The table has `V2.5.1`, `V2.4.1`, and `V2.2.1`, each checked with `git ls-tree` in the board's repository, and the row of `V3.0`, "none yet". `release.py preflight` now warns of a tag that the table lacks (§4.8), and names none on this tree.
+
 ### 1.4 `emulator/build.zig.zon` says `2.6.0`
 
 RELEASE.md step 2.9: the version is the new tag's, `3.0.0`, and `release.py tag` and the release workflow refuse a tag that it does not match. Set it before `release.py check`.

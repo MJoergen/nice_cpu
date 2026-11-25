@@ -249,6 +249,8 @@ Programs under a monitor: "it pushes a return address and jumps to `0x8000`, wit
 - **§10.1**, Operand counts: "`HALT` takes none." Before, the point named every control instruction. `JMP`, `JMPR`, and `CALL` take one, and are not there.
 - **§9.2**: the example of a signed comparison ends in `?N MOVE PC, less`, the long form, under a table that gives `?Z JMP label` for a conditional jump.
 
+**Resolved.** All six are changed in ISA.md: §7 speaks of the emulator with its window; §5.3 says that the "+ d" of the table puts the low 21 bits of d into the word, with `0x0C9FFFFF` for a `JMP` with d = −1, and speaks of the word of the `CALL`; §9.1 calls `routine`; §9.2's signed comparison ends in `?N JMP less`; and §10.1 gives the one operand of `JMP`, `JMPR`, and `CALL`.
+
 ### 2.11 emulator/README.md: a step is not a cycle
 
 Window, new text: "at `--speed 1000000`, one step per microsecond, a loop of P steps lasts P microseconds, where on a board of 100 MHz it lasts some P/100". A step is an instruction, and the pipelined core takes 1.4 to 2.6 cycles for one (bench/README.md). `V2.6` spoke of a timer's period of P cycles, which was exact. DEVICES.md §1.6 compares the cycle counter, which is right. **Fix:** the wording of DEVICES.md §1.6.

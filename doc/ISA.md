@@ -329,10 +329,10 @@ Arithmetic shift right is two instructions: `C<0[M] R0, Rx, 1` copies the sign b
 | 00110 | `CALL` | `0x0CC00000` + d | R13 ← R13 − 1, then mem[R13] ← PC, then PC ← PC + d. |
 | 00001–00011, 00111–11111 | | | Reserved. Executing one halts the processor. |
 
-For `JMP`, `JMPR`, and `CALL`, bits 20..0 hold d, a signed distance of 21 bits in two's complement, sign-extended to 32 bits. PC is the address of the next instruction, the word after this one (step 2 of §5), so d = 0 goes on to the next instruction, and d = −1 jumps to the instruction itself. The sum wraps modulo 2³². So a jump or a call reaches 2²⁰ words back and 2²⁰ − 1 words forward from the next instruction. A farther target, and a target in a register or in memory, take the long forms of §9.
+For `JMP`, `JMPR`, and `CALL`, bits 20..0 hold d, a signed distance of 21 bits in two's complement, sign-extended to 32 bits. So the "+ d" of the table puts the low 21 bits of d into the word: `JMP` with d = −1 is `0x0C9FFFFF`. PC is the address of the next instruction, the word after this one (step 2 of §5), so d = 0 goes on to the next instruction, and d = −1 jumps to the instruction itself. The sum wraps modulo 2³². So a jump or a call reaches 2²⁰ words back and 2²⁰ − 1 words forward from the next instruction. A farther target, and a target in a register or in memory, take the long forms of §9.
 
 - `JMP` and `JMPR` do the same thing. They differ only as a hint to a pipelined processor: it may predict a `JMPR` with a condition and d < 0 as taken, as for the back edge of a loop, and it predicts no `JMP` (§10.1).
-- `CALL` pushes the address of the next instruction through R13, as `ADD @--R13, 2, R15` does in the long form (§9.1), and jumps. Its write of memory is a data access (§8.2). The write may change the words of the `CALL` itself, which have been fetched, so the `CALL` still jumps by its own d (§8.2).
+- `CALL` pushes the address of the next instruction through R13, as `ADD @--R13, 2, R15` does in the long form (§9.1), and jumps. Its write of memory is a data access (§8.2). The write may change the word of the `CALL` itself, which has been fetched, so the `CALL` still jumps by its own d (§8.2).
 
 For `HALT`, bits 20..0 must be 0. An instruction that breaks this is reserved and halts the processor.
 
@@ -371,7 +371,7 @@ Processors without interrupts are not new. The central processor of the CDC 6600
 
 Polling has its own cost, which falls on the program:
 
-- A program that waits for an event spins in a loop of reads. The emulator does not spin the host's CPU for such a loop ([DEVICES.md §1.6](DEVICES.md#16-pacing)).
+- A program that waits for an event spins in a loop of reads. With its window, the emulator does not spin the host's CPU for such a loop ([DEVICES.md §1.6](DEVICES.md#16-pacing)).
 - Work that must run at a regular time, such as music or a change of the screen in mid-frame, fits into the main loop, which reads a counter to know the time ([DEVICES.md §3](DEVICES.md#3-performance-counters)).
 
 ## 8. Reset, memory, and I/O
@@ -423,11 +423,11 @@ R13 is the stack pointer, SP. The stack grows down, and SP points at the last it
 |---|---|
 | Push x | `MOVE @--SP, x` |
 | Pop into x | `MOVE x, @SP++` |
-| Call `sub` | `CALL sub`, one word (§5.3) |
-| Call `sub`, the long form | `ADD @--SP, 2, PC` then `MOVE PC, sub` |
+| Call `routine` | `CALL routine`, one word (§5.3) |
+| Call `routine`, the long form | `ADD @--SP, 2, PC` then `MOVE PC, routine` |
 | Return | `MOVE PC, @SP++` |
 
-The one-word `CALL` reaches 2²⁰ words either way, and the long form any address. The long form works because PC reads as the address after `ADD`'s constant word, which is the start of the 2-word `MOVE PC, sub`. Adding 2 gives the address after the `MOVE`. Both push the address of the word after the call, so `RET` returns from either.
+The one-word `CALL` reaches 2²⁰ words either way, and the long form any address. The long form works because PC reads as the address after `ADD`'s constant word, which is the start of the 2-word `MOVE PC, routine`. Adding 2 gives the address after the `MOVE`. Both push the address of the word after the call, so `RET` returns from either.
 
 The constant is the size of the `MOVE` in words. A call through a register, `MOVE PC, Rx`, is one word, so it pushes with `ADD @--SP, 1, PC`. The assembler writes `CALL target` and `RET` for these (§10.1), and the push and pop for `PUSH x` and `POP x`.
 
@@ -449,7 +449,7 @@ There is no condition or instruction for a signed comparison. A signed a < b is 
 
                     SUB[M]  R0, a, b
             ?V      XOR     R14, R14, 0x10000000  ; flip N when V is set
-            ?N      MOVE    PC, less        ; a < b signed; ?!N for a >= b
+            ?N      JMP     less            ; a < b signed; ?!N for a >= b
 
 After the `XOR`, N is a < b. The write to R14 takes the written value, and leaves the other flags as they were (§4.3). For a > b or a <= b, swap the operands of `SUB[M]`.
 
@@ -480,6 +480,7 @@ This follows the 2004 assembler in `NICE.pm`, with a few changes listed in Appen
   - `MOVE`, `DBL`, `DEC`, and `NOT` take dest and s0.
   - The other ALU and SHIFT instructions take dest, s0, and s1.
   - `HALT` takes none.
+  - `JMP`, `JMPR`, and `CALL` take one, the target.
 - **No interrupt instructions.** `RTI`, `INT`, and `WAIT` are not mnemonics, as NICE has no interrupts (§7). The assembler rejects each of them with an error where a mnemonic stands, and none can be a label or an `.EQU` name, so an old source that uses them does not assemble by accident.
 - **Jumps and calls to an address.** `JMP target`, `JMPR target`, and `CALL target`, where target is an address expression (§10.2), such as a label, a number, or `:-`, assemble as the one-word instruction of §5.3, with d = target − next, where next is the address of the word after it. They are always one word: the size of a statement depends only on its operand modes, never on the value of a label. A target out of reach, with d outside −2²⁰ to 2²⁰ − 1, is an error, and the source then writes the long form: `MOVE R15, target`, or `ADD @--R13, 2, R15` and `MOVE R15, target` for a call. A condition applies as usual, and none takes a modifier.
 - **Pseudo-instructions.** `CALL target` with a register or memory operand assembles as `ADD @--R13, n, R15` followed by `MOVE R15, target`, where n is the size of the `MOVE` in words: 2 when target has a constant word, else 1. `RET` assembles as `MOVE R15, @R13++`. These are the call and return of §9.1, so R13 is the stack pointer. A condition applies to every instruction of the expansion: `?Z CALL @vector` calls only when Z is set, since `ADD` without `[M]` leaves the flags for the `MOVE`. Neither takes a modifier. `CALL`, `JMP`, `JMPR`, and `RET` are mnemonics, so none can be a label or an `.EQU` name.

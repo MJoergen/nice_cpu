@@ -72,7 +72,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
 | `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
-| `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 11 minutes on 20 CPUs, 40 with `FLOW=timing` |
+| `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 4 minutes on 20 CPUs, 9 with `FLOW=timing` (2026-11-25) |
 | `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 15 and 24 on the two cores in CI; several times longer in GHDL |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |
 | `make random-sweep` | Seeds 1 to `RANDOM_LAST` (1000) of `make random` on each core of `CORES`. | an hour or more |
@@ -293,29 +293,33 @@ the slacks with it. `make timing-spread` runs `make timing` for `BOARD` and
 `FLOW` with seven counts of breakpoints and watchpoints, `4-0` to `4-4`,
 `2-0`, and `2-4`, all at once, and prints the least, the median, and the
 most of each slack, and how many runs met the budget. It is for the core
-only, as the FPU has no such variants. On the MEGA65 at
-565b976 (#151):
+only, as the FPU has no such variants. On the MEGA65 on 2026-11-25,
+with the core of `V3.0`:
 
 | MEGA65, 10 ns | core | inputs | outputs | budget met |
 |---|---|---|---|---|
-| `default` flow | 0.111, 0.396, 0.708 ns | 1.869, 2.251, 2.559 ns | 1.554, 2.357, 2.963 ns | 4 of 7 |
-| `timing` flow | −0.075, 0.058, 0.342 ns | 1.052, 1.620, 2.176 ns | 1.246, 2.007, 2.495 ns | 1 of 7 |
+| `default` flow | −0.005, 0.255, 0.434 ns | 1.741, 2.379, 2.996 ns | 0.709, 2.246, 2.597 ns | 4 of 7 |
+| `timing` flow | 0.079, 0.165, 0.551 ns | 1.463, 2.143, 2.735 ns | 1.290, 2.251, 2.770 ns | 4 of 7 |
 
 So the budget of the outputs lies inside the range of both flows, and
-a change that moves a median by less than the range is noise. `SPREAD`
+the core's own inside that of the `default` flow: the variant with 2
+breakpoints and 4 watchpoints misses the clock there by 5 ps. The
+variant of the boards, 4 of each, which `make timing` runs, leaves the
+core 0.291 ns in the `default` flow and 0.079 ns in the `timing` flow.
+A change that moves a median by less than the range is noise. `SPREAD`
 in `timing_budget.py` holds the ranges, and `make timing` says when a
 miss is by less than one of them.
 
-What a system may add to the core's ports, from `make timing` at 2026-11-07
+What a system may add to the core's ports, from `make timing` at 2026-11-25
 (`timing` and `default` flows, one run each, so each figure may be off by a
 nanosecond, as above). The slack is the time left to the system at
 the clock of the first column:
 
 | Clock and part | `dbus_ack_i` | `instret_o` |
 |---|---|---|
-| 100 MHz, MEGA65 (-2) | 1.7 to 2.5 ns | 2.4 to 2.7 ns |
-| 100 MHz, Nexys4DDR (-1) | 0.6 to 0.9 ns | 0.3 to 1.1 ns |
-| 90 MHz, Nexys4DDR (-1) | 2.0 to 2.4 ns | 2.2 to 2.3 ns |
+| 100 MHz, MEGA65 (-2) | 3.0 to 3.2 ns | 1.3 to 2.2 ns |
+| 100 MHz, Nexys4DDR (-1) | 2.1 to 2.5 ns | 0.6 to 0.8 ns |
+| 90 MHz, Nexys4DDR (-1) | 3.5 to 3.9 ns | 1.9 ns |
 
 The fetch statistics of #125 took 0.9 ns from `dbus_ack_i` in the
 `timing` flow on the MEGA65, below the 1.5 ns of the budget. Since #141,
@@ -325,15 +329,16 @@ pipeline classifies the cycle a cycle later, which wins back most of it.
 - `instret_o` has the least. It comes from WRITE's retire, and the counters
   of DEVICES.md §3 must see it in that cycle (MICROARCH.md §8), so a system
   should not register it without changing that rule.
-- `dbus_ack_i` goes into WRITE's retire and so into FETCH, through 10 LUT
+- `dbus_ack_i` goes into WRITE's retire and so into FETCH, through 9 LUT
   levels. A system should drive it from a register, or from little logic,
   not from an address decode and a wait-state mux.
 - A store leaves DBUS's register. `dbus_addr_o` and
-  `dbus_data_o` have 2.6 ns or more in every run (the least is
-  `dbus_data_o` on the MEGA65), and most have 4 ns or more. Read data goes
+  `dbus_data_o` have 2.7 ns or more in every run (the least is
+  `dbus_data_o` on the Nexys4DDR at 100 MHz), and half have 4 ns or more. Read data goes
   into WRITE only for a register write.
-- At 90 MHz on the Nexys4DDR the core alone still fails by 0.4 to 0.5 ns,
-  on paths inside it (WRITE into PREPARE's and its own enables), but
+- At 90 MHz on the Nexys4DDR the core alone still fails by 0.2 to 0.3 ns,
+  on paths inside it (FETCH's read pointer into its head, and WRITE into
+  its own enables), but
   NiceMonMEGA65 meets 90 MHz in the system ([pipeline-timing.md](../doc/review/pipeline-timing.md),
   In the system).
 

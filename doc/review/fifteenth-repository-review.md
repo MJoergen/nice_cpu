@@ -92,6 +92,8 @@ The medians move by less than the ranges of `SPREAD`, so by CONTRIBUTING.md neit
 
 **Fix:** run `make -C hdl timing-spread` on the release's commit, with `FLOW=timing` too, and replace the table and `SPREAD` together. The release notes say that one variant of seven missed by 5 ps, if it still does.
 
+**Resolved.** `make -C hdl timing-spread` ran in both flows on 2026-11-25, on the tree with the fixes of this review, which change only comments in `hdl/src`. The `default` flow gives the figures of aefdaf3 again, to the picosecond, and the `timing` flow gives the core 0.079, 0.165, and 0.551 ns, the inputs 1.463, 2.143, and 2.735 ns, and the outputs 1.290, 2.251, and 2.770 ns, with the budget met in 4 of 7. hdl/README.md has both rows, and `SPREAD` their ranges. The variant of the boards, 4 breakpoints and 4 watchpoints, which `make timing` and `release.py check` run, meets the budget in the `default` flow, with 0.291 ns for the core, and misses it at the outputs in the `timing` flow, by less than one run varies. The table of what a system may add to `dbus_ack_i` and `instret_o` is measured again too, on both boards: the ACK has 3.0 ns or more on the MEGA65, where it had 1.7. The FPU is unchanged: 0.424 ns, as hdl/README.md says. The notes of `V3.0` say what missed (§1.2).
+
 ### 1.6 #208 is open, with no milestone
 
 DEVICES.md §8, **Font**: "Its ROM does not have the blocks and arrows of §1.8 at `0x80`–`0x99` yet, so `0xFFFE3000` reads 0 there (MJoergen/NiceMonMEGA65#171)." The board's issue was closed on 2026-11-23, and its `V2.6`, tagged on 2026-11-24, has the glyphs. #208 says so and gives the new sentence. It was filed after `V2.6` and has no milestone, so the milestone `V3.0`, which is empty, does not show it.

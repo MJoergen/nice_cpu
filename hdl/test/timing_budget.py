@@ -55,14 +55,15 @@ BUDGET: dict[tuple[str, str], tuple[float, float, float, float]] = {
 
 # (board, flow): the range, most less least, of the slack of the core, the
 # inputs, and the outputs over the seven variants of make timing-spread, in
-# ns. The MEGA65's from 565b976 (#151): in the default flow the core has
-# 0.111 to 0.708, the inputs 1.869 to 2.559, and the outputs 1.554 to 2.963;
-# in the timing flow -0.075 to 0.342, 1.052 to 2.176, and 1.246 to 2.495.
-# So the budget of the outputs lies inside the range of both flows. The FPU
-# has no such variants, and no range.
+# ns. The MEGA65's from V3.0, on 2026-11-25: in the default flow the core has
+# -0.005 to 0.434, the inputs 1.741 to 2.996, and the outputs 0.709 to 2.597;
+# in the timing flow 0.079 to 0.551, 1.463 to 2.735, and 1.290 to 2.770.
+# So the budget of the outputs lies inside the range of both flows, and the
+# core's inside that of the default flow. The FPU has no such variants, and
+# no range.
 SPREAD: dict[tuple[str, str], tuple[float, float, float]] = {
-    ("mega65", "default"): (0.60, 0.69, 1.41),
-    ("mega65", "timing"): (0.42, 1.12, 1.25),
+    ("mega65", "default"): (0.44, 1.26, 1.89),
+    ("mega65", "timing"): (0.47, 1.27, 1.48),
 }
 
 SLACK = re.compile(r"^Slack \((?:MET|VIOLATED)\)\s*:\s*(-?\d+\.\d+)ns", re.M)
@@ -175,7 +176,7 @@ def self_test() -> None:
         fake(d, "0.314", "2.254", "1.000")
         assert judge(d, "mega65", 10.0)["within_spread"] is True
         assert "less than one run varies" in describe(judge(d, "mega65", 10.0))
-        fake(d, "0.314", "2.254", "0.700")
+        fake(d, "0.314", "2.254", "0.300")
         assert judge(d, "mega65", 10.0)["within_spread"] is False
         assert describe(judge(d, "mega65", 10.0)).endswith("MISSED")
         assert "within_spread" not in judge(d, "mega65", 10.0, "other")

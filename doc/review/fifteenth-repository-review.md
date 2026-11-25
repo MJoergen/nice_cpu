@@ -184,6 +184,8 @@ The commits 946ea08 to a9df48d changed the figures by hand, place by place. Thes
 
 **Fix:** the figures of the third column. For the speed flags, give the commands or a target, and drop the commit.
 
+**Resolved.** Each place has the figure of the third column. For the speed flags, `words.py` takes nicewasm's options with `--options`, `make -C bench words` prints the two sizes, 7589 and 5445 words, and bench/README.md gives the command for the cycles, 2047068 and 1833670 in the six phases, so translator/README.md names no commit. The sample of `make hazards` is today's, and names no commit either. MICROARCH.md §3 says one instruction in 1.5 to 1.7 cycles. The steps of the math functions stay those of 2026-11-16, and the text now says that a call took two steps then, so that each figure is 1 to 4 steps high: #205 measures the table again. Found on the way, and corrected too: decisions.md gave `lib.nasm` 131 words and `float_fpu.nasm` 483, which are 107 and 400.
+
 ### 2.6 bench/README.md: `JMPR`, and what DECODE resolves
 
 "A conditional jump back that is mostly taken, such as a loop's back edge, is `JMPR label`, which assembles as `ADD PC, PC, label-next` (ISA.md §10.1)". It assembles to the one-word instruction of ISA.md §5.3.

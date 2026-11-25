@@ -103,7 +103,7 @@ What you get:
 | `--ram ADDR` | For code that runs from a ROM: put the words that the module writes in RAM from ADDR, a NICE address in decimal or with `0x` (see [Code in a ROM](#code-in-a-rom)). Not with `--library` or `--memory-pages`. |
 | `--library NAME` | Translate a library module instead (see [Library modules](#library-modules)). |
 | `--no-mpu` | For a system without the math unit of DEVICES.md §2: `i32.mul`, and `div` and `rem` of both widths, then call the runtime library instead of using the math unit, and the program must be joined with `runtime/muldiv_soft.nasm`, not `muldiv_mpu.nasm`. |
-| `--inline-fpu` | For speed on a system with the FPU of DEVICES.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 2.5% more words, and runs 53% fewer instructions, and 42% fewer cycles on the pipelined core (bench README, The float benchmark). |
+| `--inline-fpu` | For speed on a system with the FPU of DEVICES.md §11: write the FPU's accesses inline for the float operations, as `runtime/float_fpu.nasm` makes them, instead of calling it (WASM.md, Runtime routines). The conversions of an `i64` to `f32` still call it, and the program must be joined with it, which also names the FPU's words. On `bench/float.c`, the program takes 5.0% more words, and runs 50% fewer instructions, and 41% fewer cycles on the pipelined core (bench README, The float benchmark). |
 
 Errors are printed as `file:0xOFFSET: error: message`, where OFFSET is the
 byte offset in the module, or as `file: error: message` when there is no
@@ -166,10 +166,12 @@ the Python script.
 
 A program that runs on a system with the byte windows, such as the
 emulator, is smaller and faster with `--trust-alignment --byte-windows`.
-On `bench/bench.c` the translated code then takes 23% fewer words, and
-the phases 13% fewer cycles on the pipelined core, by `pipecycles.py` at
-889c202. With `--no-bounds-checks` as well, which gives up the traps of
-an access out of bounds, it takes 48% fewer words and 22% fewer cycles.
+On `bench/bench.c` the translated code then takes 21% fewer words, and
+the phases 13% fewer cycles on the pipelined core, by `pipecycles.py`.
+With `--no-bounds-checks` as well, which gives up the traps of an access
+out of bounds, it takes 43% fewer words and 22% fewer cycles
+([bench/README.md](../bench/README.md#the-cycle-estimate) has the
+commands).
 A C program that prints no floats saves another 2578 words with
 `iprintf` in place of `printf` (runtime README). Code where every word
 or cycle counts is best written in assembly by hand: `bench/hand.nasm`
@@ -242,7 +244,7 @@ ReleaseSafe and Debug work too. They need `--stack 16384`, or at least
 more than 4096, if the program can panic: Zig's panic handler puts a
 4 KB buffer on the stack, and with too small a stack it traps with code
 2, out of bounds, before it reaches its own trap. `test/safe.zig` is
-about 4900 words built with ReleaseSafe, and about 11900 built with
+about 4900 words built with ReleaseSafe, and about 9000 built with
 Debug.
 
 `-fstrip` drops the DWARF sections, which make up almost all of a
@@ -336,7 +338,7 @@ the steps that got the code here.
 - **Traps:** `unreachable` traps with code 1 through
   `___wasm_trap_vector`, as WASM.md says. Each trap sets R2 and jumps to a
   helper for its code, such as `W.trap1`, which sets R1 and jumps through
-  the vector. So a trap takes four words, not six.
+  the vector. So a trap takes three words, not six.
 - **Integer operations,** for `i32` and `i64`: `add`, `sub`,
   `mul`, `div_s`, `div_u`, `rem_s`, `rem_u`, `and`, `or`, `xor`, `clz`,
   `ctz`, `popcnt`, and the `sign-ext` instructions `extend8_s`,
@@ -568,7 +570,7 @@ byte with `test/wasm.py`. The others are compiled from `test/*.c`,
 `test/*.zig`, and `test/*.rs`. Their `.wasm` files are checked in, so
 `make test` needs no compiler. `make wasm` needs clang with the wasm32
 target, `wasm-ld`, Zig 0.17, and rustc with the `wasm32-unknown-unknown`
-target. The Rust modules were built with rustc 1.99.0. `test/errors.py`
+target. The Rust modules were built with rustc 1.99.1. `test/errors.py`
 checks every error message. `test/build.py` runs `nicebuild.py`: the
 mistakes in its options, and then a program in each language whose
 compiler is installed. `abort.c` of the C library's tests is built with

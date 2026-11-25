@@ -541,7 +541,9 @@ averaged over 32 arguments in the range each function is most used in,
 such as −10 to 10 for `sin`, and with the few steps of the loop around
 the call, which reads each argument from a `volatile` array of the
 function's own type and stores the result. They were measured on
-2026-11-16, with `nice_instructions` before and after the loop. A float
+2026-11-16, with `nice_instructions` before and after the loop, when a
+call of a label took two steps: it now takes one, so a function takes 1
+to 4 steps fewer than its figure here, by the calls in it. A float
 function passes one word for each operand, so it takes fewer steps than
 the double one, but for `sinf`, `cosf`, and `tanf`, which call the
 double function. `fmin` and `fmax` look at the signs first: for two

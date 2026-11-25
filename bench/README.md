@@ -136,7 +136,7 @@ The ratio of the instruction counts, translated to hand-written:
 | `bst` | 2.6 | Each node's fields take a compare and a skipped jump before their reads, which the hand-written code does without. |
 | `heapsort` | 1.7 | The array elements take a compare and a skipped jump before their reads and writes, and the signed comparisons take two instructions either way. |
 | `vm` | 7.5 | The `br_table` checks its index, each stack cell is a checked word access, and the bytecode fetch is a byte load of seven instructions, where the hand-written interpreter has one word per opcode and the operands in registers. |
-| `strings` | 5.0 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
+| `strings` | 4.9 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
 | total | 3.4 | |
 
 What remains is in issue [#73](https://github.com/MJoergen/nice_cpu/issues/73).
@@ -243,16 +243,16 @@ counts as if it ran, because DECODE sees its operands before the condition
 is known. For each program the output gives the number of instructions,
 the distributions of the instruction length in words and of the
 micro-operations, and then one line per hazard with its count and its
-share of all instructions. This is the output for `hand.nasm` at commit 98d2bed:
+share of all instructions. This is the output for `hand.nasm`:
 
-    hand: 493964 instructions, 91075 skipped (18.4%)
-      words        1: 35.6%  2: 63.1%  3: 1.3%  4: 0.0%   mean 1.66
-      micro-ops    1: 85.7%  2: 14.1%  3: 0.2%   mean 1.14
-      conditional                                                  137036  27.7%
+    hand: 491363 instructions, 90569 skipped (18.4%)
+      words        1: 50.7%  2: 47.9%  3: 1.3%  4: 0.0%   mean 1.51
+      micro-ops    1: 85.7%  2: 14.1%  3: 0.2%   mean 1.15
+      conditional                                                   136011  27.7%
       ...
-      reads a register the previous instruction writes             149002  30.2%
+      reads a register the previous instruction writes              150028  30.5%
       ...
-      registers read from the previous instruction: R2 8.7%, R1 7.0%, ...
+      registers read from the previous instruction: R2 8.8%, R1 7.1%, ...
 
 The last lines count what costs a cycle on the core which forms every operand value, address, and shift count in PREPARE: the shifts by the kind of their count (a
 constant, R0 and R15 included, a register, memory, or an adder, `c[R]`
@@ -346,6 +346,15 @@ as both programs do, gets a row per phase:
       rng64         51744     82002  1.585   mpu 0.35, bus 0.15, early 0.06, fetch 0.02
       ...
       total       1650702   2340857  1.418
+
+`NICEWASM` gives nicewasm other options, and `BUILD` another directory,
+so that the files of `make test` stay as they are:
+
+    make cycles BUILD=build/fast NICEWASM="python3 ../translator/nicewasm.py --trust-alignment --byte-windows"
+
+The six phases of `bench.c` then take 2047068 cycles, 13% fewer, and
+1833670, 22% fewer, with `--no-bounds-checks` too, which
+[translator/README.md](../translator/README.md) quotes.
 
 The bubbles are the core's. A jump that WRITE resolves leaves WRITE in
 cycle c − 2 and flushes in the same cycle, and the redirect reaches
@@ -495,7 +504,11 @@ are worked out by hand in the script, and the runs of both kinds of
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig`. `make words` prints it for `bench.wasm`,
 `translator/test/safe.wasm`, and `coremark/coremark.wasm`: 9625, 4909,
-and 24591 words. 3052 of the benchmark's words are the
+and 24591 words. `words.py --options` gives nicewasm options of its
+own, and `make words` prints the benchmark with
+`--trust-alignment --byte-windows` too, 7589 words, 21% fewer, and with
+`--no-bounds-checks` as well, 5445, 43% fewer. 2578 of the benchmark's
+words are the
 float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
 clang, a module of the math functions of the C library that are C, in

@@ -73,7 +73,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
 | `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
 | `make timing-spread` | `make timing` with seven counts of breakpoints and watchpoints at once, and the least, median, and most of each slack ([Timing](#timing)). | 11 minutes on 20 CPUs, 40 with `FLOW=timing` |
-| `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 13 on each core in CI; several times longer in GHDL |
+| `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 15 and 24 on the two cores in CI; several times longer in GHDL |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |
 | `make random-sweep` | Seeds 1 to `RANDOM_LAST` (1000) of `make random` on each core of `CORES`. | an hour or more |
 | `make typecheck` | mypy on the Python scripts. | seconds |
@@ -397,14 +397,14 @@ decides on a data read with WRITE's decisions of the same cycle, a flush
 reaches every stage at once. Its stores go out from a register in DBUS,
 a cycle later. In the best case one micro-operation retires each cycle.
 `cputest` takes about 1.2 cycles per instruction on memory that never
-stalls, and `hazard.nasm`, which is all hazards, 1.9. The benchmark of
+stalls, and `hazard.nasm`, which is all hazards, 2.1. The benchmark of
 [bench/](../bench/README.md) takes about 1.4 cycles per instruction
 through nicewasm and 2.5 by hand; bench/README.md has the figures of
 both cores, by phase. In `hand.nasm`, `vm` (5.4
 cycles per instruction) ends each handler of three or four instructions
 with a jump through a table, whose address PREPARE must wait for, since
 the instruction before loads its index, and which flushes the pipeline;
-`strings` (2.4) and `bst` (2.0) read the math unit right after writing
+`strings` (2.3) and `bst` (2.0) read the math unit right after writing
 its operands.  `make -C bench compare` puts the estimate of
 `bench/pipecycles.py` beside these cycles, phase by phase.
 
@@ -1232,13 +1232,14 @@ shares. With `--generator`, it measures another version of
 `make programs` runs the test programs of the runtime and of the
 translator, and 10 random modules of `translator/test/fuzz.py` in each of
 six of its modes, `--inline-fpu` among them (`FUZZ_PROGRAMS`), on the core (MICROARCH.md §9, step 7). It is not part of
-`make test`, because it takes minutes: it makes 911 programs and runs
-643 of them, the others being the same as one of those, with some 9
+`make test`, because it takes minutes: it makes 920 programs and runs
+649 of them, the others being the same as one of those, with some 8.4
 million steps on the emulator. In nvc, `SIM=nvc`, it took 7 minutes on
 the pipelined core on 20 CPUs on 2026-11-14 (#169), bound by
 `libc_mchess`, and GHDL, at some 3300 steps a second, takes several
-times as long. CI runs it in nvc on both cores, a job for each, of 13
-minutes on 2026-11-14. `SHARD=I/N` runs the Ith of N shares of the
+times as long. CI runs it in nvc on both cores, a job for each, of 15
+minutes on the pipelined core and 24 on the multi-cycle one on
+2026-11-23. `SHARD=I/N` runs the Ith of N shares of the
 programs, of nearly equal steps, longest first. That run is the release's: the
 top-level `make slow` leaves `make programs` out ([RELEASE.md](../release/RELEASE.md)).
 `make programs` does not run `runtime/libc/test/fuzz_printf.py`,

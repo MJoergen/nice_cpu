@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """The size in words of wasm modules translated by nicewasm.
 
-    ./words.py FILE.wasm...    translate and count each module
-    ./words.py --test          check the count on a snippet
+    ./words.py [--options OPTIONS] FILE.wasm...   translate and count each module
+    ./words.py --test                             check the count on a snippet
 
 Each module is translated with ../translator/nicewasm.py, and assembled
-on its own. The labels it uses but does not define, such as the runtime's
+on its own. OPTIONS are options for nicewasm, in one argument, such as
+"--trust-alignment --byte-windows". The labels it uses but does not define, such as the runtime's
 routines, are defined as 0 with .EQU first. A constant takes a whole word
 whatever its value (ISA.md §3),
 so that changes no size. The count is the words the assembler emits for
 the module, its instructions and data. The words that .RES reserves, such
 as the linear memory, are not counted. One line per module: its name and
-its words.
+its words, and then OPTIONS, if given.
 """
 
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -44,10 +46,10 @@ def words(lines: List[str], name: str) -> int:
         defined += missing
 
 
-def translate(wasm: str, tmp: str) -> List[str]:
+def translate(wasm: str, tmp: str, options: List[str]) -> List[str]:
     out = os.path.join(tmp, "module.nasm")
     subprocess.run([sys.executable, os.path.join(HERE, "..", "translator", "nicewasm.py"),
-                    "-o", out, wasm], check=True)
+                    *options, "-o", out, wasm], check=True)
     with open(out) as f:
         return f.readlines()
 
@@ -74,6 +76,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("files", nargs="*", metavar="FILE.wasm")
     ap.add_argument("--test", action="store_true")
+    ap.add_argument("--options", default="", help="options for nicewasm, in one argument")
     a = ap.parse_args()
     if a.test:
         test()
@@ -83,7 +86,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         for wasm in a.files:
             name = os.path.splitext(os.path.basename(wasm))[0]
-            print(f"{name} {words(translate(wasm, tmp), wasm)}")
+            n = words(translate(wasm, tmp, shlex.split(a.options)), wasm)
+            print(f"{name} {n} {a.options}".rstrip())
 
 
 if __name__ == "__main__":

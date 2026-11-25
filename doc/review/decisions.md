@@ -289,11 +289,11 @@ proposed again. The open items are the
   so that a program is joined only with the functions it uses. On the
   wasm path, `wasm-ld` already takes only the functions of `libc.a`
   that a program uses. The files joined whole are the hand-written
-  runtime: `lib.nasm` (131 words), `muldiv_mpu.nasm` (128), and
-  `float_fpu.nasm` (483, only if the program calls it), so a split
+  runtime: `lib.nasm` (107 words), `muldiv_mpu.nasm` (128), and
+  `float_fpu.nasm` (400, only if the program calls it), so a split
   would save a few hundred words at most, about 1% of the board's
   monitor. The full split needed #66. A program that prints no floats
-  saves 3052 words with `iprintf` in place of `printf` (runtime/README.md).
+  saves 2578 words with `iprintf` in place of `printf` (runtime/README.md).
 - **A step counter on the debug link** (#147), so that a host can tell
   that a step ran when both its `k` and its `p` were lost. The cycle
   counter already tells it: it counts every step, and stops at the pause

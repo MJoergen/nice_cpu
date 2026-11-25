@@ -120,10 +120,10 @@ The parts do this:
   port is 64 bits wide and reads an aligned pair of words. Its address a names words 2a and
   2a + 1, and it returns word 2a in bits 31..0 and word 2a + 1 in bits
   63..32, low word first as in ABI.md. The multi-cycle core has the same
-  port. An instruction is about 1.86 words on average
-  in translated code and 1.66 in hand-written code (§5.6), so a port that
-  delivers one word per cycle would hold the core to about one instruction
-  per two cycles, whatever the rest of the pipeline did. FETCH keeps the
+  port. An instruction is about 1.68 words on average
+  in translated code and 1.51 in hand-written code (§5.6), so a port that
+  delivers one word per cycle would hold the core to one instruction in
+  1.5 to 1.7 cycles, whatever the rest of the pipeline did. FETCH keeps the
   words in a buffer, and presents up to four of them to DECODE: the
   instruction word and up to three constant words.
 - **DECODE** takes the instruction only when all its words are present.
@@ -345,13 +345,14 @@ Rules 1 and 2 cost little. A read after a skipped jump does not wait, since
 PREPARE issues it in the cycle the jump retires. The testbench counts the
 cycles in which a read waits only for rule 1 or 2
 ([hdl/README.md](../hdl/README.md), The pipelined core). On the benchmark
-(`make core` in `bench/`, at ffd0a16), the reads that went on to WRITE waited 146
-cycles in the translated program, 0.006% of its cycles, all for their
-condition. In the hand-written program they waited 269 cycles for their
-condition and 2002 for an older micro-operation, 0.18% of its cycles. Its
+(`make core` in `bench/`), the reads that went on to WRITE waited 80
+cycles in the translated program, 0.003% of its cycles, all for their
+condition. In the hand-written program they waited 269 cycles, 0.02% of
+its cycles, for their condition too, and none for an older
+micro-operation. Its
 other 52002 waits, 4.1%, were behind a jump that was taken, so the read was
 on the wrong path and was dropped. So a speculative read could save at most
-0.18%. It would need a change to ISA §8.2, a compare against the I/O range
+0.02%. It would need a change to ISA §8.2, a compare against the I/O range
 in PREPARE, and a way to cancel a read on the bus at a flush. Data reads
 stay exact, and speculative reads will not be done.
 

@@ -196,8 +196,8 @@ If the compare fails, a stub after the epilogue gets the base back with
 words: the start of the access code and the offset. The helper adds the
 offset, traps if the access is out of bounds, with R2 the first word,
 else does the access as `W.load4` does, and returns past the two words.
-Then the stub jumps back. Such a stub takes some 10 words, and with the
-check in each stub it took some 20. If the memory can grow, t is
+Then the stub jumps back. Such a stub takes some 6 words, and with the
+check in each stub it would take about twice as many. If the memory can grow, t is
 compared with a word that `memory.grow` keeps up to date, `W.wlimit4` or
 `W.wlimit8`. An offset is then added to t first, and the code jumps to
 the stub if the sum passes 2^32.

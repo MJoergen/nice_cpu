@@ -194,6 +194,8 @@ Of `make hazards`: "A jump that DECODE resolves is `MOVE R15, c` or `ADD R15, R1
 
 **Fix:** "the one-word `JMPR` of ISA.md §5.3", and the one-word forms in the rule.
 
+**Resolved.** bench/README.md calls `JMPR label` the one-word jump of ISA.md §5.3, and its rule of the jumps that DECODE resolves names the one-word forms, the predicted `JMPR` among them, which counts from a trace too.
+
 ### 2.7 ABI.md: "E = 0", and `MOVE PC, _main`
 
 Programs under a monitor: "it pushes a return address and jumps to `0x8000`, with E = 0 and these registers". There is no E. The same file names F1, F0, and U at its line 42.

@@ -117,8 +117,8 @@ same work:
   change. The interpreter dispatches through a jump table, as the
   translated `switch` does, not through addresses in the program. A
   conditional jump back that is mostly taken, such as a loop's back
-  edge, is `JMPR label`, which assembles as `ADD PC, PC, label-next`
-  ([ISA.md](../doc/ISA.md) §10.1), and which DECODE predicts taken
+  edge, is `JMPR label`, the one-word jump of
+  [ISA.md](../doc/ISA.md) §5.3 that DECODE predicts taken
   ([MICROARCH.md](../doc/MICROARCH.md) §5.4).
 - The data layout is the natural one for a word-addressed machine. The
   byte buffer stays packed, four bytes to a word, as in linear memory.
@@ -262,11 +262,14 @@ or 011 and the store addresses in mode 011, 101, or 111 whose register
 the previous instruction writes, the same for stores through `@R` or
 `@R++`, the taken jumps that WRITE resolves, by their target (a
 constant, a word in memory, or computed), and the register destinations
-in mode 001 or 010. A jump that DECODE resolves is `MOVE R15, c` or
-`ADD R15, R15, c` with the condition "always", or the `ADD` with
-another condition and `c` negative, which DECODE predicts taken, as in
-the core (MICROARCH.md §5.4). A trace shows no constant words, so this
-last one counts only when FILE is a `.bin`. A `MOVE`
+in mode 001 or 010. A jump that DECODE resolves is a one-word `JMP`,
+`JMPR`, or `CALL`, `MOVE R15, c`, or `ADD R15, R15, c`, with the
+condition "always", or one that DECODE predicts taken, as in the core
+(MICROARCH.md §5.4): a one-word `JMPR` with another condition that goes
+back, or the `ADD` with another condition and `c` negative. A trace
+shows no constant words, so the predicted `ADD` counts only when FILE
+is a `.bin`. The `JMPR` has its distance in its own word, and counts
+from a trace too. A `MOVE`
 to R15 of a register or a sum is resolved in WRITE, in one cycle, and
 any other operation on R15 computes its target. In both programs, no
 shift's count register and no source in mode 001 or 011 came from the

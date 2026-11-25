@@ -38,6 +38,8 @@ No finding is in the behavior of a tool or a core. Two are at the edge: `nicedis
 
 **Fix:** rebase `dev-V3.0` onto `origin/main` before the fixes of this review, and push it.
 
+**Resolved.** `dev-V3.0` was rebased onto `origin/main`, 6b5e2a8, before the review was committed, with no conflict, so the fixes of this review stand on it. The branch is not pushed: the push rewrites `origin/dev-V3.0`, and CI must pass on the new head (RELEASE.md §6). Both are left to the release.
+
 ### 1.2 RELEASE_NOTES.md has no section for `V3.0`
 
 The newest section is `V2.6`. RELEASE.md step 2.8 asks for the section, and for a row `V3.0`, "none yet", in the table of board tags. `release.py notes` drafts it under the heading `V2.7`, the next minor version, so the name is given by hand, and to `release.py tag V3.0` too. The upgrade notes must say at least:
@@ -58,6 +60,8 @@ The newest section is `V2.6`. RELEASE.md step 2.8 asks for the section, and for 
 - Zig stays 0.17.0.
 
 **Fix:** write the section, with the line "The version is 3.0.0." under the emulator's heading, and the row of the table.
+
+**Resolved.** RELEASE_NOTES.md has the section of `V3.0`, with the upgrade notes above, what the board does until it follows, the timing of §1.5, and what the fixes of this review changed for a user: the target that `nicedis` names, `words.py --options`, the test of the README's example, and the warnings of `release.py preflight`. The row of the table came with §1.3. The heading has the date of this review, 2026-11-25, which the tag sets if it comes later. `release.py tag V3.0` is given the name by hand.
 
 ### 1.3 The table of board tags lacks four tags
 

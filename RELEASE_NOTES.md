@@ -42,6 +42,218 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V3.0 (2026-11-25)
+
+NICE has no interrupts (#162): IRQ, NMI, `INT`, `RTI`, and `WAIT` are
+gone, with the timer, the console's receive interrupt, and the hidden
+state but `halted`, and a program polls. A jump or a call to an address
+takes one word (#192): `JMP`, `JMPR`, and `CALL` are the control
+commands 4, 5, and 6, with a distance of 21 bits, and a translated
+program has 17% to 20% fewer words. The debug link is version `0x10`,
+a new major.
+
+**Upgrade notes.**
+
+- **NICE has no interrupts** (#162): no IRQ, no NMI, no `INT`, `RTI`,
+  or `WAIT`, no vector table, and no hidden state but `halted`. ISA.md
+  §7 says why, and what polling costs. A program that used them polls.
+  `RTI`, `INT`, and `WAIT` are errors in niceasm, "NICE has no
+  interrupts", and their words, the control commands 1 to 3, are
+  reserved and halt the processor.
+- **SR bits 31, 30, and 23..0 are F1, F0, and U**, storage for
+  software, where they were I, E, and VBASE. The conditions are `?F1`
+  and `?F0`. niceasm still takes `?I` for `?F1`, and `?E` and `?M` for
+  `?F0`, and nicedis prints the new names. The hardware no longer
+  writes bit 31.
+- **`JMP`, `JMPR`, and `CALL` with an address are one word** (#192),
+  with a signed distance of 21 bits from the next instruction, 2²⁰
+  words either way. A target out of reach is an error in niceasm, and
+  the source then writes the long form, which reaches any address:
+  `MOVE PC, label`, after `ADD @--SP, 2, PC` for a call. Every label
+  after a jump or a call moves down, so a program that counts on the
+  size of a jump must change: a table of `JMP label` entries has one
+  word an entry, where it had two, and code that reads or patches the
+  constant word of a jump writes `MOVE PC, label`. `JMPR label` is no
+  longer `ADD PC, PC, offset`.
+- **`CALL` pushes through R13**, which the hardware gave no meaning
+  before. A call of a label is one step, where it was two, so the step
+  count of a program falls by one for each such call.
+- **Old and new binaries.** A `.bin` file of `V2.6` without `RTI`,
+  `INT`, or `WAIT` runs unchanged, as the long forms are ordinary
+  instructions. One with them halts there, with "reserved control
+  instruction". A `.bin` file of `V3.0` halts on an emulator or a core
+  of `V2.6` at the first one-word jump or call that it runs.
+- **NiceMonMEGA65** follows in MJoergen/NiceMonMEGA65#169 and
+  MJoergen/NiceMonMEGA65#172. Its releases up to `V2.6` have an older
+  core, where a program of `V3.0` halts so, and serve the debug link
+  in version 8 or older, on which the tools of `V3.0` stop (DEVICES.md
+  §8). The tools of `V2.6` work with its `V2.6`.
+- **The devices.** The timer at `0xFFFFFF10`–`0xFFFFFF1F` and the
+  console's receive interrupt at `0xFFFFFF02` are gone, and their
+  words are reserved for I/O: ordinary memory in the emulator. The
+  interrupt counter is gone, and `0xFFFFFF52` and `0xFFFFFF53` read 0.
+  DEVICES.md keeps §1.9 and §4 as short sections, so that the other
+  sections keep their numbers.
+- **niceemu** has no `--irq`, `--nmi`, or `--no-timer-irq`. Its trace
+  has no interrupt entries, and its report no pending requests. A run
+  ends with `HALT`, a reserved control word, or the step limit, and a
+  skip of `TIME_SKIP` has no early end.
+- **The debug link is version `0x10`**, major 1 (DEBUG.md §9). The
+  registers `0xFFFFFFD0`, `0xFFFFFFD1`, and `0xFFFFFFD7` read 0 and
+  take no write, bits 6 to 10 of the control register read 0, and the
+  halt reasons 3 and 4 do not occur. A host of version 8, such as
+  nicedbg of `V2.6` or a board's tools, stops on it, and nicedbg of
+  `V3.0` stops on a system of major 0. nicedbg has no `nmi`.
+- **Both cores lose ports**: the NMI and IRQ requests, `waiting_o`,
+  `wstep_o`, and the hidden state, `in_service_o`, `after_rti_o`,
+  `saved_pc_o`, and `saved_sr_o`. `timer.vhd`, `console_irq.vhd`, and
+  `irq_merge.vhd` are gone, and `debug_link.vhd` loses its ports for
+  the wait, the hidden state, the pending requests, and the NMI
+  request. A system takes them out where it instantiates the core and
+  the link.
+- **Timing**, out of context on the MEGA65 on 2026-11-25. With 4
+  breakpoints and 4 watchpoints, as the boards have, the pipelined
+  core meets its budget in the default flow: the clock has 0.291 ns
+  left, the inputs 2.374 ns, and the outputs 2.240 ns. Over the seven
+  counts of breakpoints and watchpoints of `make timing-spread`, the
+  budget is met in four, in either flow, and one, 2 breakpoints and 4
+  watchpoints, misses the clock of 10 ns by 5 ps in the default flow.
+  That flow's medians, 0.255, 2.379, and 2.246 ns, differ from those
+  of `V2.1` by less than one run varies. The FPU is unchanged: it
+  misses its budget out of context as in `V2.4`, with +0.424 ns where
+  the budget is 1.0 ns, and still meets 100 MHz.
+- **The demo's self-test has no timer test**, and its image changes
+  with the one-word calls, so a board that keeps the demo in its ROM
+  builds the ROM again.
+- Zig stays 0.17.0.
+
+**Specification and documents**
+
+- ISA.md §7 is "No interrupts": why NICE has none, and what polling
+  costs. §1.3 names the SR bits F1, F0, and U, and §1.4 leaves
+  `halted` as the only hidden state. §5.3 has the control class with
+  `HALT`, `JMP`, `JMPR`, and `CALL`, and the reserved commands 1 to 3
+  and 7 to 31. §1.2 gives R13 its one meaning in the hardware. §9 and
+  §10.1 have the one-word forms beside the long ones, and Appendix B
+  the departures from the sources (#162, #192).
+- DEVICES.md has no timer and no receive interrupt. §3 has no
+  interrupt counter, and its jump and store counters count the
+  one-word forms. §8 says what a board of an older release does with
+  a program and a debugger of `V3.0`, and that NiceMonMEGA65 has the
+  blocks and arrows of the character ROM from its `V2.6` on (#208).
+- DEBUG.md describes version `0x10`, and §9 says what a host does on
+  another major.
+- MICROARCH.md is without the interrupts, and has the one-word forms
+  in DECODE, which redirects FETCH from the instruction word, never
+  predicts a `JMP`, and predicts a backward `JMPR` with a condition
+  as taken.
+- HISTORY.md says how the interrupts went and how the jump and the
+  call of one word came, with the figures of both. `decisions.md` has
+  the ideas that the two dropped, and the proof of the whole core for
+  every cycle (#59).
+- README.md's worked example is `hello.nasm` as the tools print it
+  now, and `doc/check_readme.py` compares its listing and its outputs
+  with them in `make -C doc/intro test`.
+- The slides have `poll.nasm` in place of `irq.nasm`, a slide "No
+  interrupts", and the control class with `JMP`, `JMPR`, and `CALL`.
+  `hello.nasm` calls its `PUTS` with `CALL`, and returns with `RET`.
+- The fifteenth review, `doc/review/fifteenth-repository-review.md`,
+  read the documents of this release. Its findings are fixed.
+
+**Assembler (`niceasm`, `nicedis`)**
+
+- `JMP`, `JMPR`, and `CALL` with an address assemble to one word, and
+  a target out of reach is an error that gives the distance and the
+  reach. `JMP` and `CALL` with a register or a memory operand are the
+  instructions they were (#192).
+- `RTI`, `INT`, and `WAIT` are errors, and cannot be labels or `.EQU`
+  names. `?F0` and `?F1` are conditions, with `?E`, `?M`, and `?I` as
+  their old names (#162).
+- nicedis decodes the three one-word forms, prints `?F0` and `?F1`,
+  and shows the words of the old `RTI`, `INT`, and `WAIT` as `.DAT`,
+  "reserved control word". It names the target of a one-word jump or
+  call by its label wherever the label lies, also below address 16,
+  where a constant stays a number.
+
+**Emulator (`niceemu`)**
+
+- The interrupts, the timer, and the console's receive interrupt are
+  gone, with their options, their trace lines, and the halts for
+  `INT` inside an interrupt routine and `RTI` outside one (#162).
+- It runs the one-word `JMP`, `JMPR`, and `CALL`, with the probes
+  `short` and `shortfar`, the second at both ends of the reach (#192).
+- The usage text of `--symbols` and `--stack` names the step limit,
+  at which both act too.
+- The version is 3.0.0.
+
+**Debugger (`nicedbg`)**
+
+- It speaks major 1 of the link, and stops on another major with a
+  message that gives the version it found. `nmi` is gone, and `status`
+  shows no wait and no hidden state (#162).
+- `d` and the line after a step show the one-word forms, with the
+  label of a target.
+
+**Runtime (`runtime/`)**
+
+- The routines call and jump in one word, so each takes a step fewer
+  for each call in it, and the comments give the new counts. The
+  float library is 400 words, where it was 483.
+- ABI.md gives the call as `CALL label`, with the long call for a
+  label out of reach, and has no rules for interrupt routines.
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- The output's jumps and calls are one word (#192). From a memory of
+  2¹⁹ reserved words on, which is 32 pages, a jump or a call to a
+  label outside the module keeps the long form, as the files joined
+  after the module lie after the memory. A hand-written file joined
+  with `--asm` after such a memory writes the long forms itself.
+
+**Benchmarks**
+
+- Words: `bench.c` goes from 11878 to 9869, Dhrystone from 20886 to
+  16797, CoreMark from 30648 to 25235, and `float.c` from 10550 to
+  8632.
+- Cycles on the pipelined core: `bench.c` goes from 2351494 to
+  2341190, `hand.nasm` from 1252613 to 1247655, Dhrystone from 2278
+  to 2253 a run, and CoreMark from 1078661 to 1068822 an iteration.
+  The speed is the same to within the alignment of the jump targets.
+- `words.py` takes `--options`, and `make words` also prints the
+  benchmark's size with the flags for speed, 7589 and 5445 words.
+
+**Demo (`demo/`)**
+
+- The self-test has no test of the timer's interrupt, and the demo's
+  code has the one-word jumps and calls, so the counts on its screens
+  are lower.
+
+**FPGA cores (`hdl/`)**
+
+- Both cores are without the interrupts (#162) and run the one-word
+  `JMP`, `JMPR`, and `CALL` (#192). The pipelined core has 7090 LUTs
+  and 3212 registers at the median of `make timing-spread`, where it
+  had 7642 and 3225.
+- The performance counters have no interrupt counter. The fetch
+  statistics have 14 causes of a cycle and four of a flush, where they
+  had 15 and five, and the retire log the letters `a` to `n` and `A`
+  to `D`.
+- `make sweep` and `make strides`, the interrupt sweeps, are gone, and
+  `make test` takes 5 minutes in GHDL on 20 CPUs, where it took 13
+  (#196).
+- hdl/README.md has the timing of this release, both flows of
+  `make timing-spread`, and `SPREAD` of `timing_budget.py` their
+  ranges.
+
+**Release**
+
+- `make slow` has no interrupt sweeps. It takes 4 minutes in nvc on
+  20 CPUs, and 57 with `SIM=ghdl`.
+- `release.py preflight` sees a sentence that waits for a closed
+  issue when a short clause stands between the "yet" or the "until"
+  and the issue, and warns of a tag of NiceMonMEGA65 that the table
+  of board tags lacks.
+
 ## V2.6 (2026-11-23)
 
 The character ROM has blocks and arrows at `0x80`–`0x99`, which were

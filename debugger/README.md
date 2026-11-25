@@ -38,7 +38,9 @@ The options:
 One of `--tcp` and `--port` must be given. The files are read before the
 link opens, so a bad file stops the debugger before it touches the
 system. It then reads the link's version, and stops on a major other
-than 1, which it does not know (DEBUG.md §9). With `--tcp`, it waits up
+than 1, which it does not know (DEBUG.md §9). NiceMonMEGA65 serves
+major 1 from its `V3.0` on, and the debugger of `V2.6` works with the
+board before that (DEVICES.md §8). With `--tcp`, it waits up
 to 2 seconds for the `b` notice that niceemu sends to each host that
 connects (DEBUG.md §7.2), and stops without one, as the port is then
 served by another program.

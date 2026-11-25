@@ -298,6 +298,8 @@ The documents say the opposite, or nothing. DEBUG.md's introduction: "Both follo
 
 **Fix:** a point in DEVICES.md §8, as the FPU's and the screen's have: NiceMonMEGA65 runs the programs of `V3.0`, and serves the link in version `0x10`, from its `V3.0` (the two issues), and its releases before that halt on a one-word jump and serve version 8, which the tools of `V2.6` speak. The same in one sentence at DEBUG.md's introduction and in the debugger's README.
 
+**Resolved.** DEVICES.md §8 has a point **Core**: NiceMonMEGA65 has the core of `V3.0` from its `V3.0` on (MJoergen/NiceMonMEGA65#169 and MJoergen/NiceMonMEGA65#172), and before that a program of `V3.0` halts at the first one-word jump or call that it runs. Its point **Debug link** gives the versions, `0x10` from the board's `V3.0` on and 8 before, and which tools work with which, and the point of the reserved words no longer says "version 8". DEBUG.md's introduction and the debugger's README say the same in a sentence each.
+
 ### 4.2 Why the commands 1 to 3 stay reserved
 
 ISA.md §5.3 has `JMP`, `JMPR`, and `CALL` at 4, 5, and 6, and 1 to 3 reserved. A reader who knows that 1 to 3 were `RTI`, `INT`, and `WAIT` asks why the new instructions did not take them. #192 decided it: they stay reserved "so that an old binary with `RTI`, `INT`, or `WAIT` halts", where it would otherwise jump. The message of 398314b says it. No document does, and HISTORY.md gives another reason (§2.8).

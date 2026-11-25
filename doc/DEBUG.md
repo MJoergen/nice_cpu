@@ -7,6 +7,9 @@ the program halts. The link shares one byte stream with the console
 ([emulator/](../emulator/README.md)) serves the link over TCP, and
 [NiceMonMEGA65](https://github.com/MJoergen/NiceMonMEGA65) over its debug
 UART. Both follow this file, so one host tool works with either.
+NiceMonMEGA65 serves the version of this file, `0x10`, from its `V3.0`
+on, and version 8 before that, on which a host tool of this version
+stops (§9, DEVICES.md §8).
 NiceMonMEGA65 also has a debugger on the board, which is a client of the
 link inside the system (§3).
 

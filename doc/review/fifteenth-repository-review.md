@@ -257,6 +257,8 @@ Window, new text: "at `--speed 1000000`, one step per microsecond, a loop of P s
 
 Debug link: a step "runs one step of `--max-steps` and `--trace`, an instruction". After a write of `TIME_SKIP` it runs the rest of the skip and the instruction, as DEBUG.md §6 and the README's own "Skipping time" say.
 
+**Resolved.** The emulator's README compares the cycle counter, as DEVICES.md §1.6 does, and says that a step over the link after a write of `TIME_SKIP` runs the rest of the skip and the instruction after it.
+
 ## 3. What the documents say that is not so, older than `V3.0`
 
 These were found by reading the documents whole. None is of this release.

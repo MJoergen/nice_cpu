@@ -208,8 +208,9 @@ A key still reaches the program at once, a wait on `TIME_LO` may end up to
 1 ms late, and a program that polls less often than once in 1000 steps
 never sleeps. `--speed N` runs N steps a second instead, for a program
 that keeps time by counting steps: at `--speed 1000000`, one step per
-microsecond, a loop of P steps lasts P microseconds, where on a board of
-100 MHz it lasts some P/100. A run that falls more than 100 ms behind its
+microsecond, a loop of P steps lasts P microseconds, and the cycle
+counter counts at 1 MHz, where on a board of 100 MHz it counts at
+100 MHz. A run that falls more than 100 ms behind its
 rate goes on from there, rather than catch up in a burst. A skip of
 `TIME_SKIP` with `--step-time` takes no host time, as niceemu counts its
 wait steps at once, but `--speed` runs them at its rate as any steps, a
@@ -589,8 +590,9 @@ from the connection meanwhile, so that TCP holds the host back
 A pause takes effect between two steps. A pause while a
 console read waits undoes the step of the read, and pauses before it
 (DEBUG.md §7). The bytes that the step took go back to the input buffer. A step of a paused processor (bit 5, DEBUG.md §6) runs one
-step of `--max-steps` and `--trace`, an instruction, and then pauses
-again. A step at a console read that would wait does not
+step of `--max-steps` and `--trace`, an instruction, or the rest of a
+skip of `TIME_SKIP` and the instruction after it (Skipping time), and
+then pauses again. A step at a console read that would wait does not
 run, and pauses again at once.
 It has four breakpoints (DEBUG.md §6). Before each step, it stops at a
 breakpoint at R15, unless the step is a wait step of a skip or the first

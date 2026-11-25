@@ -49,11 +49,12 @@ const usage =
     \\                       (default 127.0.0.1), and send them to --eth-peer.
     \\      --eth-peer [ADDR:]PORT  The address the frames of --eth-udp go to.
     \\      --symbols FILE   Read labels from FILE, as niceasm --symbols writes it, and
-    \\                       name the location of a halt other than HALT, and of a
-    \\                       wasm trap (translator/WASM.md), after the halt message.
-    \\      --stack          After the halt, print the first value of R13, the
-    \\                       stack pointer, the lowest since, and the words
-    \\                       between them.
+    \\                       name the location of a halt other than HALT, of the
+    \\                       step limit, and of a wasm trap (translator/WASM.md),
+    \\                       after the message of the stop.
+    \\      --stack          After the halt or the step limit, print the first
+    \\                       value of R13, the stack pointer, the lowest since,
+    \\                       and the words between them.
     \\      --no-cycle-counter  Make 0xFFFFFF40, 0xFFFFFF41, and 0xFFFFFF44-
     \\                       0xFFFFFF49 ordinary memory, for comparing traces
     \\                       with an FPGA core.

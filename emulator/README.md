@@ -667,14 +667,7 @@ in `../assembler/test/` (the three 2004 programs and `wrap`) and the
 probes: the programs `test/*.nasm`, each of which exercises one feature
 and has a hand-checked `test/X.expected`. The output and exit status of
 each run must be those of its `.expected` file.
-Finally `test/errors.py` checks the error messages and exit statuses of the
-command line and the loader, and the exit status and some output lines of
-runs that stop in each way: `HALT`, a reserved control word, and the
-step limit, `-n 0` included, and that `--irq`, `--nmi`, and
-`--no-timer-irq` are unknown options. It checks the name
-of each trap code with a symbol file, input files with CR LF lines, the
-screen's mode word with and without `--no-screen-mode`, and the pixels
-with `-2004`. The probes are
+The probes are
 assembled with niceasm, and `make bins` reassembles them after a change.
 Then `test/link.py` runs niceemu with `--link 0` and checks the debug link
 over TCP (Debug link above). It checks the packets of DEBUG.md §8 byte for
@@ -704,9 +697,17 @@ fires only at its end. And it checks that the reserved registers
 control register, read 0 and take no write, and that the range answers
 while the program runs. And it checks the screen's mode word over
 the link, and that `--no-screen-mode` holds after a clear.
-Last, `test/udp.py` checks the frames over the socket of `--eth-udp`
+Then `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).
+Last, `test/errors.py` checks the error messages and exit statuses of the
+command line and the loader, and the exit status and some output lines of
+runs that stop in each way: `HALT`, a reserved control word, and the
+step limit, `-n 0` included, and that `--irq`, `--nmi`, and
+`--no-timer-irq` are unknown options. It checks the name
+of each trap code with a symbol file, input files with CR LF lines, the
+screen's mode word with and without `--no-screen-mode`, and the pixels
+with `-2004`.
 
 `test/fpu_model.py` is a reference model of the floating-point unit of
 DEVICES.md §11. It computes every result exactly, with Python's

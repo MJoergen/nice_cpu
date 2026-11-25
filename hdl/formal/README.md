@@ -29,7 +29,7 @@ The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job
 | [pipe_prepare.sby](pipe_prepare.sby) | The SymbiYosys job for it. |
 | [formal_pipe_dbus.vhd](formal_pipe_dbus.vhd) | DBUS of the pipelined core, whose properties are in `src/pipe_dbus.vhd`. |
 | [pipe_dbus.sby](pipe_dbus.sby) | The SymbiYosys job for it. |
-| [formal_pipe_write.vhd](formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, and its breakpoints, and PREPARE's assumptions about it. |
+| [formal_pipe_write.vhd](formal_pipe_write.vhd) | WRITE of the pipelined core, with the properties of its halt, its pause, its breakpoints and watchpoints, and a register write, and PREPARE's assumptions about it. |
 | [pipe_write.sby](pipe_write.sby) | The SymbiYosys job for it. |
 | [formal_pipeline.vhd](formal_pipeline.vhd) | The pipelined core with `core_check`. |
 | [pipeline.sby](pipeline.sby) | The SymbiYosys job for it. |

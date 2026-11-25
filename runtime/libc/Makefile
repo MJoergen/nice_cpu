@@ -92,8 +92,8 @@ wasm: libc.a
 # exit status are compared with test/X.expected. With KEEP=DIR, an absolute path, each test also leaves
 # its program in DIR/libc_X.bin, and its console input in DIR/libc_X.input,
 # for the tests of the FPGA core in hdl/. If test/X.core.input exists, that is
-# the input it leaves. mchess.core.input has no "perft 3", which takes 11
-# million steps and, in GHDL, hours. The step count and the other registers are left out, so
+# the input it leaves. mchess.core.input has no "perft 3", which takes some
+# 10 million steps and, in GHDL, hours. The step count and the other registers are left out, so
 # that the expected files do not change with the compiler.
 #
 # hdl/ compares the core with the emulator only, so a kept program may

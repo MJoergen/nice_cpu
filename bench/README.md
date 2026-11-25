@@ -519,7 +519,7 @@ double and float, and prints its size, 5723 words, which
 runtime/README.md quotes. The others are routines of the float library. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
-word whatever its value (ISA.md §3), so that changes no size. The count
+word whatever its value (ISA.md §2.3), so that changes no size. The count
 is the words the assembler emits, instructions and data, and not the
 words that `.RES` reserves for the linear memory. `words.py --test`
 checks the count on a snippet whose words are counted by hand in the

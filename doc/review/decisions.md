@@ -323,3 +323,17 @@ proposed again. The open items are the
 - **28 rows with `-2004`** (#203). That screen is the one of 2004, 25
   rows at `0x400`, and three more would reach into the words
   `0xBD0`–`0xCBF`, which are the program's (DEVICES.md §1.1).
+- **A proof of the whole pipelined core for every cycle** (#59), and a
+  check of the order of its data accesses against a model of the
+  program. The stages are proven one by one, each with assumptions
+  about its neighbors that another proof or the core's own assertions
+  check (hdl/README.md, The formal checks), and the whole core for the
+  first 12 cycles after reset. A proof for every cycle needs invariants
+  that tie WRITE's state to every other stage, some fifty to a hundred
+  of them, found one trace at a time as the debug link's were: weeks of
+  work, and the solver may still not finish. `abc pdr` proved 28
+  outputs of the whole core in 10 minutes and timed out. The order of
+  the accesses would be a bounded comparison of the two cores on a free
+  program, which sees two or three instructions in 8 to 12 cycles. Both
+  would mostly check again what the trace diff checks on every run,
+  with random stalls, pauses, and holds.

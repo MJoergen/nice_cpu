@@ -67,7 +67,7 @@
 -- a cycle two cycles late, so the letters of a line lag its cycles by two.
 -- The multi-cycle core reports cause 13, OTHER, in every cycle.
 -- bench/pipecycles.py --retires compares the cycles with its model's, step
--- by step, and --against sums the causes of each phase of the benchmark.
+-- by step, and --causes sums the causes of each phase of the benchmark.
 --
 -- With G_PAUSE = P, p_pause raises pause_i (MICROARCH.md §6.1) in a random
 -- P percent of the cycles, from G_SEED, so that the core pauses and goes

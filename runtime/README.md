@@ -135,7 +135,8 @@ The division routines take the same number for all operands of one sign,
 for example 292 steps for `__udiv` in `muldiv_soft.nasm` and 839 for
 `__udiv64`. `__mul64` in `muldiv_soft.nasm` and the counting routines take
 longer the more bits their operand has. In `muldiv_mpu.nasm`, the one-word
-routines take 4 steps each, `__mul64` 10, and the other `long long` ones 7.
+multiply and divide routines and `_nice_isqrt64` take 4 steps each, the
+bit counts 3, `__mul64` 10, and the divide routines of `long long` 7.
 
 The wasm traps of WASM.md jump through the start-up code's vector to
 `lib.nasm`'s default handler:
@@ -748,12 +749,12 @@ middle of the page, and fewer blocks fit before `malloc` fails. Its
 output is the same. `noheap.c` also runs as `libc/noheap_cut`,
 translated with `--memory-bytes 4108`, which ends the memory after
 `malloc`'s own three words, 4 bytes below `__heap_base`: the heap is
-empty, and `malloc` must return `NULL`. The exception is `mchess.expected`, 600 lines of
+empty, and `malloc` must return `NULL`. The exception is `mchess.expected`, 142 lines of
 board output. It was checked against a native build of `mchess.c` on the
 same input, and the perft counts 20, 400, and 8902 are the known ones for
 the start position. The test runs perft only, so the search of `mchess`,
 which needs the 128 KB stack, is not exercised. The core's runs (`make test KEEP=DIR`, for `hdl/`) leave `mchess.core.input` instead of
-`mchess.input`: the same without `perft 3`, which takes 11 million steps, and in
+`mchess.input`: the same without `perft 3`, which takes some 10 million steps, and in
 GHDL hours.
 
 Then it runs the tests of `nice.zig` and `nice.rs`, `test/nicezig.zig`,

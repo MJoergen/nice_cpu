@@ -817,7 +817,7 @@ system built from them must follow these rules:
   (DEVICES §1). A write sends bits 7..0. A read returns the next received
   byte with bit 8 set, or 0 if none has arrived. This repository has no
   UART; the memory model's console reads a file instead
-  ([hdl/README.md](../hdl/README.md), The memory model).
+  ([hdl/README.md](../hdl/README.md#the-console), The console).
 - **Math unit.** `hdl/src/mpu.vhd` at `0xFFFFFF20`–`0xFFFFFF3F` (DEVICES §2), 32
   aligned words, so the decoder compares address bits 31..5.
   A read of a result holds off its ACK until the result is ready, so the
@@ -1053,8 +1053,8 @@ cycle by the proofs together: a halted WRITE stays halted until reset and
 issues nothing (`hdl/formal/formal_pipe_write.vhd`), PREPARE puts a read
 on the bus only while WRITE runs, and `halted_o` waits until no bus cycle
 is open. The same goes for a paused core, and WRITE reports a step after
-a pause before it pauses again (§6.1). A proof of the whole core for every cycle is still
-open ([#59](https://github.com/MJoergen/nice_cpu/issues/59)).
+a pause before it pauses again (§6.1). There is no proof of the whole core for every cycle:
+it was weighed and dropped ([review/decisions.md](review/decisions.md), #59).
 
 ## 10. Repository and boards
 

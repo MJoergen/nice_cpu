@@ -55,10 +55,11 @@ So the console is 8-bit clean, and a terminal that knows nothing of the
 link shows the program's output almost unchanged.
 
 Console bytes from the host reach the program while it runs or is paused.
-While the processor is held or halted (§6), and after the end of the
-line's input (§7.1), they are dropped; a keyboard's bytes are not
-(DEVICES.md §1, §7). A paused processor keeps them in the input buffer,
-and the program reads them when it goes on.
+While the processor is held or halted (§6), they are dropped, and so are
+a keyboard's bytes. After the end of the line's input (§7.1), the host's
+bytes are dropped, and a keyboard's are not (DEVICES.md §1.5, §8). A
+paused processor keeps them in the input buffer, and the program reads
+them when it goes on.
 
 A console byte that arrives while the program's input buffer is full
 waits, on a transport with flow control (§7.1), until the buffer has room
@@ -590,7 +591,7 @@ notices sent while no host is connected are lost.
 
 On either transport, the host's console bytes that arrive after the end of
 the line's input are dropped, with no `o` notice, while a keyboard's bytes
-go into the buffer (DEVICES.md §1, §7). A start clears the end of the input
+go into the buffer (DEVICES.md §1.5, §8). A start clears the end of the input
 (§6), and over TCP so does a new connection.
 
 ### 7.2 The emulator
@@ -687,9 +688,9 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   cannot wait has to hold a byte for that long. It holds it for longer
   after the tag of a request that waits for its answer, and while the memory
   is cleared.
-- **Flow control.** The board drives `rx_hold_i` high while its transport
+- **Flow control.** The board drives `rx_flow_i` high while its transport
   has flow control, as TCP has, and low for a UART. Then a console byte
-  that finds the input buffer full holds the receiver for up to `G_HOLD`
+  that finds the input buffer full holds the receiver for up to `G_WAIT`
   cycles, 50 ms (§1). The transport must wait that long without losing a
   byte, and hold the host back.
 - **Console input.** The board's input buffer takes a byte from the link

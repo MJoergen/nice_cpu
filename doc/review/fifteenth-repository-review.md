@@ -283,6 +283,8 @@ These were found by reading the documents whole. None is of this release.
 
 **Fix:** each in place, and an entry in decisions.md for the proof of #59.
 
+**Resolved.** Each is corrected in place. DEBUG.md has `rx_flow_i` and `G_WAIT`, and says that a keyboard's bytes are dropped while the processor is held or halted, and kept after the end of the line's input (DEVICES.md §1.5, §8). decisions.md has an entry for the proof of #59, and MICROARCH.md §9 points to it. hdl/README.md names all eleven probes that the cores do not run, with what each checks, has three generics, the four sections in its contents, the clock and the FPU among `tb_core`'s slaves, the watchpoint in WRITE's proof, and both covers. The whole-core `bmc` took 195 seconds alone on 2026-11-25, so both places say 3 minutes, and 5 beside the other jobs of `make formal`. The steps of `perft 3` are "some 10 million" in both places, and `_nice_isqrt64` is among the routines of 4 steps. The emulator's usage text names the step limit for `--symbols` and `--stack`, and its README gives the tests in the Makefile's order. The slides' two dates were changed with §2.2.
+
 ## 4. Gaps
 
 ### 4.1 Nothing says what the board does until its `V3.0`

@@ -35,9 +35,13 @@ and `make timing` found in the release stamp
 - [The memory model](#the-memory-model)
 - [The console](#the-console)
 - [The math unit](#the-math-unit)
+- [The floating-point unit](#the-floating-point-unit)
 - [The performance counters](#the-performance-counters)
 - [The clock of the time of day](#the-clock-of-the-time-of-day)
 - [The fetch statistics](#the-fetch-statistics)
+- [The SD card controller](#the-sd-card-controller)
+- [The network station](#the-network-station)
+- [Ethernet frames](#ethernet-frames)
 - [The trace writer](#the-trace-writer)
 - [What the tests check](#what-the-tests-check)
 - [The formal checks](#the-formal-checks)
@@ -121,7 +125,7 @@ warns about lines over 100 columns.
 ## Integrating the core
 
 Both cores have the same ports, but for the pipelined core's `stats_o`,
-and the same two generics: a system instantiates `pipeline` of
+and the same three generics: a system instantiates `pipeline` of
 `src/pipeline.vhd`, or `multicycle` of `src/multicycle.vhd`, with these.
 
 | Generic | Default | What it is |
@@ -491,9 +495,9 @@ asserts, in simulation, the invariants that its design relies on.
 index of the slave, so the decoder holds no address map. In `tb_core`,
 slave 0 is the memory model, the default slave, then come the math unit,
 the performance counters, the fetch statistics, the SD card
-controller, the network station, the port for Ethernet frames, and the
-clock of the time of day. CYC, WE, ADDR, and the write data go to every slave
-directly.
+controller, the network station, the port for Ethernet frames, the
+clock of the time of day, and the FPU. CYC, WE, ADDR, and the write data
+go to every slave directly.
 
 The slaves answer at their own pace: the math unit holds the ACK of a read
 for up to 65 cycles. So a request to one slave passes only while no other
@@ -1117,9 +1121,13 @@ program.
 
 - The three 2004 examples `count`, `replicate`, and `print`, and `wrap`, from
   `assembler/test/`.
-- The emulator's probes in `emulator/test/`, `cputest` among them, but `scrbound`,
-  `screencolor`, and `screeninvert`, which check the emulator's screen and
-  need `--color` and `--invert-fg`. Their memory dumps
+- The emulator's probes in `emulator/test/`, `cputest` among them, but
+  those that check what only the emulator has: `scrbound`, `screencolor`,
+  `screeninvert`, `chunky`, and `font` its screen and font, with `--color`
+  and `--invert-fg`; `clock`, `clockhost`, `time`, and `skip` the clock of
+  the time of day, the microsecond counter, and `TIME_SKIP`, with
+  `--step-time` or on the host's clock; and `stack` and `trapsym` the
+  options `--stack` and `--symbols`. Their memory dumps
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
@@ -1281,8 +1289,8 @@ program and the two traces, replays the emulator's trace to the first
 line that differs, and prints the data reads of that instruction, with
 the names of the I/O words it knows:
 
-    test/trace_reads.py build/random_65.bin build/run/multicycle/random_65/core.expected \
-      build/run/multicycle/random_65/core.out
+    test/trace_reads.py build/random_65.bin build/run/pipeline/random_65/core.expected \
+      build/run/pipeline/random_65/core.out
 
 **The generics of `tb_core`.** The generic `G_CYCLE_COUNTER` set to false sends the
 two words of the cycle counter to the memory model instead of `perf`, as
@@ -1369,7 +1377,7 @@ formal/UNIT/TASK` runs one task, for example `make formal/pipe_fetch/prove`.
 | `pipe_prepare` | PREPARE: its data reads go out only when the core is certain to run the instruction. | k-induction, Yices | seconds |
 | `pipe_dbus` | DBUS: read data in the order of the ACKs, none lost. | k-induction, Yices | seconds |
 | `pipe_write` | WRITE: a halt stays, a paused WRITE does nothing, a step comes after a pause, the breakpoints and the watchpoints, a register write, and PREPARE's assumptions about WRITE. | k-induction, Yices | seconds |
-| `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 4 minutes |
+| `pipeline` | The ports of the pipelined core and its own assertions, for 12 cycles after reset. | `bmc` of 12 cycles, ABC | 3 minutes, and 5 beside the other jobs |
 | `wb_dmux` | The data bus decoder: the ACKs come back in order, from one slave at a time. | PDR | seconds |
 | `tod` | The clock of the time of day: its bus port, and the microseconds below 1000000. | k-induction of depth 10, Yices | seconds |
 | `sd_regs` | The SD card controller's bus and engine ports, with and without the held ACK. | k-induction of depth 10, Yices | seconds |
@@ -1438,7 +1446,8 @@ states. The core asserts them itself when its generic `G_FORMAL` is true;
 `formal_multicycle` sets it, and the other users leave it false. The
 `cover` task shows that the core can do what the properties talk about:
 a step, a store, a halt, a pause, a step after a pause, a stop at a
-breakpoint, and a step after a register write.
+breakpoint, going on after one, a stop at a watchpoint, and a step after
+a register write.
 
 `formal_tod` checks the clock of the time of day with every input free,
 at a `G_CLK_HZ` of 1 MHz, so that it counts in every cycle. It asserts,
@@ -1583,8 +1592,9 @@ that once WRITE leaves `PAUSED_ST`, it reports a step before it pauses
 again, whether or not `paused_o` had risen: it does not pause while
 `after_go` is 1, and only a report clears it. And it pauses without
 `pause_i` only on the breakpoint flag of the next instruction, in its own
-micro-operation or, while it holds none, in PREPARE's, and then stays
-paused until `pause_i` has been 1. A register write taken in
+micro-operation or, while it holds none, in PREPARE's, or after a hit of
+a watchpoint, and then stays paused until `pause_i` has been 1. The hits
+hold while it is paused, and going on clears them. A register write taken in
 `PAUSED_ST` with `pause_i` at 1 is in the registers the next cycle, with
 ISA.md §4.3 applied, and nothing else changes them while paused.
 
@@ -1635,7 +1645,8 @@ go on fetches from R15 again, so the `cover` task runs for 14 cycles
 and reaches it at step 12. The
 rules of a halted core and the report after a pause hold for every cycle
 through `formal_pipe_write`. The 12 cycles take 3 minutes with Yosys 0.56
-and its ABC, and each further cycle many times more. ABC refuses the
+and its ABC, 5 beside the other jobs of `make formal`, and each further
+cycle many times more. ABC refuses the
 undefined bits that a read out of an index's range gives, which the
 simulation never reaches, so the task makes them free in every cycle, as
 `wb_dmux.sby` does. The simulation tests check the same assertions on

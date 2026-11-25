@@ -8,7 +8,7 @@ Each module is translated with ../translator/nicewasm.py, and assembled
 on its own. OPTIONS are options for nicewasm, in one argument, such as
 "--trust-alignment --byte-windows". The labels it uses but does not define, such as the runtime's
 routines, are defined as 0 with .EQU first. A constant takes a whole word
-whatever its value (ISA.md §3),
+whatever its value (ISA.md §2.3),
 so that changes no size. The count is the words the assembler emits for
 the module, its instructions and data. The words that .RES reserves, such
 as the linear memory, are not counted. One line per module: its name and
@@ -55,7 +55,7 @@ def translate(wasm: str, tmp: str, options: List[str]) -> List[str]:
 
 
 # --test: a snippet whose words are counted by hand. An instruction is one
-# word, and each constant one more (ISA.md §3): MOVE R1, 0x1234 is 2, and
+# word, and each constant one more (ISA.md §2.3): MOVE R1, 0x1234 is 2, and
 # the CALL of the undefined label is 1, the distance in the instruction
 # word (ISA.md §5.3). .RES emits nothing, and .DAT one word. So 4 words.
 TEST = """                MOVE    R1, 0x1234

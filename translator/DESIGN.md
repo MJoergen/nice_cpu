@@ -2,7 +2,8 @@
 
 This file is for whoever changes `nicewasm.py`. It says how a wasm
 function becomes NICE code, how a multiplication by a constant is split,
-how the registers are allocated, and how a function's frame is laid out.
+how the registers are allocated, how a function's frame is laid out, and
+how the output is written.
 [README.md](README.md) says how to use the translator and what it
 supports, and [WASM.md](WASM.md) is the mapping that it implements. The
 tests of these rules are `test/run.py`, `test/fuzz.py`, and
@@ -12,6 +13,7 @@ tests of these rules are `test/run.py`, `test/fuzz.py`, and
 - [Multiplication by a constant](#multiplication-by-a-constant)
 - [Register allocation](#register-allocation)
 - [The frame](#the-frame)
+- [The output](#the-output)
 
 ## How functions are translated
 

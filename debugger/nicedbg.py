@@ -561,8 +561,8 @@ class Debugger(cmd.Cmd):
     def do_load(self, arg: str) -> None:
         """load FILE: loads a .bin file, and leaves the processor held. It
         holds the processor, hides the ROM, clears the memory, disables
-        the breakpoints, and loads the file. 'go' starts
-        it."""
+        the breakpoints and the watchpoints, and loads the file. 'go'
+        starts it."""
         if not arg.strip():
             raise ValueError("give the .bin file")
         n = self.load(self.link, arg.strip())

@@ -109,21 +109,19 @@ This writes `emulator/zig-out/bin/niceemu`.
 string on the console with a subroutine:
 
     SP              .EQU    R13
-    PC              .EQU    R15
     CONSOLE         .EQU    0xFFFFFF00
 
                     MOVE    SP, 0x1000      ; set up the stack
                     MOVE    R1, TEXT        ; the argument: the string's address
-                    ADD     @--SP, 2, PC    ; push the return address ...
-                    MOVE    PC, PUTS        ; ... and jump: a subroutine call
+                    CALL    PUTS            ; call the subroutine
                     MOVE    @CONSOLE, 10    ; a newline
                     HALT
 
     ; PUTS prints the string at R1. The string ends with a 0 word.
     PUTS            MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
-            ?Z      MOVE    PC, @SP++       ; at the end: return
+            ?Z      RET                     ; at the end: return
                     MOVE    @CONSOLE, R2    ; print the character
-                    MOVE    PC, PUTS        ; and loop
+                    JMP     PUTS            ; and loop
 
     TEXT            .ASCII_L 'Hello, NICE!'
 
@@ -133,41 +131,40 @@ the emulator:
     $ assembler/niceasm.py -o hello.bin doc/intro/examples/hello.nasm
     $ emulator/zig-out/bin/niceemu hello.bin
     Hello, NICE!
-    Halted (HALT) after 56 steps, PC=0000000c
-    R0  00000000 R1  0000001f R2  00000000 R3  00000000
+    Halted (HALT) after 55 steps, PC=00000009
+    R0  00000000 R1  0000001b R2  00000000 R3  00000000
     R4  00000000 R5  00000000 R6  00000000 R7  00000000
     R8  00000000 R9  00000000 R10 00000000 R11 00000000
-    R12 00000000 R13 00001000 R14 09000000 R15 0000000c
+    R12 00000000 R13 00001000 R14 09000000 R15 00000009
 
 The first line is the program's output on the console. Then the
 emulator says why the program stopped, after how many steps, and shows
 the registers. The exit status is 0 after `HALT`.
 
 `--trace` shows what each instruction did, and `-n` stops the program
-after a number of steps. These are the first five, up to the first
+after a number of steps. These are the first four, up to the first
 character that `PUTS` reads:
 
-    $ emulator/zig-out/bin/niceemu --trace -n 5 hello.bin
+    $ emulator/zig-out/bin/niceemu --trace -n 4 hello.bin
     00000000 00035800 R13=00001000
-    00000002 00005800 R1=00000012
-    00000004 0077580f R13=00000fff [00000fff]=00000008
-    00000006 0003d800 R15=0000000c
-    0000000c 0200b080 R1=00000013 R2=00000048
-    Stopped at the step limit after 5 steps, PC=0000000d
+    00000002 00005800 R1=0000000e
+    00000004 0cc00004 R13=00000fff R15=00000009 [00000fff]=00000005
+    00000009 0200b080 R1=0000000f R2=00000048
+    Stopped at the step limit after 4 steps, PC=0000000a
     ...
 
 Each line has the address and the word of an instruction, and then what
-it changed: registers, and memory in brackets. The third line pushes the
-return address, 8, onto the stack, and the fourth jumps to `PUTS`. The
-exit status is 3 at the step limit.
+it changed: registers, and memory in brackets. The third line is the
+call: it pushes the return address, 5, onto the stack, and jumps to
+`PUTS` at 9. The exit status is 3 at the step limit.
 
 `--dump` shows memory after the halt, here the string at `TEXT`, one
 character in each word and a 0 word at the end:
 
-    $ emulator/zig-out/bin/niceemu --dump 0x12:16 hello.bin
+    $ emulator/zig-out/bin/niceemu --dump 0xe:16 hello.bin
     ...
-    00000012: 00000048 00000065 0000006c 0000006c 0000006f 0000002c 00000020 0000004e
-    0000001a: 00000049 00000043 00000045 00000021 00000000 00000000 00000000 00000000
+    0000000e: 00000048 00000065 0000006c 0000006c 0000006f 0000002c 00000020 0000004e
+    00000016: 00000049 00000043 00000045 00000021 00000000 00000000 00000000 00000000
 
 `niceemu --help` lists the other options, and
 [emulator/README.md](emulator/README.md) describes them.
@@ -213,11 +210,11 @@ and otherwise the key's byte with bit 8 set. So the program reads in a
 loop, and masks the byte:
 
     KEY             MOVE[M] R2, @CONSOLE    ; read: 0 if no byte waits, else the
-            ?Z      MOVE    PC, KEY         ; byte with bit 8 set; none: again
+            ?Z      JMP     KEY             ; byte with bit 8 set; none: again
     ...
                     AND     R2, R2, 0xFF    ; the byte alone
-                    SUB[M]  R0, R2, 13      ; Enter gives CR
-            ?Z      MOVE    PC, DONE
+                    CMP     R2, 13          ; Enter gives CR
+            ?Z      JMP     DONE
 
 The program runs without the window too, with its input from a file.
 `--color` then prints the screen with its colors after the halt, as the

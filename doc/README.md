@@ -35,5 +35,12 @@ This runs `check_refs.py`. It checks that every `FILE.md §n.m` in the
 repository names a section that FILE.md has, and that every link of every
 Markdown file names a file that exists and a heading it has.
 
-`make typecheck` checks the script with `mypy --strict` (install mypy
+`check_readme.py` checks the two worked examples of the top
+[README](../README.md#worked-example) against the tools: that each
+listing is as in the example's file, and that each command of niceasm
+and niceemu prints what the README shows, where a line `...` stands for
+lines left out. It needs the emulator, so `make -C intro test` runs it,
+after the example programs of the slides.
+
+`make typecheck` checks both scripts with `mypy --strict` (install mypy
 first).

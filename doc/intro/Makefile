@@ -64,6 +64,7 @@ endef
 test: emulator
 	$(foreach t,$(EXAMPLES),$(call check,$(t)))
 	@rm -f examples/*.out examples/*.bin
+	@$(PYTHON) ../check_readme.py
 
 emulator:
 	$(MAKE) -C ../../emulator build

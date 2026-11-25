@@ -120,6 +120,8 @@ The second example quotes `keys.nasm` the same way: `?Z MOVE PC, KEY`, `SUB[M] R
 
 **Fix:** copy the two listings from the files, the three outputs from the tools, and dump `0x11:16`. A check would keep them (§4.8).
 
+**Resolved.** The README's listing is `hello.nasm` as it is now, with `CALL PUTS` and `?Z RET` (§4.6), and its report, its trace, of four steps, and its dump of `0xe:16` are what the tools print. The snippet of `keys.nasm` is as in the file. `doc/check_readme.py` now compares both worked examples with the files and the tools, in `make -C doc/intro test` (§4.8): it fails on the README of 2f6eca7 in five places.
+
 ### 2.2 The slides: the control class of #162, not of #192
 
 ea1e2e1 took the interrupts out of the slides, and 8e02935 changed the slides on jumps and calls for #192. Four other slides still describe the control class as #162 left it, and the slides contradict themselves: "`JMP LOOP` … in one word" and "`CALL ROUTINE` is one word" are further on.

@@ -116,7 +116,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd hdl && make timing-spread     # make timing with seven counts of breakpoints and watchpoints at once, and the median of each slack (11 minutes, 40 with FLOW=timing)
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)
-    cd doc/intro && make test        # run the slides' example programs
+    cd doc/intro && make test        # run the slides' example programs, and check the README's worked examples
     cd doc/intro && make pdf         # rebuild the slides (pdflatex, beamer)
     cd doc/intro && make pdfcheck    # check that nice_intro.pdf matches the .tex
     cd doc && make test              # the section references and links of every Markdown file

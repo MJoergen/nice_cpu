@@ -11,6 +11,6 @@ test:
 
 # Needs mypy (pip install mypy).
 typecheck:
-	$(PYTHON) -m mypy --strict check_refs.py
+	$(PYTHON) -m mypy --strict check_refs.py check_readme.py
 
 .PHONY: test typecheck

@@ -25,7 +25,7 @@ needs them.
     cd bench && make test             # run the benchmark on the emulator and check its results
     cd demo && make test              # run the demo on the emulator and compare its screens
     cd hdl && make test               # test both cores (needs GHDL)
-    cd doc/intro && make test         # run the example programs of the introduction
+    cd doc/intro && make test         # run the example programs of the introduction, and check the README's
     cd doc && make test               # check the section references and links of the documents
 
 `make -C emulator window-test` builds the emulator with its window, SDL

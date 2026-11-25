@@ -383,7 +383,7 @@ data bus port, each an entity of its own:
 | Stage | Where | What it does |
 |---|---|---|
 | FETCH | `pipe_fetch` | Reads pairs of words ahead on the instruction bus, several requests in flight, into a ring of 16 words. Presents the next four to DECODE. |
-| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4), with a skid register for one that PREPARE does not take. Redirects FETCH at once for `MOVE R15, c` and `ADD R15, R15, c` with condition "always", and for a conditional `ADD R15, R15, c` with a negative `c`. |
+| DECODE | `pipe_decode` | Takes one whole instruction, with one more behind it, decodes its fields, and splits it into micro-operations, one per cycle (MICROARCH.md §4), with a skid register for one that PREPARE does not take. Redirects FETCH at once for the jump and the call of one word, `MOVE R15, c`, and `ADD R15, R15, c`, with condition "always", and for a conditional `JMPR` of one word or `ADD R15, R15, c` that goes back (MICROARCH.md §5.4). |
 | PREPARE | `pipe_prepare` | Reads the registers and forms every operand value and address, reduces the shift count, tests the condition when it can, and issues the data reads. |
 | WRITE | `pipe_write` | Computes, writes the registers and SR, issues the store, and runs the control instructions. Its one bypass is the value it wrote last. |
 | DBUS | `pipe_dbus` | The data bus port, with the tags and the read data of the requests in flight, and the register from which a store goes onto the bus. |
@@ -1524,8 +1524,9 @@ consecutive ids; and the fields of each micro-operation agree with its
 instruction word, `next_pc` and the block among them. They also say that
 DECODE takes no more words than FETCH offers, and a whole instruction or
 nothing, with its constant words in the order dest, s0, s1 (ISA.md
-§2.3), and that it redirects FETCH only as it takes `MOVE R15, c` or
-`ADD R15, R15, c`, to the target that ISA.md §4.3 gives. The invariants
+§2.3), and that it redirects FETCH only as it takes a jump or a call of
+one word, `MOVE R15, c`, or `ADD R15, R15, c`, to the target that ISA.md
+§4.3 and §5.3 give. The invariants
 tie `dec_r`, `dec_q`, and the id counter to the last micro-operation
 split off, and `skid_r` to it and to the last one emitted. PREPARE's proof assumes that a new instruction's id differs
 from the last one emitted, also across a flush, where DECODE proves

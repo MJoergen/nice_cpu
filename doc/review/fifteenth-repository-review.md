@@ -149,6 +149,8 @@ The table of the stages says of DECODE: "Redirects FETCH at once for `MOVE R15, 
 
 **Fix:** name the jump and the call of one word, and the predicted `JMPR`, in the two places of the README and the three comments, and correct the comment of `uop_wreg`.
 
+**Resolved.** The table of the stages and the account of DECODE's proof in hdl/README.md name the jump and the call of one word, and the `JMPR` that DECODE predicts. So do the three comments of `pipe_decode.vhd`. The comment of `uop_wreg` says that it gives R15 for a jump of one word and R13 for a call. Only comments change in `hdl/src`.
+
 ### 2.5 Sixteen stale figures, most from before #192
 
 The commits 946ea08 to a9df48d changed the figures by hand, place by place. These were left, and each was measured again on the head:

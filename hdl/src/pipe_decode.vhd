@@ -4,10 +4,11 @@
 -- DECODE takes one whole instruction from FETCH, when all its words are
 -- present and it has room: into dec_r, the instruction it splits into
 -- micro-operations (src/pipe_pkg.vhd), one per cycle, for PREPARE, or
--- into dec_q, the one after it, which moves up when dec_r frees. For
--- "MOVE R15, c" and "ADD R15, R15, c" with condition "always", and for a
--- conditional "ADD R15, R15, c" with a negative c, it redirects FETCH at
--- once (MICROARCH.md §5.4), as it takes them.
+-- into dec_q, the one after it, which moves up when dec_r frees. For the
+-- jump and the call of one word, "MOVE R15, c", and "ADD R15, R15, c",
+-- with condition "always", and for a conditional JMPR of one word or
+-- "ADD R15, R15, c" that goes back, it redirects FETCH at once
+-- (MICROARCH.md §5.4), as it takes them.
 --
 -- BREAKPOINTS (doc/DEBUG.md §6). DECODE compares the address of each
 -- instruction it takes with the enabled breakpoints, and marks a hit in
@@ -344,8 +345,9 @@ begin
    -- say what DECODE takes from FETCH: no more words than are there, and
    -- a whole instruction or nothing, with its constant words in the order
    -- dest, s0, s1 (ISA.md §2.3); and what it redirects FETCH to: the
-   -- target of MOVE R15, c or ADD R15, R15, c (MICROARCH.md §5.4), and
-   -- only as it takes such an instruction. The invariants after them tie
+   -- target of a jump or a call of one word, MOVE R15, c, or ADD R15,
+   -- R15, c (MICROARCH.md §5.4), and only as it takes such an
+   -- instruction. The invariants after them tie
    -- dec_r, dec_q, and the id counter to the last micro-operation split
    -- off, and skid_r to it and to the last one emitted, so that
    -- k-induction proves it all for every cycle.
@@ -401,9 +403,10 @@ begin
          return words(k_v);
       end function const_word;
 
-      -- The target of an early jump, from ISA.md §4.1 and §4.3: c for MOVE
-      -- R15, c, and R15 + c for ADD R15, R15, c, where R15 reads as the
-      -- next instruction's address.
+      -- The target of an early jump, from ISA.md §4.1, §4.3, and §5.3: c
+      -- for MOVE R15, c, R15 + c for ADD R15, R15, c, and R15 + d for a
+      -- jump or a call of one word, where R15 reads as the next
+      -- instruction's address.
       function early_target(addr  : std_logic_vector(31 downto 0);
                             words : t_words4) return std_logic_vector is
       begin

@@ -238,8 +238,9 @@ package pipe_pkg is
    function later_reads(iw : std_logic_vector(31 downto 0);
                         k  : t_kind) return boolean;
 
-   -- The register that micro-operation k writes, or 0. Control
-   -- instructions write R14 and R15 in other ways.
+   -- The register that micro-operation k writes, or 0: R15 for a jump of
+   -- one word, and R13 for a call, by its push. The call writes R15 too,
+   -- which uop_may_jump tells.
    function uop_wreg(iw : std_logic_vector(31 downto 0);
                      k  : t_kind) return natural;
 

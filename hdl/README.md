@@ -1073,7 +1073,7 @@ math unit through `wb_dmux`, loads `test/linkecho.nasm` with a `W`, starts
 it, and checks its echo of console bytes, `e02` while it runs, the halt
 after a UART break with the registers it left, the restart of DEBUG.md §8,
 a pause of the core with its registers, memory, and console, a hold
-while it runs, the halt reasons 2 to 4, and the single step: R15 after each step of the echo program,
+while it runs, and the single step: R15 after each step of the echo program,
 a step into `HALT`, the writes with bit 5 that do not step, and the
 breakpoints, 4 on the link and the core: a stop before the echo, a step and
 a go on from a breakpoint, and a breakpoint disabled while paused, the
@@ -1085,7 +1085,8 @@ go on from the written R15, also at an enabled breakpoint, and `e04` while
 held, halted, and running, and with `rx_flow_i`, a flood of console bytes
 to the echo program with none lost, and a byte that a paused program's
 full buffer loses with `o`, with the go on behind it, the halt reason 2
-for `INT`, `RTI`, `WAIT`, and the other reserved control words, and the
+for the reserved control words, the commands 1, 2, 3, and 31, and for a
+`HALT` with bit 0 set, and the
 reserved words of the link, which read 0 and take no write. Its input buffer
 holds 16 bytes, so that a flood fills it soon. The testbench shows three things a board must
 do: each master sees only its own STALL and ACK; the devices are reset at

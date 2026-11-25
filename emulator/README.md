@@ -644,8 +644,7 @@ word, and then what it changed. These are the last lines for `count.bin`:
 - `[addr]=value` for a memory write.
 - `skipped` when the condition was false.
 - The reason for a halt, at the end of the halting instruction's line: `HALT`,
-  or the same text as the `Halted (...)` line for the other halts, such as
-  `reserved control instruction`.
+  or `reserved control instruction`, the text of the `Halted (...)` line.
 The format is meant for comparing the FPGA core with the emulator line by
 line.
 
@@ -669,8 +668,8 @@ each run must be those of its `.expected` file.
 Finally `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader, and the exit status and some output lines of
 runs that stop in each way: `HALT`, a reserved control word, and the
-step limit, `-n 0` included, and that the options of the old interrupts
-are unknown. It checks the name
+step limit, `-n 0` included, and that `--irq`, `--nmi`, and
+`--no-timer-irq` are unknown options. It checks the name
 of each trap code with a symbol file, input files with CR LF lines, the
 screen's mode word with and without `--no-screen-mode`, and the pixels
 with `-2004`. The probes are

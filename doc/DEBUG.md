@@ -271,7 +271,7 @@ system has there otherwise.
 | `0xFFFFFFE0`–`0xFFFFFFEF` | R0 to R15. What they hold depends on the state (below). R1 to R15 take a write while the processor is paused (below). |
 | `0xFFFFFFF0` | Control (below). |
 | `0xFFFFFFF1` | The halt reason, read only: 0 while the processor has not halted, and after a clear, 1 for `HALT`, 2 for a reserved control word (ISA §5.3), and 5 when the emulator's step limit stopped the program (§7.2). 3 and 4 do not occur. |
-| `0xFFFFFFF2` | The protocol version, read only: `0x10` (§9). Bits 31–8 read 0. A host checks it before it uses the pause, the step, a breakpoint, or a write of a register. |
+| `0xFFFFFFF2` | The protocol version, read only: `0x10` (§9). Bits 31–8 read 0. A host checks it before anything else, and stops on another major (§9). |
 | `0xFFFFFFF3` | The free space, read only: the number of console bytes that the program's input buffer can take now. It reads so while the processor is held or halted too, although the bytes sent then are dropped (§1), and a start empties the buffer. |
 | `0xFFFFFFF4` | The enable bits of the breakpoints. Bit i enables breakpoint i. The bits from N up read 0 and take no write. |
 | `0xFFFFFFF5` | The number of breakpoints N, read only: 0 to 8. A system without breakpoints reads 0. |

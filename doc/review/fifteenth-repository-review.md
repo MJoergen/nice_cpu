@@ -236,6 +236,8 @@ Programs under a monitor: "it pushes a return address and jumps to `0x8000`, wit
 
 **Fix:** each in place.
 
+**Resolved.** Each place is corrected. hdl/README.md and `tb_link.vhd` speak of the reserved control commands 1, 2, 3, and 31. DEBUG.md §6 says that a host checks the version before anything else, and stops on another major. `slave()` of `pipecycles.py` has no timer, which no benchmark reached. The probes call `0xFFFFFF52` `SPARE`, and the three comments of `cputest.nasm` that named `RTI`, `INT`, and `WAIT` "before #162" say "reserved command", which this table did not list. The `.bin` files are the same.
+
 ### 2.10 ISA.md: six small points
 
 - **§7** says of a loop that polls: "The emulator does not spin the host's CPU for such a loop (DEVICES.md §1.6)". DEVICES.md §1.6 and `main.zig` have the rule for a run with `--window` and without `--speed` only. A plain run of a program that polls a counter keeps a host core busy. **Fix:** "The emulator's window does not …".

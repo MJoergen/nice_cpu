@@ -301,13 +301,14 @@ def main() -> None:
                 for msg in problems:
                     print("    " + msg.replace("\n", "\n    "))
 
-        # A wait is named at the WAIT, the word before PC, as a halt is.
+        # A reserved control word is named at its own word, the word before
+        # PC, as a HALT is.
         with open(sym, "w") as f:
             f.write("00000000 here\n00000001 after\n")
         p = run(tmp, ["--symbols", sym, "BIN"], "00000000 0c600000")
         if p.returncode != 2 or "At here" not in p.stdout.splitlines():
             failed += 1
-            print(f"FAIL --symbols in a wait: exit status {p.returncode}, output:\n{p.stdout}")
+            print(f"FAIL --symbols at a reserved control word: exit status {p.returncode}, output:\n{p.stdout}")
 
         # The name of each trap code, after a halt at ___wasm_trap.
         with open(sym, "w") as f:

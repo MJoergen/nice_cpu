@@ -1031,8 +1031,8 @@ pcA             HALT                    ; never runs: jumped over
                 MOVE    R12, 110        ; skipped control words do nothing
                 MOVE    R4, 0
         ?!1     HALT
-                .DAT    0x8C200000      ; ?!1 command 1, RTI before #162
-                .DAT    0x8C400003      ; ?!1 command 2, INT 3 before #162
+                .DAT    0x8C200000      ; ?!1 reserved command 00001
+                .DAT    0x8C400003      ; ?!1 reserved command 00010
                 .DAT    0x8CE00000      ; ?!1 reserved command 00111
                 .DAT    0x8C000100      ; ?!1 HALT with bit 8 set: reserved
                 CMP     R4, 0
@@ -1076,7 +1076,7 @@ pcA             HALT                    ; never runs: jumped over
                 MOVE    R12, 115        ; skipped control words keep them
                 MOVE    R14, 0xC0123456
         ?!1     HALT
-                .DAT    0x8C600000      ; ?!1 command 3, WAIT before #162
+                .DAT    0x8C600000      ; ?!1 reserved command 00011
                 MOVE    R10, R14
                 CMP     R10, 0xC1123456
         ?!Z     HALT

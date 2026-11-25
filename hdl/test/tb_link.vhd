@@ -55,8 +55,8 @@
 -- * the reserved words below R0, 0xFFFFFFD0 to 0xFFFFFFD3 and
 --   0xFFFFFFD7, which read 0 and take no write, running and held, and
 --   bits 6 to 10 of the control register, which read 0;
--- * the halt reason 2, with its notice, for INT, RTI, WAIT, a reserved
---   control command, and a HALT with a bit of 20 to 0 set.
+-- * the halt reason 2, with its notice, for the reserved control commands
+--   1, 2, 3, and 31, and a HALT with a bit of 20 to 0 set.
 -- The run stops with status 0 when every check passes, and 1 at the first
 -- that fails.
 
@@ -1143,13 +1143,13 @@ begin
       quiet("the reserved words");
 
 
-      -- The halt reason 2 (DEBUG.md §6), as niceemu halts with it: INT,
-      -- RTI, WAIT, the last reserved control command, and a HALT with bit
-      -- 0 set, which is reserved too.
-      halts_with("0C400000", "0001", '2', "INT");
-      halts_with("0C200000", "0001", '2', "RTI");
-      halts_with("0C600000", "0001", '2', "WAIT");
-      halts_with("0FE00000", "0001", '2', "a reserved control command");
+      -- The halt reason 2 (DEBUG.md §6), as niceemu halts with it: the
+      -- reserved control commands 2, 1, and 3, the last one, 31, and a
+      -- HALT with bit 0 set, which is reserved too.
+      halts_with("0C400000", "0001", '2', "control command 2");
+      halts_with("0C200000", "0001", '2', "control command 1");
+      halts_with("0C600000", "0001", '2', "control command 3");
+      halts_with("0FE00000", "0001", '2', "control command 31");
       halts_with("0C000001", "0001", '2', "a HALT with bit 0 set");
 
       report "tb_link: pass";

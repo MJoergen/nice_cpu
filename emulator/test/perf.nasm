@@ -1,8 +1,8 @@
 ; The performance counters (DEVICES.md §3), run with --step-time, so that
 ; the microsecond counter in the dump counts steps. The instruction
 ; counter counts every instruction, a skipped one included. A read of it
-; returns the number of instructions before the reading one. INTR_LO
-; counts nothing, as NICE has no interrupts, and reads 0. The cycle
+; returns the number of instructions before the reading one. SPARE, the
+; first word after the counters, counts nothing and reads 0. The cycle
 ; counter counts the steps in the emulator and the clock cycles on the
 ; FPGA core, so this program puts only its flags in registers: the trace
 ; is then the same on both.
@@ -18,7 +18,7 @@
 ;    7    7    MOVE[M] R0, @CYCLE_LO not 0, not negative: the flags stay clear
 ;    8    8    MOVE[M] R0, @CYCLE_HI 0: Z = 1, R14 = 0x09000000
 ;    9    9    MOVE[M] R0, @CYCLE_LO not 0: Z = 0, R14 = 0x01000000
-;   10   10    MOVE R5, @INTR_LO     R5 = 0
+;   10   10    MOVE R5, @SPARE       R5 = 0
 ;   11   11    MOVE R6, @INSTR_LO    R6 = 11 = 0xB
 ;   12   12    MOVE R8, @INSTR_HI    R8 = 0
 ;   13   13    HALT
@@ -33,7 +33,7 @@ CYCLE_LO        .EQU    0xFFFFFF40
 CYCLE_HI        .EQU    0xFFFFFF41
 INSTR_LO        .EQU    0xFFFFFF42
 INSTR_HI        .EQU    0xFFFFFF43
-INTR_LO         .EQU    0xFFFFFF52
+SPARE           .EQU    0xFFFFFF52
                 MOVE    R1, @INSTR_HI   ; words 0,1
                 MOVE    R2, @INSTR_LO   ; words 2,3
                 MOVE    R3, @INSTR_HI   ; words 4,5
@@ -44,7 +44,7 @@ INTR_LO         .EQU    0xFFFFFF52
                 TST     @CYCLE_LO       ; words 15,16
                 TST     @CYCLE_HI       ; words 17,18
                 TST     @CYCLE_LO       ; words 19,20
-                MOVE    R5, @INTR_LO    ; words 21,22
+                MOVE    R5, @SPARE      ; words 21,22
                 MOVE    R6, @INSTR_LO   ; words 23,24
                 MOVE    R8, @INSTR_HI   ; words 25,26
                 HALT                    ; word 27

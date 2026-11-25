@@ -1008,8 +1008,8 @@ from outside the program, so the diff is exact on both cores.
    `shiftjump.nasm`, with `samereg_prog.py`.
 5. The control words: `HALT`, the jumps and the call of one word, `JMP`,
    `JMPR`, and `CALL` (`short`, `shortfar`, and `cputest`), and the
-   reserved control words, which halt with reason 2 (`cputest`,
-   `reserved`, `tb_trace`, and `tb_link`).
+   reserved control words, which halt with reason 2 (`reserved`,
+   `tb_trace`, and `tb_link`), and do nothing when skipped (`cputest`).
 6. Pauses (§6.1): probes and random programs with random pauses, short and
    held, and one step at a time, which must not change the trace, and a
    word of code written while the core is paused (hdl/README.md). The

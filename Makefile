@@ -130,10 +130,10 @@ pdfcheck:
 	$(MAKE) -C doc/intro pdfcheck
 
 # The diagrams: standalone TikZ, rendered at 150 dpi. Both the .tex and
-# the .png are committed, as in qnice_cpu. The timing diagrams use the
-# macros of doc/timing.sty, and their values are read off a simulation by
-# hand, as each header says: render them again only after reading them
-# again.
+# the .png are committed, as in qnice_cpu. The timing diagram, doc/flow,
+# uses the macros of doc/timing.sty, and its values are read off a
+# simulation by hand, as its header says: render it again only after
+# reading them again.
 DIAGRAMS = doc/pipeline doc/flow
 
 diagrams: $(addsuffix .png,$(DIAGRAMS))

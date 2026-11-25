@@ -24,7 +24,7 @@ All code is VHDL-2008, analyzed with plain `ghdl --std=08` (no `-frelaxed`).
 
 | Kind | Convention | Example |
 |---|---|---|
-| Entity, signal, variable | `lower_snake_case` | `wb_mem`, `take_nmi` |
+| Entity, signal, variable | `lower_snake_case` | `wb_mem`, `f_redirect` |
 | Port | ends in `_i` or `_o` | `wb_stall_o` |
 | Generic | `G_UPPER_SNAKE` | `G_STALL` |
 | Constant | `C_UPPER_SNAKE` | `C_REGS_RESET` |

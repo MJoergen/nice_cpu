@@ -89,7 +89,7 @@ package trace_pkg is
 
    -- The code of each reason in the halt reason register of DEBUG.md §6,
    -- 0 for HALT_NONE. Code 5, the emulator's step limit, has no value here,
-   -- and the codes 3 and 4 no longer occur.
+   -- and no reason has the codes 3 and 4.
    function halt_code(halt : t_halt) return std_logic_vector;
 
 end package trace_pkg;

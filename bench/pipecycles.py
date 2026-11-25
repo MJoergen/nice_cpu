@@ -89,8 +89,8 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   before (hdl/src/pipeline.vhd): the target of a jump that DECODE
   resolves right after a store comes a cycle later. The bus decoder,
   hdl/src/wb_dmux.vhd, passes a request to another slave than the one
-  before (RAM, the math unit, the counters, the fetch statistics, the
-  timer) only a cycle after the last ACK: --slave-gap (1) cycles more
+  before (RAM, the math unit, the FPU, the counters, the fetch
+  statistics) only a cycle after the last ACK: --slave-gap (1) cycles more
   ("data bus").
 - The math unit, as in hdl/src/mpu.vhd: a write to A or B (C or D), accepted
   in cycle t, starts the multiplier and the two dividers (the two 64-bit
@@ -235,8 +235,6 @@ def fpu_cycles(word: int, op: int, long: int) -> int:
 
 def slave(addr: int) -> str:
     """The slave of the data bus that addr reaches, as in hdl/test/tb_core.vhd."""
-    if addr >> 4 == 0xFFFFFF10 >> 4:
-        return "timer"
     if addr >> 5 == 0xFFFFFF20 >> 5:
         return "mpu"
     if addr >> 3 == FPU_BASE >> 3:

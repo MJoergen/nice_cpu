@@ -214,6 +214,8 @@ Programs under a monitor: "it pushes a return address and jumps to `0x8000`, wit
 
 **Fix:** "On 2026-11-15 it was decided to remove them (#162), and the removal landed on 2026-11-22", and for the commands the reason of §4.2.
 
+**Resolved.** HISTORY.md says that the removal was decided on 2026-11-15 and landed on 2026-11-22, and that the commands 4 to 6 were always reserved, with the reason of §4.2 for 1 to 3.
+
 ### 2.9 Words left from the interrupts
 
 | Place | Text | What holds |
@@ -293,6 +295,8 @@ ISA.md §5.3 has `JMP`, `JMPR`, and `CALL` at 4, 5, and 6, and 1 to 3 reserved. 
 The other half of that decision is in no document either: a binary of `V2.6` without those three runs unchanged, and a binary of `V3.0` halts on an older emulator or core.
 
 **Fix:** HISTORY.md, in "Jumps and calls in one word", and the upgrade notes (§1.2).
+
+**Resolved.** HISTORY.md, "Jumps and calls in one word", says why the commands 1 to 3 stay reserved, that a binary from before `V3.0` without `RTI`, `INT`, or `WAIT` runs unchanged, and that a binary of `V3.0` halts on an older emulator or core. The notes of `V3.0` say it too (§1.2), and decisions.md has the idea of taking 1 to 3 (§4.3).
 
 ### 4.3 doc/review/decisions.md has nothing of #162, #192, and #196
 

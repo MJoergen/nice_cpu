@@ -948,7 +948,8 @@ through a vector table of 256 words at VBASE·256, with VBASE in SR bits
 timer that raised IRQ, and from `V2.1` a receive interrupt of the
 console (#153), and the debug link raised an NMI from its version 8.
 
-On 2026-11-15 the interrupts were removed (#162). Nothing needed them:
+The removal was decided on 2026-11-15 (#162), and landed on 2026-11-22,
+for `V3.0`. Nothing needed them:
 the runtime, the C library, the translator's output, nice_chess, and the
 monitor of NiceMonMEGA65 all polled, the board keeps its input in
 buffers and its TCP engine in hardware, and its debugger breaks into a
@@ -977,10 +978,15 @@ found that its calls, jumps, and returns took 36% of its code, and that
 1698 of the 4217 constant words of its hand-written part belonged to a
 jump or a call (#192). So `V3.0` added `JMP`, `JMPR`, and `CALL` as
 control commands 4, 5, and 6, one word each, with a signed distance of
-21 bits in the instruction word. The commands were free after the
-interrupts went. `JMPR` stayed apart from `JMP` because the pipelined
-core predicts a backward `JMPR` with a condition, and `hand.nasm` lost
-10% of its speed without the choice. The call pushes through R13, the
+21 bits in the instruction word. These commands were always reserved.
+The commands 1, 2, and 3, which the interrupts left free, stay reserved,
+so that a binary from before `V3.0` with `RTI`, `INT`, or `WAIT` halts
+there, where it would otherwise jump or call. A binary from before without them
+runs unchanged, as the long forms are ordinary instructions, and a
+binary of `V3.0` halts at its first jump or call of one word on an
+emulator or a core from before. `JMPR` stayed apart from `JMP` because
+the pipelined core predicts a backward `JMPR` with a condition, and
+`hand.nasm` lost 10% of its speed without the choice. The call pushes through R13, the
 first meaning that R13 has in the hardware.
 
 A prototype measured the gain before the change: 17% to 20% fewer words

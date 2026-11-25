@@ -80,6 +80,8 @@ The other rows are right.
 
 RELEASE.md step 2.9: the version is the new tag's, `3.0.0`, and `release.py tag` and the release workflow refuse a tag that it does not match. Set it before `release.py check`.
 
+**Resolved.** `emulator/build.zig.zon` says `3.0.0`, which `version_is_tags()` of `release.py` takes for the tag `V3.0`.
+
 ### 1.5 The timing figures are from before both changes to the core
 
 RELEASE.md step 2.4 asks that the timing quoted in hdl/README.md is what the release measures. Its table of `make timing-spread` is "at 565b976 (#151)", of `V2.1`, and `SPREAD` of `hdl/test/timing_budget.py` is from the same run. Both changes to the core of this release measured it again, and the figures are only in the two commit messages, 833f2cd and aefdaf3:

@@ -470,7 +470,8 @@ CORE=pipeline` in `bench/` prints the line for the benchmark
 it.
 
 WRITE flushes the pipeline after a jump that DECODE did not resolve,
-after a halt, and after a store into a word
+after a jump that DECODE predicted taken and that is skipped, after a
+halt, and after a store into a word
 fetched but not retired: the range of words that `pipe_fetch` holds or
 will receive, and the instructions in DECODE's and PREPARE's registers
 (MICROARCH.md §5.5).
@@ -1131,7 +1132,10 @@ program.
   are left out, because the trace lists every memory write. The trace does
   not list data reads, but `reads` counts them with the read counter, so
   its registers show whether the core made each read exactly once and in
-  order (ISA.md §8.2). `mpu`, `mpu64`, and `mpubits` read every word of the math unit.
+  order (ISA.md §8.2). `short` and `shortfar` run the one-word `JMP`,
+  `JMPR`, and `CALL` of ISA.md §5.3: skipped, taken forward and back, a
+  call and its return, and the farthest target either way.
+  `mpu`, `mpu64`, and `mpubits` read every word of the math unit.
   `fpu`, `fpustack`, `fpudec`, and `fpufunc` use the FPU: the views, a
   few commands of each group, the stack and its faults, the decimal
   commands, and the functions.
@@ -1195,10 +1199,18 @@ program.
   exit status shows: 0 for a `HALT`, or 2 for `jumpwords.nasm`, which
   ends on a reserved word. `smclate.nasm` jumps to a reserved word when
   a store into its code goes wrong, so it fails then.
-- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `fpu`, `perf`, `events`, and `sd` again, on a memory that
-  stalls in 30% of the cycles, and `sd` with pauses held for a random time.
+- `cputest`, `reads`, `mpu`, `mpu64`, `mpubits`, `fpu`, `perf`, `events`, `sd`, `bytewin`, and `eth` again, on a memory that
+  stalls in 30% of the cycles.
   `sd` runs with an image in slot 0 that `make test` makes in the run's
   directory, and the emulator with a copy of it, which it writes.
+- The runs with a pause, which must not change the trace (the generics
+  of `tb_core` below): `cputest` with random pauses on a memory that
+  stalls, as `cputest_pause`; `cputest`, `sd`, `eth`, and `breaks` with
+  pauses held for a random time, as `cputest_hold` and so on; and
+  `cputest` and `reads` one step at a time, as `cputest_step` and
+  `reads_step`, the second on a memory that stalls. The first 8 random
+  programs run again with random pauses and with held ones, as
+  `random_pause_N` and `random_hold_N`.
 - On the pipelined core only, `test/fstats.nasm`, also on a memory that
   stalls in 30% of the cycles. It reads the fetch statistics around a
   loop of jumps, and checks what any run must give: the causes add up to
@@ -1214,8 +1226,9 @@ program.
   core) must give 1 and 1 that went on, and 0 and 2 dropped.
 - 30 random programs from `test/random_prog.py`, each stopped at 3000 steps,
   on a memory that stalls in 30% of the cycles. Besides random ALU and
-  shift instructions, they use R15 with every side effect, `HALT`, the
-  reserved control words, and the read counter. Most jumps skip only a
+  shift instructions, they use R15 with every side effect, the one-word
+  `JMP`, `JMPR`, and `CALL`, `HALT`, the reserved control words, and the
+  read counter. Most jumps skip only a
   few instructions, and sources often read a register that one of the
   last three instructions wrote. A random program may read any address, and now and then one reaches the cycle counter at
   `0xFFFFFF40`, where the core counts cycles and the emulator counts steps

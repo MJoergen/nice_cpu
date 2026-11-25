@@ -385,6 +385,8 @@ The flush causes of the README, new text, leave out a predicted jump that is ski
 
 **Fix:** the two probes, the three forms, and a sentence for the runs with a pause, a hold, and a step.
 
+**Resolved.** "What the tests check" names `short` and `shortfar` with what they run, the one-word forms among the random programs' instructions, `bytewin` and `eth` among the runs on a stalling memory, and the runs with a pause, a hold, and a step in a point of their own. The pipelined core's flush causes have the predicted jump that is skipped.
+
 ### 4.8 What no check looks at
 
 Four findings of this review are of a kind that a check could see.

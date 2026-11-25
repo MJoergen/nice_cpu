@@ -102,6 +102,8 @@ DEVICES.md §8, **Font**: "Its ROM does not have the blocks and arrows of §1.8 
 
 **Fix:** change the sentence as #208 says, in this release, and close the issue with it.
 
+**Resolved.** The sentence is changed as #208 says: the board's ROM has the glyphs from its `V2.6` on, which builds its character ROM from niceemu's `font.zig`, and before that they are blank. The commit closes #208 when it is pushed. The issue's milestone is left as it is.
+
 ## 2. What the documents say that is not so, since `V3.0`
 
 ### 2.1 README.md: the worked example shows the output of `V2.6`

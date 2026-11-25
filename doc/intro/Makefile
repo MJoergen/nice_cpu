@@ -27,8 +27,11 @@ pdfcheck:
 # comments below.
 #
 # sum:   R1 = 4096*4097/2 = 0x800800, after 2 + 3*4096 + 1 = 12291 steps.
-# hello: prints the text. R1 ends one past the 0 word: TEXT is at 0x11,
-#        and the 12 characters and the 0 are 13 words, so R1 = 0x1E.
+# hello: prints the text. R1 ends one past the 0 word: TEXT is at 0xE,
+#        and the 12 characters and the 0 are 13 words, so R1 = 0x1B.
+#        Steps: 3 up to the CALL, 4 for each of the 12 characters, 2 at
+#        the 0, and the newline and the HALT: 55. The HALT is at 8, so
+#        PC = 9.
 # copy:  DST is at 0xF and holds 1 to 5. R1 and R2 end at SRC+5 and DST+5.
 # poll:  the read of CYCLE_LO in step s returns s - 1, the steps before
 #        it. The SUBs read 3, 6, 9, 12: due at 10, so 4 ADDs, then 19,

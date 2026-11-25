@@ -133,6 +133,8 @@ ea1e2e1 took the interrupts out of the slides, and 8e02935 changed the slides on
 
 **Fix:** four control instructions, R13 as ISA.md §1.2 has it, one field `d` in bits 20..0, and a table of the four commands with their words. Then `make -C doc/intro pdf`.
 
+**Resolved.** The slides say 4 control instructions, give R13 as ISA.md §1.2 has it, show the control word with the one field `d` in bits 20..0, and list the four commands with their words and the reach of `d`. The PDF is rebuilt.
+
 ### 2.3 DEVICES.md §3: the jump counter and the store counter
 
 "The **jump counter** counts the instructions that are not skipped and write R15: as their register destination, in mode 000, 001, or 010, or by the side effect of a field, in mode 001, 010, 101, or 110 (ISA §4)." A one-word `JMP`, `JMPR`, or `CALL` has no operand field, and is counted: `writesR15` of `cpu.zig` returns `isShort(iw)` for a control word, and `writes_r15` of `nice_pkg.vhd` does the same for both cores. On the emulator, a `JMP`, a `CALL`, a `RET`, and a `JMPR` leave `JUMP_LO` at 4. `events.nasm` relies on it.
@@ -342,6 +344,8 @@ assembler/README.md: "A constant of 16 or more that is the address of a label is
 - The lists of the repository's parts leave out `debugger/`, though a slide relies on the debugger.
 
 **Fix:** a line for `JMPR` on the slide on jumps, `CALL PUTS` and `RET` in `hello.nasm`, or a sixth example, and "The control instructions" in the row of the flags.
+
+**Resolved.** The slide on jumps has a point for `JMPR`, and the table of the control instructions a row. `hello.nasm` calls with `CALL PUTS` and returns with `?Z RET`, so `make -C doc/intro test` runs both: the program takes 55 steps, where it took 56, and `TEXT` is at `0xE`. It no longer names `PC`, which it does not use. The row of the flags is "The control instructions", and both lists of parts name the debugger. The examples keep `JMP` for their loops.
 
 ### 4.7 hdl/README.md: what the tests check
 

@@ -17,7 +17,7 @@
 \subtitle{An introduction for beginners}
 \author[nice\_cpu]{The nice\_cpu project}
 \institute[]{The NICE architecture is by Bernd Ulmann}
-\date{October 2026}
+\date{November 2026}
 \begin{document}
  \begin{frame}
   \titlepage
@@ -36,8 +36,8 @@
      \item In 2006, its 16 bit descendant QNICE (``Quite NICE'') followed
       \cite{qnice}. QNICE runs on FPGAs today.
      \item This project gives NICE a complete specification, an assembler,
-      an emulator, a runtime library, a WebAssembly translator, and
-      two FPGA cores, a simple one and a pipelined one.
+      an emulator, a debugger, a runtime library, a WebAssembly
+      translator, and two FPGA cores, a simple one and a pipelined one.
      \item This introduction explains NICE step by step. It assumes you
       know what a register and a memory address are, and nothing more.
     \end{itemize}
@@ -57,7 +57,7 @@
       memory to memory operations are normal
      \item \textbf{Every} instruction is conditional
      \item Small instruction set: 16 ALU operations, 16 shifts, and
-      3 control instructions
+      4 control instructions
      \item Flags change only when an instruction asks for it
     \end{itemize}
    \end{frame}
@@ -77,8 +77,9 @@
       \begin{description}
        \item [\code{R0}:] Always reads as 0. Writes to it are thrown
         away. This is handy for constants and comparisons.
-       \item [\code{R13}:] The stack pointer (\code{SP}), by convention
-        only. The hardware treats it like any other register.
+       \item [\code{R13}:] The stack pointer (\code{SP}). \code{CALL}
+        pushes the return address through it. Every other instruction
+        treats it like any other register.
        \item [\code{R14}:] The status register (\code{SR}).
        \item [\code{R15}:] The program counter (\code{PC}). Writing to it
         is a jump.
@@ -186,15 +187,17 @@
      \item The control instructions use this format:
       {\scriptsize
       \begin{center}
-       \begin{tabular}{|c|c||c|c||c|c|c|}
+       \begin{tabular}{|c|c||c|c||c|c|}
         \hline
-         31&30..28&27&26&25..21&20..8&7..0\\
+         31&30..28&27&26&25..21&20..0\\
         \hline
-         \code{NEG}&\code{SEL}&\code{1}&\code{1}&\code{command}&\code{0}&\code{vector}\\
+         \code{NEG}&\code{SEL}&\code{1}&\code{1}&\code{command}&\code{d}\\
         \hline
        \end{tabular}
       \end{center}
       }
+      \code{d} is the distance of a jump or a call, and 0 for
+      \code{HALT}.
     \end{itemize}
    \end{frame}
 %
@@ -350,7 +353,8 @@
 %
    \begin{frame}
     \frametitle{Control instructions}
-    The control class has one command, chosen by bits 25..21:
+    The control class has four commands, chosen by bits 25..21:
+    {\footnotesize
     \begin{center}
      \begin{tabular}{|l|l|l|l|}
       \hline
@@ -358,10 +362,16 @@
       \hline
       \hline
        \code{00000}&\code{HALT}&\code{0x0C000000}&Halt the processor\\
+       \code{00100}&\code{JMP}&\code{0x0C800000} with \code{d}&Jump by \code{d} words\\
+       \code{00101}&\code{JMPR}&\code{0x0CA00000} with \code{d}&The same, for a loop's jump back\\
+       \code{00110}&\code{CALL}&\code{0x0CC00000} with \code{d}&Push the return address, and jump\\
       \hline
      \end{tabular}
     \end{center}
+    }
     \begin{itemize}
+     \item \code{d}, in bits 20..0, is a signed distance from the next
+      instruction, up to a million words either way.
      \item All other commands are reserved. They halt the processor.
      \item Control instructions are conditional too:
       \code{?Z HALT} halts only if \code{Z} is set.
@@ -384,7 +394,7 @@
        \code{MOVE}, \code{ONE}, and the logic operations&0&W&W&0&W\\
        Shifts that send a bit to \code{C}&0&W&W&W&W\\
        Other shifts&0&W&W&0&W\\
-       \code{HALT}&&&&&\\
+       The control instructions&&&&&\\
       \hline
      \end{tabular}
     \end{center}
@@ -557,6 +567,8 @@
       \end{center}
      \item \code{JMP LOOP} holds the distance to \code{LOOP} in its one
       word, up to a million words either way. The assembler works it out.
+     \item \code{JMPR LOOP} does the same. It tells a pipelined processor
+      that the jump is mostly taken, as at the end of a loop.
      \item When an instruction reads \code{R15}, it gets the address of the
       \textbf{next} instruction, after all constant words. So
       \code{ADD PC, PC, 10} jumps to 10 words after the end of the
@@ -703,19 +715,17 @@ DST             .BLK    5               ; 5 words of 0
    {\scriptsize
    \begin{verbatim}
 SP              .EQU    R13
-PC              .EQU    R15
 CONSOLE         .EQU    0xFFFFFF00
 
                 MOVE    SP, 0x1000      ; set up the stack
                 MOVE    R1, TEXT        ; the argument: the string's address
-                ADD     @--SP, 2, PC    ; push the return address ...
-                MOVE    PC, PUTS        ; ... and jump: a subroutine call
+                CALL    PUTS            ; call the subroutine
                 MOVE    @CONSOLE, 10    ; a newline
                 HALT
 
 ; PUTS prints the string at R1. The string ends with a 0 word.
 PUTS            MOVE[M] R2, @R1++       ; next character, and set Z if it is 0
-        ?Z      MOVE    PC, @SP++       ; at the end: return
+        ?Z      RET                     ; at the end: return
                 MOVE    @CONSOLE, R2    ; print the character
                 JMP     PUTS            ; and loop
 
@@ -723,8 +733,8 @@ TEXT            .ASCII_L 'Hello, NICE!'
    \end{verbatim}
    }
    \code{.ASCII\_L} stores one character per word and adds a 0 word at
-   the end. The conditional return \code{?Z MOVE PC, @SP++} needs no
-   branch around it.
+   the end. The conditional return \code{?Z RET} needs no branch around
+   it.
   \end{frame}
 %
   \begin{frame}
@@ -902,10 +912,10 @@ $ emulator/zig-out/bin/niceemu --window keys.bin
   \begin{frame}
    \frametitle{Future plans}
    \begin{itemize}
-    \item As of now (OCT-2026) the following exists:
+    \item As of now (NOV-2026) the following exists:
      \begin{itemize}
       \item a complete specification of the instruction set,
-      \item an assembler and an emulator,
+      \item an assembler, an emulator, and a debugger,
       \item a runtime library,
       \item a WebAssembly translator, so that C, Rust, and Zig programs
        can run on the emulator, and

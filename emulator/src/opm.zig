@@ -384,7 +384,7 @@ pub const Sound = struct {
     /// The accumulator of §12.3: chip_hz for each microsecond, and a
     /// sample at each 64 million.
     acc: u64 = 0,
-    /// The samples computed since the start.
+    /// The samples since the start, computed or not.
     samples: u64 = 0,
     sink: ?Sink = null,
 
@@ -416,25 +416,40 @@ pub const Sound = struct {
         self.count += 1;
     }
 
+    /// The oldest write in the FIFO, if any, takes effect.
+    fn takeWrite(self: *Sound) void {
+        if (self.count == 0) return;
+        const w = self.fifo[self.head];
+        self.head = (self.head + 1) % fifo_len;
+        self.count -= 1;
+        self.opm.write(@truncate(w >> 8), @truncate(w));
+    }
+
     /// The oldest write in the FIFO takes effect, then a sample is computed.
     pub fn tick(self: *Sound) void {
-        if (self.count != 0) {
-            const w = self.fifo[self.head];
-            self.head = (self.head + 1) % fifo_len;
-            self.count -= 1;
-            self.opm.write(@truncate(w >> 8), @truncate(w));
-        }
+        self.takeWrite();
         const s = self.opm.sample();
         self.samples += 1;
         if (self.sink) |k| k.put_fn(k.ctx, s);
     }
 
     /// Let `us` microseconds pass, and compute the samples they bring.
+    /// Without a sink nobody takes the samples, and nothing else shows
+    /// what the synthesizer computes: the status has the FIFO alone. So
+    /// then no sample is computed. The writes of the FIFO take effect,
+    /// one for each sample, the samples are counted, and the synthesizer
+    /// stands still. A sample costs some 0.3 microseconds of the host's
+    /// time, which a long run or a long skip would pay for nothing.
     pub fn advance(self: *Sound, us: u64) void {
         const threshold = clocks_per_sample * 1_000_000;
         const total = @as(u128, self.acc) + @as(u128, us) * chip_hz;
         var n = total / threshold;
         self.acc = @intCast(total % threshold);
+        if (self.sink == null) {
+            for (0..@min(n, self.count)) |_| self.takeWrite();
+            self.samples += @intCast(n);
+            return;
+        }
         while (n != 0) : (n -= 1) self.tick();
     }
 
@@ -484,6 +499,43 @@ test "a sample is due every 64 clocks of 3579545 Hz" {
     try testing.expectEqual(55930, s.samples);
     s.advance(1_000_000);
     try testing.expectEqual(111860, s.samples);
+}
+
+fn countSample(ctx: *anyopaque, s: Sample) void {
+    _ = s;
+    const n: *u64 = @ptrCast(@alignCast(ctx));
+    n.* += 1;
+}
+
+test "without a sink, the writes take effect and no sample is computed" {
+    var heard: u64 = 0;
+    var a: Sound = .{};
+    var b: Sound = .{ .sink = .{ .ctx = &heard, .put_fn = countSample } };
+    // The example of DEVICES §12.5.
+    const writes = [_]u16{ 0x20C7, 0x284A, 0x607F, 0x687F, 0x707F, 0x5801, 0x981F, 0xF80F, 0x0878 };
+    for ([_]*Sound{ &a, &b }) |s| {
+        for (writes) |w| s.write(0, w);
+        // The first sample is due at 18 microseconds, and takes one write.
+        s.advance(18);
+        try testing.expectEqual(1, s.samples);
+        try testing.expectEqual(0xC7, s.opm.regs[0x20]);
+        try testing.expectEqual(0, s.opm.regs[0x28]);
+        try testing.expectEqual(status_id << 16 | 8 << 8 | 0x80, s.read(1));
+        // A second brings 55930 samples, and the other eight writes.
+        s.advance(1_000_000 - 18);
+        try testing.expectEqual(55930, s.samples);
+        try testing.expectEqual(status_id << 16, s.read(1));
+    }
+    try testing.expectEqualSlices(u8, &b.opm.regs, &a.opm.regs);
+    try testing.expectEqual(0x78, a.opm.regs[0x08]);
+    // With the sink the synthesizer ran, and without it stood still.
+    try testing.expectEqual(55930, heard);
+    try testing.expect(b.opm.env_counter != 0);
+    try testing.expectEqual(0, a.opm.env_counter);
+    // So a year of microseconds takes no time, and counts its samples:
+    // 366 * 86400 * 3579545 / 64 of them.
+    a.advance(366 * 86400 * 1_000_000);
+    try testing.expectEqual(55930 + 1768653184500, a.samples);
 }
 
 // The vectors of test/opm_vectors.py, which make test writes and names

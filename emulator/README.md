@@ -484,14 +484,19 @@ of the run, for the time since it last did: the microseconds of the
 steps with `--step-time`, a skip's included, or else the host's time,
 which runs on while the processor is held, paused, or halted. So with
 `--step-time` the samples of a run are the same each time, and they end
-at the halt. A write to a full FIFO waits for the next sample: with
+at the halt. Without `--wav` and a window that plays them, nobody takes
+the samples, and the status shows the FIFO alone, so the emulator
+computes none: one write of the FIFO takes effect in each sample's
+time, as with them, and a long run or a long skip costs the host no
+time for the sound. A write to a full FIFO waits for the next sample: with
 `--step-time`, the step of the write counts the microseconds of the
 wait in the cycle counter, the microsecond counter, and the clock, as
 the wait steps of a skip, but not as steps of the run; without it, the
-emulator waits the host's time. A read changes nothing, so `--dump` and
-the debug link show the status as of the last sample computed. A start
-over the link resets the sound. `--no-sound` makes the eight words
-ordinary memory.
+emulator waits the host's time. A read changes nothing, and `--dump` and
+the debug link bring the sound no further: they show the status as of
+the program's last read or write of its words, or of the end of the
+run. A start over the link resets the sound. `--no-sound` makes the
+eight words ordinary memory.
 
 `--wav FILE` writes the samples to FILE as a WAV file: 16-bit stereo
 PCM, left first, at 55930 Hz, the sound's rate of 55930.4 rounded down.
@@ -511,7 +516,9 @@ it writes. The unit test of `src/opm.zig` replays the vectors of
 the status, a skip, and the waits of a full FIFO with `--step-time`, and
 `sound_mem` runs it again with `--no-sound`. `test/wav.py` plays the
 example of DEVICES.md §12.5 with `--wav`, and compares every sample with
-the model's, for the writes at the samples that their steps give.
+the model's, for the writes at the samples that their steps give. Then
+it plays the note without `--wav` and skips 9.5 hours, which must take
+no time, as no sample is computed.
 
 ### SD card
 

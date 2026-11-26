@@ -302,6 +302,8 @@ Two things of #216 are neither done nor dropped, and CONTRIBUTING.md wants an op
 
 **Fix:** the entries above in decisions.md, and an issue, labeled `idea`, for the measurement.
 
+**Resolved.** decisions.md has the eleven entries, each with its reason from the issue. The measurement of an MP3 decoder, and the accelerator that may follow it, are issue #217, labeled `idea`, with no milestone.
+
 ### 4.3 The rule for the I/O page is in no document
 
 The review of #209 decided, in its table of decisions: "The I/O page | It holds control and status words. Tables go in blocks of their own outside it." Its reasons: only 30 of the 256 words were free, an absolute address is a constant word wherever it points, and the page's one property is that an instruction fetch reads 0 there, which matters for a word whose read has a side effect. It gave a budget too: `0xFFFFFF08`–`0F` for sound, `0xFFFFFF10`–`1F` for video, and `0xFFFFFF02`–`07` spare. DEVICES.md §4 says only that the words "are reserved for I/O (§8). No system of this file maps a device there." The next device will be designed without the rule, unless its author reads a closed issue.

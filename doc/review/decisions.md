@@ -416,3 +416,53 @@ proposed again. The open items are the
   output, through a subtraction, on the read address of the stack and
   into X, next to the FPU's worst path, from the command's number to
   X.
+- **A busy flag of the sound that a program polls** before each write
+  (#209), as on the chip and the Commander X16. The FIFO of 64 writes
+  spaces them as the chip's busy time does, one in a sample, and a full
+  FIFO holds off the acknowledge, so no program has to poll
+  (DEVICES.md §12.3).
+- **The chip's two ports for the sound**, one for the number of a
+  register and one for its data (#209). They come from the chip's 8-bit
+  bus. One word with both has no latch between two writes, so a pause
+  or a memory dump cannot split a write.
+- **The chip's timers A and B, and the key on of CSM** (#209). They
+  would be timers that a program polls, which went with the interrupts
+  (#162, above): a program that waits reads `TIME_LO`.
+- **A model of the sound written from Yamaha's datasheet alone**, with
+  all of the code under the MIT license (#209). The datasheet does not
+  hold the chip's bits: the LFO's waves, the detune, and the noise are
+  known from ymfm, from Nuked-OPM, and from measurements. Nuked-OPM is
+  under the LGPL and jt51 under the GPL version 3, so the model follows
+  ymfm, under its BSD 3-Clause license.
+- **The sound's RTL in the board's repository**, with only the
+  registers here (#209). The samples must be the model's bit for bit,
+  so a release here would wait for the board, which CONTRIBUTING.md
+  rules out. It is logic with no pins, as the FPU and the math unit
+  are.
+- **A mixer, or a conversion of the rate, in the sound or its sample
+  player** (#209, #216). What is exact is each device's own samples at
+  its own rate. The mixer and the rate of an output are the system's,
+  and SDL's in the emulator.
+- **A second clock for the sound**, such as the 4 MHz of some machines
+  with the chip (#209). The device has the one clock of 3579545 Hz, and
+  a tune written for another plays at another pitch and tempo
+  (DEVICES.md §12.6), which is for the program that plays it.
+- **An MP3 decoder in RTL, a soft coprocessor with a decoder, and DMA
+  from a ring buffer in RAM** (#216), in place of a FIFO that a program
+  fills. A decoder in RTL is a large project, and needs a model in the
+  emulator that gives its bits. A coprocessor leaves NICE out of the
+  work, and the emulator would have to model it too. DMA needs a port
+  of its own into the core's RAM, which costs timing where the margin
+  at 100 MHz is small.
+- **A FIFO of 2048 samples, a highest rate of 96000 Hz, and rates below
+  1000 Hz for the sample player** (#216). 2048 samples are less than two
+  frames of an MP3 file, too few for a program that polls. Nothing
+  needs 96000 Hz. At 1 Hz, a write to a full FIFO would hold the bus,
+  and with it a pause of the debug link, for up to a second, where
+  1000 Hz holds it for a millisecond.
+- **An underrun of the sample player that plays the last sample
+  again** (#216), in place of 0. It clicks as well, and leaves an
+  offset.
+- **One WAV file with both streams of the sound** (#216), mixed at
+  55930 Hz. It would need a conversion of the player's rate, and would
+  not be exact, so `--pcm-wav` writes a file of its own.

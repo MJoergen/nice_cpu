@@ -266,7 +266,9 @@ time left to the system around the core: for the data bus, its address
 decode, its block RAMs, and its read mux. Last, it prints
 `timing_groups.rpt`: the endpoints with less than 1 ns of slack, counted by
 the register or port they start from and the one they end at, with the
-worst slack of each group.
+worst slack of each group. `timing_util.rpt` has what the unit takes:
+the LUTs, the registers, the block RAMs, and the DSPs that this file
+quotes.
 `timing_ack.rpt` has the 5 worst paths from `dbus_ack_i` alone, since `rst_i`
 can fill the 50 of `timing_in.rpt`.
 It takes about 3 minutes with the default flow. `VIVADO` names the
@@ -810,7 +812,9 @@ bit for bit. It takes at most 422 cycles for a sample, so `G_CLK_HZ` must be
 at least 24 MHz. It may be at most 268 MHz, so that 64 times it, and
 3579545 more, fit the 34 bits of the sample clock's accumulator. The
 range of the generic says both, so a clock outside it does not
-elaborate. The header of `src/opm_engine.vhd` explains how the engine
+elaborate. After a reset the engine writes its RAMs an entry at a time,
+in 256 cycles, with `ready_o` low, which ends before the first sample is
+due at any clock of the range. The header of `src/opm_engine.vhd` explains how the engine
 computes a sample. The engine
 starts from [github.com/MJoergen/ym2151](https://github.com/MJoergen/ym2151)
 (MIT): the registers in a RAM for each range, as its configurator keeps
@@ -1980,7 +1984,10 @@ acknowledges, and of a read of X_S or X_W that waits for the unit, so at
 most three, and each request gets one ACK, in order. A queue of the
 requests accepted and not yet served must hold what the two registers
 hold. Its invariants say that each state, and each state to return to,
-is one there is. A reset leaves no function running: the cycle after it,
+is one there is, that the registers of X and Y hold the two slots at the
+top of the stack, or the canonical NaN where the stack has none, and
+that the flag kept with a request matches its data. A reset leaves no
+function running: the cycle after it,
 the FPU is idle and runs no steps. The properties are in `src/fpu.vhd`, as they name its
 registers; `formal_fpu` has the assumptions on the master. `prove_stack`,
 with the generic `G_STACK` of both,

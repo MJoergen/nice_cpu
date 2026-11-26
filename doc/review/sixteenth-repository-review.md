@@ -357,6 +357,8 @@ README.md: "Formal checks cover their ports, five stages of the pipeline, the de
 
 **Fix:** as said at each.
 
+**Resolved.** DEVICES.md §8 cites MJoergen/NiceMonMEGA65#176 for the board's sound, in the form that `release.py preflight` watches, and §1.3 says that the window plays the sound. hdl/README.md names `timing_util.rpt`, has the three new properties in the account of `formal_fpu`, and says what the engine does in the 256 cycles after a reset. runtime/README.md says at the row of `nice.h` that the sound, the SD card, and the network have no names there.
+
 ## 5. What was checked, and found right
 
 These are recorded so that the next review need not repeat them.

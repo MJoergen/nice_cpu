@@ -181,7 +181,8 @@ slacks with the budget in
 [hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must
 meet the 10 ns clock, and the paths from the core's inputs and to its
 outputs must leave the system around it 1.5 and 2.2 ns. The FPU, the
-sound, and the sample player must keep 1.0 ns on their own paths, and the same at their ports.
+sound, and the sample player must keep 1.0 ns on their own paths, and
+the core's 1.5 and 2.2 ns at their ports.
 The stamp has the result of each, and the worst of them. This is **not a
 gate**. A miss prints a warning and goes into the stamp, and `tag` shows
 it. If it missed, say so in the release notes, with the cause, or the

@@ -115,6 +115,13 @@ proposed again. The open items are the
   register**, as one into memory does. It saved 0.39% of the translated
   benchmark's cycles and 0.08% of `hand.nasm`'s, too little for a special
   case of the I/O range (HISTORY.md).
+- **A read that loads in the cycle after a store into the I/O range**
+  (#210), as it does after a store into memory. PREPARE keeps a read off
+  the bus in the cycle WRITE is done with any store (MICROARCH.md §5.3).
+  The model saved 0 cycles of `bench.c`, 0.02% of `hand.nasm`'s, and
+  0.25% of `float.c`'s with `--inline-fpu`, as a read of a unit's
+  result waits for the unit anyway: too little for a decode of the
+  store's address on PREPARE's paths.
 - **More timing fixes of the pipelined core** (issue #34): WRITE's
   decisions into the enables of PREPARE's and WRITE's registers, WRITE's
   ALU into its own next state, FETCH's next address from its ring, and

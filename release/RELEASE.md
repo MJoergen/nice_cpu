@@ -129,8 +129,9 @@ diagram check of step 2, and writes the stamp. The slides are checked by
 ## 4. Formal checks
 
 Run these alone, not next to other work, as some proofs take minutes;
-`release.py check` runs only `make timing` beside them, a Vivado run of
-three minutes for the core and one for the FPU. CI
+`release.py check` runs only `make timing` beside them, four Vivado
+runs, one after the other, of some ten minutes in all: the core, the
+FPU, the sound, and the sample player. CI
 pins an OSS CAD Suite (hdl/README.md, The formal checks), which may differ
 from a local install, so a proof that passes on one and fails on the
 other is worth a look.
@@ -173,8 +174,8 @@ If a figure in the documents changed, go back to step 2.4.
 
 ### Timing
 
-`release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 3
-minutes), for the core, with `UNIT=fpu` for the FPU, with `UNIT=opm`
+`release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 10
+minutes for the four), for the core, with `UNIT=fpu` for the FPU, with `UNIT=opm`
 for the sound, and with `UNIT=pcm` for its sample player, and compares the
 slacks with the budget in
 [hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must

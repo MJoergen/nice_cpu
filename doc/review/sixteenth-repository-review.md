@@ -198,6 +198,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** the four units in the three sentences, and the time of the four in the help text, measured at the release check.
 
+**Resolved.** RELEASE.md §4 and its section "Timing" have the four runs and their ten minutes, and both tables of hdl/README.md have `UNIT=pcm`. The logs of the four runs give 3 min 34 s, 2 min 59 s, 1 min 18 s, and 1 min 4 s of Vivado, 8 min 55 s in all, so the 10 minutes of the help text of `--skip-timing` stand.
+
 ### 2.10 emulator/README.md: six small points
 
 - **`fpufunc.nasm`.** "`test/fpufunc.nasm` runs `SIN`, `COS`, `TAN`, `ATAN2`, `EXP`, `LN`, `POW`, `HYPOT`, and `POW2`, one beyond its bound". The one beyond its bound was `SIN` of 2²¹, which now has a result, and is `ASIN` of 2 since 804dd41. `ASIN` is not in the list.

@@ -56,7 +56,7 @@ and `make timing` found in the release stamp
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [sim.mk](sim.mk) | The commands of the simulators, GHDL and nvc, for the Makefile and `bench/Makefile`. |
 | [ASSUMPTIONS.md](ASSUMPTIONS.md) | Where the pipelined core settles a question that MICROARCH.md leaves open, or departs from it. |
-| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core, the FPU, or the sound alone, placed and routed, and its worst paths. |
+| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core, the FPU, the sound, or its sample player alone, placed and routed, and its worst paths. |
 | [src/](src/README.md) | The synthesizable VHDL: the two cores, their shared packages, and the devices. |
 | [sim/](sim/README.md) | The trace writer, the memory model, and the SD card engine, for simulation only. |
 | [test/](test/README.md) | The testbenches, the test programs, and the scripts that run them. |
@@ -77,7 +77,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 | `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 5 minutes in GHDL on 20 CPUs (2026-11-22) |
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
-| `make timing` | Vivado on the pipelined core alone, out of context, with `UNIT=fpu` on the FPU, or with `UNIT=opm` on the sound ([Timing](#timing)). | 3 minutes, 2 for the sound |
+| `make timing` | Vivado on the pipelined core alone, out of context, with `UNIT=fpu` on the FPU, with `UNIT=opm` on the sound, or with `UNIT=pcm` on its sample player ([Timing](#timing)). | 3 minutes, 2 for the sound or the player |
 | `make timing-spread` | `make timing` in seven variants at once, and the least, median, and most of each slack: seven counts of breakpoints and watchpoints, or with `UNIT=fpu` seven orders of the FPU's functions in its ROM ([Timing](#timing)). | 4 minutes on 20 CPUs, 9 with `FLOW=timing` (2026-11-25); for the FPU 4 and 5 (2026-11-26) |
 | `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 15 and 24 on the two cores in CI; several times longer in GHDL |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |

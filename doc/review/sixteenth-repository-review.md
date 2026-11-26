@@ -141,6 +141,8 @@ Each is true of a system with the sound and no player (DEVICES.md §8), but a re
 
 **Fix:** in the three places, that the decoder gives the sound all eight words on a system without the player, and offsets 0 and 1 beside the player.
 
+**Resolved.** The three places say it one way: the decoder gives the sound address bits 2..0 of the eight words, selects it for offsets 0 and 1 alone beside the sample player, and for all eight on a system without the player.
+
 ### 2.5 hdl/README.md: two rows of the FPU's cycles
 
 The table "The most cycles of each command in `tb_fpu` on 2026-11-26", against the logs of the eight shares of `make -C hdl test` of that day, after the last change of the FPU (804dd41):

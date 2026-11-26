@@ -791,8 +791,10 @@ checks).
 `opm` is the sound of DEVICES.md §12, an FM synthesizer whose registers
 are the YM2151's, with a FIFO of 64 writes. Offset 0 is `OPM_WRITE`,
 offset 1 `OPM_STATUS`, and offsets 2 to 7 read 0. It is a pipelined
-Wishbone slave with a 3-bit address. The bus decoder selects it for
-`0xFFFFFF08`–`0xFFFFFF0F` and passes address bits 2..0 as the offset.
+Wishbone slave with a 3-bit address. The bus decoder passes address
+bits 2..0 of `0xFFFFFF08`–`0xFFFFFF0F` as the offset. Beside the sample
+player it selects the sound for offsets 0 and 1 alone (The sample
+player), and on a system without the player for all eight.
 The generic `G_CLK_HZ`, the frequency of its clock, sets the rate of the
 samples. Each sample comes out on `sample_valid_o`, high for one cycle,
 with `sample_left_o` and `sample_right_o`, signed: the mixer and the

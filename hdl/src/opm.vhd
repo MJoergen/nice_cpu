@@ -25,8 +25,10 @@
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The master holds STB and the request while STALL is high.
 -- b) STB is high only for requests to the sound: the bus decoder decodes
---    the address. The sound is at 0xFFFFFF08-0xFFFFFF0F, so the offset is
---    address bits 2..0.
+--    the address. The sound's words are offsets 0 and 1 of
+--    0xFFFFFF08-0xFFFFFF0F, and the offset is address bits 2..0. Beside
+--    the sample player, pcm.vhd, the decoder gives the sound the requests
+--    to offsets 0 and 1 alone, and on a system without it all eight.
 --
 -- RESET
 -- Reset empties the FIFO, starts the sample clock anew, and resets the

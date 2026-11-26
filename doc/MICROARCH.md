@@ -875,9 +875,12 @@ system built from them must follow these rules:
   watchdog of the system must allow for it. Its arithmetic unit,
   `hdl/src/fpu_unit.vhd`, is inside it
   ([hdl/README.md](../hdl/README.md#the-floating-point-unit)).
-- **Sound.** `hdl/src/opm.vhd` at `0xFFFFFF08`–`0xFFFFFF0F` (DEVICES §12),
-  8 aligned words, so the decoder compares address bits 31..3, and gives
-  the sound bits 2..0. It takes the reset of a start of the processor,
+- **Sound.** `hdl/src/opm.vhd` at `0xFFFFFF08` and `0xFFFFFF09` (DEVICES §12),
+  the first two of 8 aligned words, so the decoder compares address bits
+  31..3, and gives the sound bits 2..0. Beside the sample player it
+  selects the sound for offsets 0 and 1 alone, and on a system without
+  the player for all eight, where the sound reads 0 at offsets 2 to 7.
+  It takes the reset of a start of the processor,
   which empties its FIFO and silences it. A write to its full FIFO holds
   its ACK for up to one sample's time, 1788 cycles at 100 MHz. Its
   samples come out on a strobe, for the system's mixer

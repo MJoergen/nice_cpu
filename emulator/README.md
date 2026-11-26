@@ -317,14 +317,14 @@ address twice and a file with no words are errors.
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF07`. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, and jumps, 64 bits each, and `0xFFFFFF52`–`0xFFFFFF5E`, which read 0. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
-| `0xFFFFFF80`–`0xFFFFFF86` | 7 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
+| `0xFFFFFF80`–`0xFFFFFF86` | 7 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF07`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
 | `0xFFFFFF87` | 1 | The screen's mode word (DEVICES.md §1.10): 0 for the text, 1 for the chunky mode. A write of another value writes 0. With `--no-screen-mode`, ordinary memory. |
 | `0xFFFFFF88`–`0xFFFFFF8F` | 8 | Floating-point unit (DEVICES.md §11): a stack of 16 doubles, the views of X, and the commands. With `--no-fpu`, ordinary memory. |
-| `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. |
+| `0xFFFFFF90`–`0xFFFFFF9F` | 16 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF07`. |
 | `0xFFFFFFA0`–`0xFFFFFFAF` | 16 | SD card controller (DEVICES.md §5). Two slots, with the images of `--sd0` and `--sd1`. |
 | `0xFFFFFFB0`–`0xFFFFFFBF` | 16 | Network station (DEVICES.md §6). The IP and MAC addresses, counts of frames that read 0, and the state of `--link`. |
 | `0xFFFFFFC0`–`0xFFFFFFCF` | 16 | Ethernet frames (DEVICES.md §7). A queue of 4 frames and a send buffer, with the frames of `--eth-in` and `--eth-udp`. |
-| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. |
+| `0xFFFFFFD0`–`0xFFFFFFFF` | 48 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF07`. |
 
 ### Screen
 

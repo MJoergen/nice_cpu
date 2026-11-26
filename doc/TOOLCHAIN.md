@@ -131,6 +131,10 @@ C or Rust compiler. The same holds for the C library's tests in
 `runtime/libc/`, which `make -C runtime/libc wasm` rebuilds. If `llvm-ar` has
 another name, set `AR`. The tests use
 `make`, `cat`, `cmp`, `diff`, `sed`, `grep`, `cut`, and `nproc`.
+`make ymfmcheck`, which checks the model of the sound against ymfm
+([DEVICES.md §12.6](DEVICES.md#126-differences-from-the-ym2151)),
+needs git, to fetch ymfm, and a C++ compiler, so `make test` leaves it
+out.
 
 The cores need more. GHDL runs their tests, and nvc the long simulations;
 vsg checks the VHDL style, SymbiYosys with Yosys and its solvers runs the

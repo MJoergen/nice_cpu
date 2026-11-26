@@ -43,6 +43,13 @@ data read returns.
   - [11.3 Commands](#113-commands)
   - [11.4 Stack faults](#114-stack-faults)
   - [11.5 Rules for programs](#115-rules-for-programs)
+- [12. Sound](#12-sound)
+  - [12.1 Registers](#121-registers)
+  - [12.2 The chip's registers](#122-the-chips-registers)
+  - [12.3 Writes and samples](#123-writes-and-samples)
+  - [12.4 Formulas](#124-formulas)
+  - [12.5 Programs](#125-programs)
+  - [12.6 Differences from the YM2151](#126-differences-from-the-ym2151)
 
 ## Memory map
 
@@ -57,7 +64,9 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFF0000`–`0xFFFF45FF` | 17920 | The emulator's screen: the characters of 80×28 in its first 2240 words (§1.1), or 160×112 pixels (§1.10). |
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
-| `0xFFFFFF02`–`0xFFFFFF1F` | 30 | Reserved for I/O (§4). |
+| `0xFFFFFF02`–`0xFFFFFF07` | 6 | Reserved for I/O (§4). |
+| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12), which the emulator and the FPGA implementation do not map yet. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
 | `0xFFFFFF80`–`0xFFFFFF82` | 3 | Reserved for I/O. The emulator's window draws its cursor from them (§1.4). |
@@ -285,7 +294,7 @@ A test that runs a program with `--step-time` counts the same each time, but a p
 
 ## 4. Reserved
 
-`0xFFFFFF02`–`0xFFFFFF1F` are reserved for I/O (§8). No system of this file maps a device there.
+`0xFFFFFF02`–`0xFFFFFF07` and `0xFFFFFF10`–`0xFFFFFF1F` are reserved for I/O (§8). No system of this file maps a device there. `0xFFFFFF08`–`0xFFFFFF0F` are the sound's (§12).
 
 ## 5. SD card
 
@@ -874,3 +883,121 @@ To push the microsecond counter (§3), as a binary64 value:
                     MOVE    @FPU_X_LO, @TIME_LO
                     MOVE    @FPU_X_HI, @TIME_HI
                     MOVE    @FPU_CMD, 0x29  ; UTOF
+
+## 12. Sound
+
+The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator and the FPGA implementation do not map the sound yet. Until they do, its words are memory in the emulator.
+
+### 12.1 Registers
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF08` | `OPM_WRITE` | 0 | queues a write of bits 7..0 to the register in bits 15..8, and ignores bits 31..16 |
+| `0xFFFFFF09` | `OPM_STATUS` | the status below | is ignored |
+| `0xFFFFFF0A`–`0xFFFFFF0F` | | 0 | is ignored |
+
+The status:
+
+| Bits | What |
+|---|---|
+| 1..0 | 0: the flags of timers A and B, which the sound does not have (§12.6). |
+| 6..2 | 0. |
+| 7 | 1 while a write waits in the FIFO, as the chip's busy flag. |
+| 15..8 | The number of writes in the FIFO, 0 to 64. |
+| 31..16 | `0x2151`, so that a program can tell the sound from memory. |
+
+- **One word for a write.** The register and its data go in one word, so nothing waits between two halves of a write, and a pause or a memory dump cannot split one.
+- **A read has no side effect.**
+- `0xFFFFFF0A`–`0xFFFFFF0F` are reserved for sound, such as the playback of samples and a mixer.
+
+### 12.2 The chip's registers
+
+The registers are those of the YM2151, at the same numbers. A channel is numbered 0 to 7, and its operators are M1, M2, C1, and C2. Each operator has a slot, 0 to 31, which numbers its registers: M1 of channel c is slot c, M2 slot 8 + c, C1 slot 16 + c, and C2 slot 24 + c. So register `0x60` + s is the TL of slot s.
+
+| Register | Bits | What |
+|---|---|---|
+| `0x01` | 1 | LFO reset: while 1, the LFO stays at the start of its wave. The other bits are ignored. |
+| `0x08` | 2..0, 6..3 | Key on: the channel, and the key of M1, C1, M2, and C2, in bits 3, 4, 5, and 6. |
+| `0x0F` | 7, 4..0 | NE, noise on C2 of channel 7, and NFRQ, its frequency. |
+| `0x10`–`0x12`, `0x14` | | The timers. A write is ignored (§12.6). |
+| `0x18` | 7..0 | LFRQ, the LFO's frequency. |
+| `0x19` | 7, 6..0 | With bit 7 0, AMD, the depth of the LFO's AM; with bit 7 1, PMD, the depth of its PM. |
+| `0x1B` | 1..0 | W, the LFO's waveform: saw, square, triangle, or noise. Bits 7..6, the chip's CT outputs, are ignored. |
+| `0x20` + c | 7, 6, 5..3, 2..0 | R and L, the channel's outputs, FL, the feedback of M1, and CON, the connection. |
+| `0x28` + c | 6..4, 3..0 | KC: the block, which is the octave, and the note. |
+| `0x30` + c | 7..2 | KF, the key fraction, in 64ths of a semitone. |
+| `0x38` + c | 6..4, 1..0 | PMS and AMS, the channel's sensitivity to the LFO's PM and AM. |
+| `0x40` + s | 6..4, 3..0 | DT1, a small detune, and MUL, the multiple of the frequency. |
+| `0x60` + s | 6..0 | TL, the total level. |
+| `0x80` + s | 7..6, 4..0 | KS, the key scaling of the rates, and AR, the attack rate. |
+| `0xA0` + s | 7, 4..0 | AMS-EN, the LFO's AM on this operator, and D1R, the first decay rate. |
+| `0xC0` + s | 7..6, 4..0 | DT2, a coarse detune, and D2R, the second decay rate. |
+| `0xE0` + s | 7..4, 3..0 | D1L, the sustain level, and RR, the release rate. |
+
+The other registers keep what is written and do nothing. A read of a register is not possible, as on the chip.
+
+The notes of KC are 0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, and 14 for C#, D, D#, E, F, F#, G, G#, A, A#, B, and C, and the block of a C is that of the C# below it. The connections, with → for the modulation of the next operator, and the operators that the output sums:
+
+| CON | Connection | Output |
+|---|---|---|
+| 0 | M1 → C1 → M2 → C2 | C2 |
+| 1 | (M1 + C1) → M2 → C2 | C2 |
+| 2 | (M1 + (C1 → M2)) → C2 | C2 |
+| 3 | ((M1 → C1) + M2) → C2 | C2 |
+| 4 | M1 → C1, M2 → C2 | C1 + C2 |
+| 5 | M1 → C1, M1 → M2, M1 → C2 | C1 + M2 + C2 |
+| 6 | M1 → C1 | C1 + M2 + C2 |
+| 7 | | M1 + C1 + M2 + C2 |
+
+At a reset, every register is 0 but `0x20`–`0x27`, which are `0xC0`, so that each channel goes to both outputs.
+
+### 12.3 Writes and samples
+
+- **The FIFO.** A write of `OPM_WRITE` goes into a FIFO of 64 writes. Before each sample, the oldest write in the FIFO, if any, changes its register. So one write takes effect in each sample, in the order of the writes, as the chip's busy time of about one sample spaces the writes of a program. A write of all 256 registers takes 256 samples, 4.6 ms.
+- **A full FIFO** holds off the acknowledge of the write until the next sample takes a write from it, as the math unit (§2) and the FPU (§11.1) hold off theirs. So a program never needs to poll the status. A program that wants its writes to have taken effect waits for bit 7 to read 0.
+- **A key off and a key on in one sample** cannot happen, as one write takes effect in a sample. The envelope reads the key once in each sample, after the write.
+- **The samples.** Each sample is a left and a right value, signed, of 16 bits, rounded as the chip's DAC rounds (§12.4). The FPGA implementation gives them with a strobe. The mixer, and the conversion to the rate of an output, are the system's.
+- **When a sample is computed.** The FPGA implementation adds 3579545 to an accumulator in each cycle, and computes a sample each time the sum reaches 64 times its clock frequency in hertz, which it subtracts, as the microsecond counter does (§3). At 100 MHz, that is once in 1787.94 cycles on average. With `--step-time`, the emulator does the same with one microsecond for each step: it adds 3579545 for each step, and computes a sample each time the sum reaches 64000000, once in 17.879 steps on average. A skip (§3) computes the samples of the steps it skips. Without `--step-time`, the emulator computes the samples of the host's time, so a write lands where the host's timing puts it.
+- **It always runs.** The sound computes its samples while the processor is held, paused, or halted, and empties its FIFO meanwhile, so a note that sounds goes on sounding. A reset of the system, and a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), empty the FIFO and reset the sound: every register as above, every envelope at its end, 0x3FF, with its key off, every phase at 0, and the LFO and the noise at their start. So it is silent.
+
+A log of writes, each with the number of the sample before which it takes effect, and at most one in a sample, gives the same samples in the model, the emulator, and the FPGA implementation. That is how they are tested.
+
+### 12.4 Formulas
+
+The model gives these, and `emulator/test/opm_model_test.py` checks them. The model, and not these formulas, defines the samples.
+
+- **Pitch.** With KF 0, the frequency of KC is within 5 cents of 440 · 2^((12b + n − 56)/12) Hz, for the block b and the note's semitone n, 0 for C# to 11 for C. So A4, the block 4 and the note 10, is 439.94 Hz. KF adds KF/64 of a semitone. DT2 adds 600, 781, or 950 cents for 1, 2, or 3. MUL multiplies the frequency by MUL, or by 1/2 for 0. DT1 adds a few steps of the phase, more for a higher KC, and 4 to 7 subtract what 0 to 3 add.
+- **Phase.** An operator's phase has 20 bits for a period of its wave, and adds its step in each sample. The step of a frequency f is f · 2^20 / (3579545/64).
+- **Level.** The levels are attenuations, in steps of 2^(−1/64), some 0.094 dB. TL subtracts 8 steps for each 1, 0.75 dB. D1L is the level at which the first decay ends, 32 steps for each 1, 3 dB, but 15, which is 93 dB. An attenuation of 0x380 or more, some 84 dB, is silence.
+- **Rates.** The effective rate r of AR, D1R, or D2R is 2R + K, and that of RR is 4RR + 2 + K, at most 63, where K is the key code KC >> 2, shifted right by 3 − KS. An AR, D1R, or D2R of 0 is r = 0, which never moves. The envelope steps once in 3 samples. In a decay or a release, the attenuation goes from 0 to 0x3FF in 8184 / ((4 + r mod 4) · 2^(⌊r/4⌋ − 11)) of its steps, for 8 ≤ r ≤ 59, and in 128 steps for r ≥ 60. An attack from 0x3FF to 0 takes 0.071 times as long, for 8 ≤ r ≤ 47. An attack at r = 62 or 63 starts at 0, so it takes no time.
+- **The output.** Each operator gives a value of 14 bits, from −8168 to 8168. A modulation adds half the modulating operator's value to the phase, in 1024ths of the period. The feedback of M1 adds the sum of its last two values, shifted right by 10 − FL, for FL 1 to 7. A channel sums its operators of the table of §12.2, and clips the sum to 16 bits after each addition. The left and the right output sum the channels with L and R set.
+- **The DAC.** A sum beyond 16 bits saturates to −32768 or 32767. Otherwise it keeps the 9 bits below its leading sign bit, rounded toward minus infinity, or all its bits if its magnitude is less than 512. So 8168 is 8160.
+- **The LFO.** It adds (16 + F) · 2^S to a counter of 30 bits in each sample, for the high nibble S and the low nibble F of LFRQ, so its period is 2^30 / ((16 + F) · 2^S) samples, from 0.0008 Hz to 53 Hz. The 8 high bits of the counter index its wave. The AM of a channel is the wave's AM times AMD / 128, shifted left by AMS − 1, or 0 for AMS 0. The PM adds the wave's PM times PMD / 128, scaled by PMS, to the note in 64ths of a semitone.
+- **The noise.** With NE, the noise replaces C2 of channel 7: a value of ±2 · (0x3FF − the attenuation of C2), whose sign follows a shift register of 17 bits clocked twice in each sample, sampled once in 32 − NFRQ of its clocks.
+
+### 12.5 Programs
+
+To play A4 on channel 0, with C2 alone and its envelope at once at full level:
+
+                    MOVE    R1, OPM_WRITE
+                    MOVE    @R1, 0x20C7     ; L, R, CON 7
+                    MOVE    @R1, 0x284A     ; KC: block 4, A
+                    MOVE    @R1, 0x607F     ; TL of M1, M2, C1: silent
+                    MOVE    @R1, 0x687F
+                    MOVE    @R1, 0x707F
+                    MOVE    @R1, 0x5801     ; MUL of C2: 1
+                    MOVE    @R1, 0x981F     ; AR of C2: 31
+                    MOVE    @R1, 0xF80F     ; RR of C2: 15
+                    MOVE    @R1, 0x0878     ; key on, channel 0
+
+To stop it, write `0x0800`, the key off, which starts the release. At RR 15 it falls silent within 400 samples, 7 ms.
+
+### 12.6 Differences from the YM2151
+
+The model follows ymfm. `make ymfmcheck` runs random logs of writes through both, and needs git and a C++ compiler. It builds ymfm with one change: ymfm leaves out a channel whose operators are all silent in their release, and the chip and the model compute it. The sound differs from the chip where ymfm does, which is not known, and where it chooses to:
+
+- **The timers.** Timers A and B, their flags, their interrupt, and the key on of CSM, are not there. A write of `0x10`, `0x11`, `0x12`, or `0x14` is ignored, and bits 1..0 of the status read 0. A program that waits reads the microsecond counter (§3).
+- **The busy flag.** Bit 7 of the status is 1 while writes wait in the FIFO, and the chip's is 1 for about a sample after each write, during which it ignores a write. A program for the chip that polls bit 7 before each write runs on either.
+- **The CT outputs** of `0x1B` and the bits of the test register `0x01` but the LFO reset do nothing.
+- **The clock** is 3579545 Hz. A tune written for a chip at another clock, such as 4 MHz, plays at another pitch and tempo.
+- **The output** is the value of the chip's DAC as a signed 16-bit number, and not the serial floating-point of the chip's pins.

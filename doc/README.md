@@ -6,7 +6,7 @@ specification, and it wins over every other document here.
 | Path | What it is |
 |---|---|
 | [ISA.md](ISA.md) | The instruction set: the specification for everything else here. |
-| [DEVICES.md](DEVICES.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, SD card, network station, Ethernet frames, clock, and floating-point unit. |
+| [DEVICES.md](DEVICES.md) | The devices that the emulator maps into the I/O range: console, math unit, performance counters, SD card, network station, Ethernet frames, clock, floating-point unit, and sound. |
 | [TOOLCHAIN.md](TOOLCHAIN.md) | The tools: what each reads and writes, the steps that build a program, and how the tools use each other. |
 | [DEBUG.md](DEBUG.md) | The debug link: how a host reads and writes the memory of the emulator or a board, and loads and starts a program. |
 | [MICROARCH.md](MICROARCH.md) | The design note for the pipelined FPGA core. |

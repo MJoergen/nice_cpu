@@ -50,8 +50,8 @@ instruction set of [doc/ISA.md](doc/ISA.md) and the devices of
 [doc/DEVICES.md](doc/DEVICES.md): the console, the
 80×28 character screen, the math unit, the performance counters, the
 SD card controller, the network station's registers, the
-port for Ethernet frames, the clock of the time of day, and the
-floating-point unit. It is the
+port for Ethernet frames, the clock of the time of day, the
+floating-point unit, and the sound with its sample player. It is the
 reference that the FPGA cores are compared with.
 It can:
 
@@ -61,7 +61,9 @@ It can:
   tests of the cores compare;
 - show the screen in a window while the program runs, with the keys
   typed into it going to the console, at a set speed or as fast as the
-  host can (a build with `-Dwindow`);
+  host can, and play the sound there (a build with `-Dwindow`);
+- write the samples of the sound, and those of its sample player, to
+  WAV files;
 - stop at a step limit;
 - give a program Ethernet frames from a file or a UDP socket, and send
   its frames to a file or a peer;

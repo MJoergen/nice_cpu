@@ -103,6 +103,8 @@ DEVICES.md §12.3 and §12.7 cite DEBUG.md §6 for the start: "A reset of the sy
 
 **Fix:** the sound in the six places. In DEBUG.md §6, "and the sound with its sample player (DEVICES.md §12)" among the devices that start from their reset values, and a sentence that both run on while the processor is paused, so that a program can tell a pause by them.
 
+**Resolved.** The six places name the sound. README.md has it among the emulator's devices, with the window that plays it and the WAV files among what the emulator can do, and doc/README.md in the row of DEVICES.md. DEBUG.md §6 has the sound and its sample player among the devices that a start resets, and among what tells a program that it was paused, and §7.3 among what does not stop.
+
 ### 2.2 README.md's License section has no entry for the sound
 
 "The code and the documents are under the MIT license, `mchess.c` included, but for these:", and then Dhrystone, CoreMark, the 2004 examples, the font, SDL, the math functions, and the sequences of the FPU. The sound is not there. `emulator/test/opm_model.py` "follows ymfm by Aaron Giles, src/ymfm_opm.cpp and src/ymfm_fm.ipp, of https://github.com/aaronsgiles/ymfm at commit 81aec25, step by step, under the notice in opm_tables.py", and `opm_tables.py` gives ymfm's BSD 3-Clause notice in full. `emulator/src/opm.zig` and `hdl/src/opm_engine.vhd` follow the model, and `emulator/src/opm_tables.zig` and `hdl/src/opm_tables_pkg.vhd` are written from the tables and point at the notice. The review of #209 decided it so: "MIT, with ymfm's notice on the files that follow it". The thirteenth review, §5.3, added the same bullet for the FPU's sequences.

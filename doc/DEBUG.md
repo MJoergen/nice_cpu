@@ -347,9 +347,10 @@ host that writes back what it read never steps by accident.
 
 - **Start.** When bit 0 goes from 1 to 0, the processor starts at address
   0, as the emulator starts a run. The math unit, the performance counters, the SD card controller,
-  the port for Ethernet frames, and the FPU start from their reset values,
+  the port for Ethernet frames, the FPU, and the sound with its sample
+  player start from their reset values,
   but a Write of the SD card that has begun, and a frame being sent, finish
-  first (DEVICES.md §5, §7). The
+  first (DEVICES.md §5, §7, §12). The
   read counter keeps its value (DEVICES.md §1), the network station its
   addresses and counts (DEVICES.md §6), and the clock of the time of day
   its time and runs on (DEVICES.md §10). The input buffer is emptied,
@@ -402,7 +403,9 @@ host that writes back what it read never steps by accident.
   again when it goes on.
   The counters stop, so the program cannot tell that it was
   paused, but by the wall clock, by the clock of the time of day, which
-  runs on (DEVICES.md §10), and by a snapshot that a host's read
+  runs on (DEVICES.md §10), by the sound and its sample player, which
+  run on too and empty their FIFOs (DEVICES.md §12), and by a snapshot
+  that a host's read
   replaced (§3). The SD card controller runs on, so a host can use the card
   (DEVICES.md §5). Console bytes from the host go into the input buffer (§1).
 - **Skipping time.** The wait steps of a write of `TIME_SKIP` under
@@ -719,8 +722,9 @@ are the rules that `hdl/src/debug_link.vhd` asks of its board:
   `wch_*` outputs to the core's inputs, and the core's `wch_hit_o` and
   `wch_pc_o` back to the link, which reads them when the core pauses.
 - **Counters.** The counters stop while the processor is
-  paused, and run during a step (MICROARCH.md §8). The SD card controller
-  and the clock of the time of day do not stop (DEVICES.md §5, §10).
+  paused, and run during a step (MICROARCH.md §8). The SD card controller,
+  the clock of the time of day, and the sound with its sample player do
+  not stop (DEVICES.md §5, §10, §12).
 - **Clear.** When the link asks for a clear, the board sets every word of
   the memory to 0 and then says so. The link makes no access meanwhile.
 

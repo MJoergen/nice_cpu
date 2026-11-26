@@ -356,7 +356,8 @@ endef
 # --no-cycle-counter. The emulator's fonts, which the cores do not have,
 # are memory too: --no-font, and so is the screen's mode word:
 # --no-screen-mode. So is the FPU, in both, which leaves it to its
-# own tests: G_FPU=false and --no-fpu. The fetch statistics read 0 and
+# own tests: G_FPU=false and --no-fpu. The sound, which tb_core does
+# not have, is memory too: --no-sound. The fetch statistics read 0 and
 # ignore writes in both: G_FETCH_STATS=false. random_prog.py writes the
 # program. The seeds
 # of PAUSE_SEEDS run again with random pauses, as random_pause_N, and with
@@ -377,7 +378,7 @@ define check_random
 	  -gG_TRACE_FILE=core.out -gG_MAX_STEPS=$(RANDOM_STEPS) -gG_STALL=$(RANDOM_STALL) -gG_SEED=$(1) \
 	  -gG_CYCLE_COUNTER=false -gG_FETCH_STATS=false -gG_FPU=false $(2)) > core.log 2>&1); \
 	  echo "exit $$?" >> $(RUNDIR)/core.out
-	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter --no-font --no-screen-mode --no-fpu $(BUILD)/random_$(1).bin \
+	@$(EMU) -t -n $(RANDOM_STEPS) --no-cycle-counter --no-font --no-screen-mode --no-fpu --no-sound $(BUILD)/random_$(1).bin \
 	  < /dev/null > $(RUNDIR)/core.expected; echo "exit $$?" >> $(RUNDIR)/core.expected
 	@if cmp -s $(RUNDIR)/core.expected $(RUNDIR)/core.out; then echo "PASS $(CORE) random$(3) $(1)"; \
 	else echo "FAIL $(CORE) random$(3) $(1)"; cat $(RUNDIR)/core.log; \

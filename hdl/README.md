@@ -1277,7 +1277,9 @@ program.
   (DEVICES.md §1.10), which `--no-screen-mode` makes memory. The floating-point unit's eight words,
   `0xFFFFFF88`–`0xFFFFFF8F` (DEVICES.md §11), are memory on both sides,
   with the generic `G_FPU` false and `--no-fpu`, which leaves the FPU to
-  its own tests. The generic `G_FETCH_STATS` false makes the
+  its own tests. `tb_core` has no sound, so its eight words,
+  `0xFFFFFF08`–`0xFFFFFF0F` (DEVICES.md §12), are memory there, and
+  `--no-sound` makes them memory in the emulator. The generic `G_FETCH_STATS` false makes the
   fetch statistics read 0 and ignore writes, as in the emulator. The
   instruction counter and the math unit stay, because both sides agree
   on them.

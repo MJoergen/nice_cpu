@@ -297,6 +297,8 @@ A test that runs a program with `--step-time` counts the same each time, but a p
 
 `0xFFFFFF02`–`0xFFFFFF07` and `0xFFFFFF10`–`0xFFFFFF1F` are reserved for I/O (§8). No system of this file maps a device there. `0xFFFFFF08`–`0xFFFFFF0F` are the sound's (§12).
 
+These 22 words are all that is free of the 256 words of I/O, so a new device follows a rule. The range holds a device's few control and status words, and every word whose read has a side effect, as an instruction fetch reads 0 there (ISA.md §8.3). What comes in a count, for each sprite, color, or pixel, is a block of memory outside the range, with no side effects, as the screen and the fonts are (§1). An absolute address is a constant word wherever it points (ISA.md §2.3), so a block outside the range costs a program nothing. Of the 22 words, `0xFFFFFF10`–`0xFFFFFF1F` are kept for video, and `0xFFFFFF02`–`0xFFFFFF07` are spare.
+
 ## 5. SD card
 
 The emulator and the FPGA implementation map an SD card controller at `0xFFFFFFA0`–`0xFFFFFFAF`. The controller does the whole protocol of the card. A program sees a buffer of one sector, 512 bytes, and the commands "read sector N into the buffer" and "write the buffer to sector N". A system has one or more slots for cards, and the controller serves the one that is selected.

@@ -310,6 +310,8 @@ The review of #209 decided, in its table of decisions: "The I/O page | It holds 
 
 **Fix:** the rule, and the budget as far as it is meant, in DEVICES.md §4 or under its memory map.
 
+**Resolved.** DEVICES.md §4 has the rule and its two reasons, and the budget: `0xFFFFFF10`–`0xFFFFFF1F` kept for video, and `0xFFFFFF02`–`0xFFFFFF07` spare.
+
 ### 4.4 What no gate runs
 
 DEVICES.md §12 and §12.6 lean on it: "The model follows ymfm … and `make ymfmcheck` compares the two". No job of `ci.yml` runs it, `make slow` does not, and RELEASE.md and `release.py check` do not name it. `make wasmcheck`, the other target that `make test` leaves out for its tools, is in the same place. So a change of the model that departs from ymfm passes every gate, as the emulator and the RTL follow the model, and the vectors are the model's.

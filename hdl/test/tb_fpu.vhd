@@ -63,11 +63,11 @@ architecture simulation of tb_fpu is
    -- ACK of the read of STATUS after it, which adds some 6 cycles: the
    -- times of DEVICES.md §11.5 with a margin, and for the commands that it
    -- gives no time, some twice what they take. DIGITS, which §11.5 gives up
-   -- to some 3400, takes at most 3372 on the slowest values that a scan
+   -- to some 3200, takes at most 3182 on the slowest values that a scan
    -- found (test/fpu_slow_vectors.py), and its bound is 20% above that,
-   -- as are those of SIN and COS, at most 1552, TAN, at most 2043, ASIN,
-   -- 1106, ACOS, 954, ATAN, 944, ATAN2, 1323, LN, 922, LOG2, 1144, LOG10,
-   -- 1214, EXP, 822, POW2, 1053, POW, 3018, and HYPOT, 542.
+   -- as are those of SIN and COS, at most 1368, TAN, at most 1802, ASIN,
+   -- 992, ACOS, 856, ATAN, 840, ATAN2, 1194, LN, 818, LOG2, 1009, LOG10,
+   -- 1069, EXP, 739, POW2, 939, POW, 2674, and HYPOT, 498.
    -- A command of the stack, and a number that is not a command, takes a
    -- few cycles.
    function bound (num : natural) return natural is
@@ -78,23 +78,23 @@ architecture simulation of tb_fpu is
          when 16#1A# => return 150;
          when 16#1D# => return 2400;
          when 16#39# => return 1500;
-         when 16#3A# => return 4050;
+         when 16#3A# => return 3850;
          when 16#17# to 16#19# | 16#1B# | 16#1C# | 16#20# to 16#24# | 16#28# to 16#2B# | 16#38# |
               16#3B# to 16#3D# | 16#60# to 16#65# => return 120;
          when 16#66# | 16#67# => return 200;
-         when 16#40# | 16#41# => return 1900;
-         when 16#42# => return 2500;
-         when 16#43# => return 1350;
-         when 16#44# => return 1150;
-         when 16#45# => return 1150;
-         when 16#46# => return 1600;
-         when 16#48# => return 1110;
-         when 16#49# => return 1380;
-         when 16#4A# => return 1460;
-         when 16#4C# => return 1000;
-         when 16#4D# => return 1270;
-         when 16#4E# => return 3650;
-         when 16#4F# => return 650;
+         when 16#40# | 16#41# => return 1650;
+         when 16#42# => return 2200;
+         when 16#43# => return 1200;
+         when 16#44# => return 1050;
+         when 16#45# => return 1050;
+         when 16#46# => return 1450;
+         when 16#48# => return 1000;
+         when 16#49# => return 1220;
+         when 16#4A# => return 1290;
+         when 16#4C# => return 900;
+         when 16#4D# => return 1130;
+         when 16#4E# => return 3250;
+         when 16#4F# => return 600;
          when others => return 30;
       end case;
    end function bound;

@@ -6,8 +6,8 @@
 --
 -- THEORY OF OPERATION
 -- The unit unpacks its operands into a sign, an exponent, and a
--- significand of P = G_FBITS + 1 bits whose top bit is 1, which takes a
--- cycle per operand, and a few more for a subnormal one, whose fraction is
+-- significand of P = G_FBITS + 1 bits whose top bit is 1, which takes two
+-- cycles, and a few more for a subnormal operand, whose fraction is
 -- shifted left until its top bit is 1. The special operands, NaNs,
 -- infinities, and zeros, give their results at once, as the model's
 -- cases do.
@@ -406,7 +406,8 @@ architecture synthesis of fpu_unit is
    -- The comparisons that DISPATCH_ST chooses by, formed in every cycle:
    -- whether A is at least B in magnitude, and whether its exponent is
    -- below B's, at least F, 0, below 0, and at least W. DISPATCH_ST comes
-   -- after NORMB_ST only, in a cycle that changes neither operand.
+   -- after NORMA_ST or NORMB_ST only, in a cycle that changes neither
+   -- operand.
    signal dge_r    : boolean;
    signal dlt_r    : boolean;
    signal dwhole_r : boolean;
@@ -783,10 +784,14 @@ begin
                end case;
 
             -- A subnormal operand: its significand shifted left until the
-            -- top bit is 1.
+            -- top bit is 1. NORMB_ST is skipped where B needs no shift.
             when NORMA_ST =>
                if ma_r(C_P - 1) = '1' or ma_r = 0 then
-                  state_r <= NORMB_ST;
+                  if mb_r(C_P - 1) = '1' or mb_r = 0 or not has_b(op_r) then
+                     state_r <= DISPATCH_ST;
+                  else
+                     state_r <= NORMB_ST;
+                  end if;
                else
                   ms_v := ma_r;
                   shl_step(ms_v, step_v);

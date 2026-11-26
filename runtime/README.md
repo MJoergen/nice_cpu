@@ -564,7 +564,7 @@ arguments of one sign they take 74 and 72 steps, and 51 and 50 in float,
 and for two of different signs 57, and 36 in float. The table has half
 of each. A write of a function's command to `FPU_CMD` is one step, and
 the processor then waits for the FPU: on the FPGA, up to the cycles of
-hdl/README.md (The floating-point unit), such as 1552 for `COS` and 3018
+hdl/README.md (The floating-point unit), such as 1368 for `COS` and 2674
 for `POW`. The emulator counts no such wait. Each function in C also
 brings the words below into the program: its own and those of the
 routines it calls, the float library not counted, which has the others.

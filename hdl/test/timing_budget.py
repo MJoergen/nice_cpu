@@ -60,17 +60,16 @@ BUDGET: dict[tuple[str, str], tuple[float, float, float, float]] = {
 # outputs 0.709 to 2.597; in the timing flow 0.079 to 0.551, 1.463 to 2.735,
 # and 1.290 to 2.770. So the budget of the outputs lies inside the range of
 # both flows, and the core's inside that of the default flow. The FPU's on
-# the MEGA65 on 2026-11-26, with the start of a function in a register
-# (#194) and its functions in seven orders in the ROM: in the default flow
-# the FPU has 0.565 to 1.029, the inputs 9.322 to 9.502, and the outputs
-# 7.958 to 8.012; in the timing flow 0.573 to 1.114, 7.836 to 8.451, and
-# 7.958 to 8.012. So the budget of the FPU lies inside the range of both
-# flows.
+# the MEGA65 on 2026-11-26, with the faster steps of #164 and its
+# functions in seven orders in the ROM: in the default flow the FPU has
+# 0.579 to 1.140, the inputs and the outputs 9.502 and 7.958 in all; in
+# the timing flow 0.739 to 1.164, 7.799 to 8.468, and 7.958. So the budget
+# of the FPU lies inside the range of both flows.
 SPREAD: dict[tuple[str, str, str], tuple[float, float, float]] = {
     ("pipeline", "mega65", "default"): (0.44, 1.26, 1.89),
     ("pipeline", "mega65", "timing"): (0.47, 1.27, 1.48),
-    ("fpu", "mega65", "default"): (0.46, 0.18, 0.05),
-    ("fpu", "mega65", "timing"): (0.54, 0.62, 0.05),
+    ("fpu", "mega65", "default"): (0.56, 0.0, 0.0),
+    ("fpu", "mega65", "timing"): (0.43, 0.67, 0.0),
 }
 
 SLACK = re.compile(r"^Slack \((?:MET|VIOLATED)\)\s*:\s*(-?\d+\.\d+)ns", re.M)
@@ -207,8 +206,8 @@ def self_test() -> None:
         assert judge(d, "mega65", 10.0, "default", "fpu")["status"] == "missed"
         assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is True
         fake(d, "0.500", "2.254", "2.456")
-        assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is False
-        assert judge(d, "mega65", 10.0, "timing", "fpu")["within_spread"] is True
+        assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is True
+        assert judge(d, "mega65", 10.0, "timing", "fpu")["within_spread"] is False
         assert "within_spread" not in judge(d, "nexys4ddr", 10.0, "default", "fpu")
         fake(d, "0.900", "2.254", "2.456")
         assert "fpu 0.9 ns (>= 1.0)" in describe(judge(d, "mega65", 10.0, "default", "fpu"))

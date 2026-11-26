@@ -16,7 +16,8 @@
 -- A command pops its operands into registers, as §11.4 says, computes its
 -- results, and pushes them, one in a cycle. The arithmetic is that of
 -- src/fpu_unit.vhd, one operation at a time: a state starts an operation,
--- and UWAIT_ST waits for it and goes on to the state named in RET. The
+-- and UWAIT_ST waits for it and goes on to the state named in RET, or
+-- for RESULT_ST pushes the unit's result itself, in the cycle it ends. The
 -- sequences of DEVICES.md §11.3 are chains of such states:
 -- * ROUND32 rounds through the short format and back. The S bit is the
 --   unit's input SHORT, which rounds the exact result once.
@@ -53,9 +54,13 @@
 -- IDLE_ST. K pushes its constant from the second ROM a cycle later,
 -- PUT pops X and writes it n below the new top, JZ pops X and jumps if
 -- it is zero, JMP jumps, and POLE notes that an infinite result is a
--- pole. A step that does not run a command waits a cycle in FETCH_ST for
--- the ROM. END sets the flags of the function, those from before it and
--- a stack fault of its steps, as the emulator's src/fpu.zig does.
+-- pole. The ROM reads ahead: in STEP_ST, pc_r is the address after the
+-- step's, so that the next step comes in the next cycle. PUT, POLE, and
+-- a JZ that does not jump take one cycle. A jump waits a cycle in
+-- FETCH_ST for the ROM, and a command or K holds pc_r until it ends,
+-- and then steps it. END sets the flags of the function, those from
+-- before it and a stack fault of its steps, as the emulator's
+-- src/fpu.zig does.
 --
 -- The class of X, REL, and the views X_LO and X_HI are logic on the stack,
 -- read at once. X_S and X_W are operations of the unit: a read of them
@@ -304,7 +309,7 @@ architecture synthesis of fpu is
    -- does not decode num_r on its way to the stack, and base_r the
    -- address of its first step, so that the decode is not on the way to
    -- pc_r either (#194).
-   signal pc_r   : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
+   signal pc_r   : natural range 0 to C_SEQ_STEPS'length := 0;
    signal base_r : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
    signal fn_r   : boolean;
    signal fn2_r  : boolean;
@@ -678,7 +683,10 @@ begin
       p_rom : process (clk_i)
       begin
          if rising_edge(clk_i) then
-            step_r <= C_SEQ_STEPS(pc_r);
+            -- pc_r is one past the last step when that step, END, runs.
+            if pc_r < C_SEQ_STEPS'length then
+               step_r <= C_SEQ_STEPS(pc_r);
+            end if;
             kval_r <= C_SEQ_CONSTS(to_integer(unsigned(step_r(C_SEQ_KBITS - 1 downto 0))));
          end if;
       end process p_rom;
@@ -998,6 +1006,7 @@ begin
       variable t10_v   : t_word64;
       variable wr_v    : signed(32 downto 0);
       variable ok_v    : boolean;
+      variable end_v   : boolean;
       variable tr_v    : unsigned(32 downto 0);
 
       -- Starts an operation of the unit, and goes to ret when it ends.
@@ -1015,6 +1024,15 @@ begin
          ret_r   <= ret;
          state_r <= UWAIT_ST;
       end procedure ucall;
+
+      -- At the end of a command in a function, the next step: the ROM has
+      -- read it at pc_r since the command started.
+      procedure next_step is
+      begin
+         if seq_r = '1' then
+            pc_r <= pc_r + 1;
+         end if;
+      end procedure next_step;
 
       -- Pushes v: the slot after X, which on a full stack is the deepest.
       procedure push(v : t_word64) is
@@ -1225,7 +1243,13 @@ begin
                null;
 
             when UWAIT_ST =>
-               if u_done = '1' then
+               if u_done = '1' and ret_r = RESULT_ST then
+                  -- The result of the unit is the result of the command.
+                  push(u_result);
+                  flags_r(2 downto 0) <= flags_r(2 downto 0) or u_flags;
+                  state_r             <= cmd_end;
+                  next_step;
+               elsif u_done = '1' then
                   state_r <= ret_r;
                end if;
 
@@ -1250,10 +1274,13 @@ begin
                   end if;
                   flags_r(2 downto 0) <= flags_r(2 downto 0) or cflags_r;
                   state_r             <= cmd_end;
+                  next_step;
                end if;
 
-            -- A command: the word checked, the operands popped.
+            -- A command: the word checked, the operands popped. A command
+            -- of the stack ends here.
             when CMD_ST =>
+               end_v  := true;
                num_v  := num_r;
                n_v    := n_r;
                info_v := info(num_v);
@@ -1302,7 +1329,11 @@ begin
                         end if;
                      when others =>
                         state_r <= ARITH_ST;
+                        end_v   := false;
                   end case;
+               end if;
+               if end_v then
+                  next_step;
                end if;
 
             -- The commands on the popped operands.
@@ -1460,9 +1491,10 @@ begin
                      end if;
                end case;
 
-            -- The result of the unit is the result of the command.
+            -- Never entered: for a ret_r of RESULT_ST, UWAIT_ST pushes the
+            -- result of the unit itself.
             when RESULT_ST =>
-               finish(u_result, x_r, 1, u_flags);
+               null;
 
             -- XMUL: p, then its error by MULERR, +0 for a zero. An infinite
             -- p has the error +0, and a NaN p the canonical NaN.
@@ -1858,18 +1890,16 @@ begin
             when WORD_END_ST =>
                finish(u_result, x_r, 1, "000");
 
-            -- A step of a function, from the ROM.
+            -- A step of a function, from the ROM, with pc_r the address
+            -- after it.
             when STEP_ST =>
-               state_r <= FETCH_ST;
                case step_r(19 downto 17) is
                   when C_SEQ_CMD =>
                      num_r   <= step_r(7 downto 0);
                      n_r     <= to_integer(unsigned(step_r(15 downto 8)));
                      sbit_r  <= step_r(16);
-                     pc_r    <= pc_r + 1;
                      state_r <= CMD_ST;
                   when C_SEQ_K =>
-                     pc_r    <= pc_r + 1;
                      state_r <= K_ST;
                   when C_SEQ_PUT =>
                      pop(1);
@@ -1880,12 +1910,14 @@ begin
                   when C_SEQ_JZ =>
                      pop(1);
                      if f_zero(x_val) then
-                        pc_r <= to_integer(unsigned(step_r(16 downto 0)));
+                        pc_r    <= to_integer(unsigned(step_r(16 downto 0)));
+                        state_r <= FETCH_ST;
                      else
                         pc_r <= pc_r + 1;
                      end if;
                   when C_SEQ_JMP =>
-                     pc_r <= to_integer(unsigned(step_r(16 downto 0)));
+                     pc_r    <= to_integer(unsigned(step_r(16 downto 0)));
+                     state_r <= FETCH_ST;
                   when C_SEQ_POLE =>
                      pole_r <= '1';
                      pc_r   <= pc_r + 1;
@@ -1905,12 +1937,14 @@ begin
                      end if;
                end case;
 
-            -- The ROM gives the step at the new address.
+            -- The ROM gives the step at the address jumped to.
             when FETCH_ST =>
+               pc_r    <= pc_r + 1;
                state_r <= STEP_ST;
 
             when K_ST =>
                push(kval_r);
+               pc_r    <= pc_r + 1;
                state_r <= STEP_ST;
 
          end case;

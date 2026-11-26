@@ -39,6 +39,12 @@ operands:
   (scan_pow). In the scan of 2026-11-15 the slowest POW2 took 1053
   cycles, POW 3018, of a negative Y to a whole X, and HYPOT 542.
 
+The scans ran before the faster steps of #164. On 2026-11-26 the same
+vectors take at most 1175 cycles for SCALE10, 3182 for DIGITS, 1355 for
+SIN, 1368 for COS, 1802 for TAN, 992 for ASIN, 856 for ACOS, 840 for
+ATAN, 1194 for ATAN2, 818 for LN, 1009 for LOG2, 1069 for LOG10, 739
+for EXP, 939 for POW2, 2674 for POW, and 498 for HYPOT.
+
 A change to DIGITS or SCALE10 in src/fpu.vhd may make other values the
 slowest, so such a change runs the scan again."""
 

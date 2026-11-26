@@ -967,7 +967,7 @@ A log of writes, each with the number of the sample before which it takes effect
 
 ### 12.4 Formulas
 
-The model gives these, and `emulator/test/opm_model_test.py` checks them. The model, and not these formulas, defines the samples.
+The model gives these. `emulator/test/opm_model_test.py` checks the pitch with KF, DT2, and MUL, the times of the rates and the effective rate, the levels of TL and D1L, the LFO's period, and the DAC. The others, DT1, the scale of a modulation and of the feedback, the LFO's waves and depths, and the noise among them, rest on the comparison with ymfm (§12.6). The model, and not these formulas, defines the samples.
 
 - **Pitch.** With KF 0, the frequency of KC is within 5 cents of 440 · 2^((12b + n − 56)/12) Hz, for the block b and the note's semitone n, 0 for C# to 11 for C. So A4, the block 4 and the note 10, is 439.94 Hz. KF adds KF/64 of a semitone. DT2 adds 600, 781, or 950 cents for 1, 2, or 3. MUL multiplies the frequency by MUL, or by 1/2 for 0. DT1 adds a few steps of the phase, more for a higher KC, and 4 to 7 subtract what 0 to 3 add.
 - **Phase.** An operator's phase has 20 bits for a period of its wave, and adds its step in each sample. The step of a frequency f is f · 2^20 / (3579545/64).

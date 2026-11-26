@@ -187,6 +187,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** "and `opm_model_test.py` checks the pitch, the rates, the levels, the LFO's period, and the DAC; the others rest on the comparison with ymfm (§12.6)". Or the missing tests, by hand-checked values as the others.
 
+**Resolved.** DEVICES.md §12.4 and emulator/README.md say what the script checks, the pitch, the rates, the levels, the LFO's period, the writes, and the DAC, and that the other formulas rest on the comparison with ymfm (§4.4).
+
 ### 2.9 The units of `make timing`: four, not two or three
 
 - RELEASE.md §4: "`release.py check` runs only `make timing` beside them, a Vivado run of three minutes for the core and one for the FPU." It runs four, one after the other: the core, the FPU, the sound, and the sample player (`TIMING_UNITS` of `release.py`). The section "Timing" of the same file has all four.

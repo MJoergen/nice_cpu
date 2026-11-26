@@ -878,8 +878,9 @@ computed from their formulas, each value checked to round the same on
 every host, and the pitch, the detune, and the envelope's increments as
 ymfm has them, under ymfm's notice. `make test` runs
 `test/opm_model_test.py`, which checks the model against the formulas
-of DEVICES.md §12.4, its rules of writes, and its DAC on hand-checked
-values. `test/opm_vectors.py` writes random logs of writes from a seed,
+of DEVICES.md §12.4 for the pitch, the rates, the levels, and the LFO's
+period, its rules of writes, and its DAC on hand-checked
+values. The other formulas rest on `make ymfmcheck`. `test/opm_vectors.py` writes random logs of writes from a seed,
 and with the model's samples, the vectors. `make test` writes 20000
 samples of them to `test/opm.vectors.out`, and the unit test of
 `src/opm.zig` replays them, then must fail on a copy with one wrong

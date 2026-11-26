@@ -142,7 +142,9 @@ The ratio of the instruction counts, translated to hand-written:
 | `strings` | 4.9 | Every character is a byte load of seven instructions, where the hand-written strings have one character per word. |
 | total | 3.4 | |
 
-What remains is in issue [#73](https://github.com/MJoergen/nice_cpu/issues/73).
+Issue [#73](https://github.com/MJoergen/nice_cpu/issues/73) listed the
+ways to close the rest of the gap, and each is done, decided against
+(doc/review/decisions.md), or out of scope.
 A byte load of linear memory stays several instructions, since the
 memory is byte-addressed and packed four to a word (WASM.md).
 
@@ -447,7 +449,7 @@ the core to what WRITE did in it, so they compare in groups:
 | register | agen, shiftreg, sumwait | REG |
 | order | sr, jump | ORDER |
 | bus | bus | BUS, STORE |
-| read | readbus, readlate, mpu | STALL, READ, LATE |
+| read | readbus, readlate, mpu, fpu | STALL, READ, LATE |
 | shift | shiftlate | SHIFT |
 | adjust | adjust | ADJUST |
 | other | | OTHER |

@@ -120,9 +120,8 @@ test: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/simple.bin $(BUILD)/float.bi
 # Runs both on a core in the simulator, SIM of ../hdl/sim.mk, so that the
 # cycles are the core's: CORE,
 # the generic G_CORE of hdl/test/tb_core.vhd, is pipeline for the
-# pipelined core or multicycle for the multi-cycle one. On an idle machine
-# the pipelined core takes about 22 minutes and the multi-cycle core about
-# 38: the pipelined core runs fewer cycles, but more logic in each. The program is given relative to
+# pipelined core or multicycle for the multi-cycle one. The README has
+# the times of both, in GHDL and in nvc. The program is given relative to
 # hdl/build, where the simulator runs, and the output is written there too,
 # with the retire log that pipecycles.py --retires reads,
 # $(1)_$(CORE).retires. The simulator runs in a directory of its own for

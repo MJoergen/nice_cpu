@@ -114,7 +114,7 @@ test: build bincheck fmtcheck seqcheck opmcheck
 	@$(PYTHON) test/opm_vectors.py --count 20000 -o test/opm.vectors.out
 	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) -Dopm-vectors=$(abspath test/opm.vectors.out) --summary all
 	$(ZIG) build test -Dcpu=baseline -Dfpu-vectors=$(abspath test/fpu.vectors.out) -Dopm-vectors=$(abspath test/opm.vectors.out) --summary all
-	@sed -i 's/^19999 [-0-9]* /19999 12345 /' test/opm.vectors.out
+	@sed -i '/^end /,$$ s/^19999 [-0-9]* /19999 12345 /' test/opm.vectors.out
 	@if $(ZIG) build test -Dopm-vectors=$(abspath test/opm.vectors.out) > test/opm.wrong.out 2>&1; \
 	  then echo "FAIL the unit test passes with a wrong sound vector: it did not read the file"; exit 1; \
 	  elif grep -Eq '(^| )1 of [0-9]+ vectors failed' test/opm.wrong.out; \

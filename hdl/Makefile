@@ -115,7 +115,7 @@ OPTS_OPM_high = $(OPTS_OPM_start)
 GENERICS_OPM_state = -gG_ENV_START=65521
 OPM_COUNT_high = 2000
 OPM_HZ_high = 268000000
-SED_OPM_wrong = && sed -i 's/^$(shell expr $(OPM_COUNT) - 1) [-0-9]* /$(shell expr $(OPM_COUNT) - 1) 12345 /' vectors
+SED_OPM_wrong = && sed -i '/^end /,$$ s/^$(shell expr $(OPM_COUNT) - 1) [-0-9]* /$(shell expr $(OPM_COUNT) - 1) 12345 /' vectors
 EXPECT_OPM_wrong = 1
 GREP_OPM_wrong = grep -q "$(OPM_COUNT) samples, 1 failures" $(RUNDIR)/tb_opm.log
 

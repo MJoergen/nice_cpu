@@ -18,6 +18,12 @@ up to the microseconds of the halt: the FIFO's samples, then the 0s of
 the underrun. The header states the rate. A second program changes the
 rate, which the header does not follow, and niceemu says so.
 
+A signal: a program that loops is ended by SIGINT, SIGTERM, and SIGHUP
+in turn, with --wav and --pcm-wav. niceemu must die of the signal, and
+leave both files whole: the sound's with the samples of the host's time
+up to the signal, all 0, and the sizes of that many in its header, and
+the player's with its header alone, which states no sample.
+
 Without --wav and a window, nobody takes the samples, and the emulator
 computes none (emulator/README.md, Sound). The last check plays the
 note and skips 9.5 hours of microseconds, which would be 1.9 billion
@@ -28,10 +34,12 @@ QUIET_TIMEOUT seconds, with the status of an empty FIFO.
 from __future__ import annotations
 
 import os
+import signal
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 from typing import List, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +57,7 @@ QUIET_TIMEOUT = 30
 PCM_COUNT = 100
 PCM_RATE = 8000
 PCM_SKIP = 20000
+SIGNAL_AFTER = 1.0
 
 failures: List[str] = []
 
@@ -193,6 +202,41 @@ def run(args: List[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run([NICEEMU] + args, capture_output=True, text=True, stdin=subprocess.DEVNULL)
 
 
+def check_signal(tmp: str) -> None:
+    """A signal ends a run that loops: both files are whole."""
+    src = os.path.join(tmp, "loop.nasm")
+    with open(src, "w") as f:
+        f.write(":               JMP     :-\n")
+    subprocess.run([sys.executable, NICEASM, src], check=True)
+    wav = os.path.join(tmp, "signal.wav")
+    pcm_wav = os.path.join(tmp, "signal_pcm.wav")
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        p = subprocess.Popen(
+            [NICEEMU, "--wav", wav, "--pcm-wav", pcm_wav, os.path.join(tmp, "loop.bin")],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        time.sleep(SIGNAL_AFTER)
+        p.send_signal(sig)
+        _, err = p.communicate(timeout=30)
+        if p.returncode != -sig or err:
+            failures.append(f"{sig.name}: exit status {p.returncode}, stderr {err!r}")
+            continue
+        before = len(failures)
+        header, got = read_wav(wav)
+        if len(header) != 44 or not got:
+            failures.append(f"{sig.name}: the file has a header of {len(header)} bytes and {len(got)} samples")
+        else:
+            check_header(header, len(got))
+            if any(s != (0, 0) for s in got):
+                failures.append(f"{sig.name}: a sample of a silent run is not 0")
+        header, got = read_wav(pcm_wav)
+        if len(header) != 44 or got:
+            failures.append(f"{sig.name}: the player's file has a header of {len(header)} bytes and {len(got)} samples")
+        else:
+            check_header(header, 0, 48000)
+        failures[before:] = [f"{sig.name}: {m}" if not m.startswith(sig.name) else m for m in failures[before:]]
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         src = os.path.join(tmp, "play.nasm")
@@ -227,6 +271,7 @@ def main() -> int:
             if r.returncode != 1 or msg not in r.stderr:
                 failures.append(f"{' '.join(args[:3])}: exit {r.returncode}, {r.stderr.strip()!r}")
         check_pcm(tmp)
+        check_signal(tmp)
         src = os.path.join(tmp, "quiet.nasm")
         with open(src, "w") as f:
             f.write(quiet_program())

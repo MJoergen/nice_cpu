@@ -324,6 +324,8 @@ emulator/README.md: `--wav FILE` writes the samples "from the start to the halt 
 
 **Fix:** finish the two files before niceemu dies of a signal, with a case in `test/wav.py`. Or say that a signal leaves a file without its sizes.
 
+**Resolved.** niceemu now finishes the files of `--wav` and `--pcm-wav` before it dies of SIGINT, SIGTERM, or SIGHUP: the samples up to the signal, and the sizes in the header (`finishWav` of `main.zig`). `test/wav.py` ends a run that loops with each of the three, and both files must be whole; on the emulator from before, each was 0 bytes. emulator/README.md says so, and that the sizes of a header end at 4 GiB.
+
 ### 4.6 The sound and the sample player have no formal check, and nothing says so
 
 README.md: "Formal checks cover their ports, five stages of the pipeline, the devices, and the shifter and the ALU for every input." CLAUDE.md, of `make formal`: "the devices". hdl/README.md and hdl/formal/README.md: "a wrapper and a SymbiYosys job for each unit". `FORMAL` of `hdl/Makefile` has neither `opm` nor `pcm`, and the table of the formal checks has no row and no remark for them. Each is a Wishbone slave that holds a request, the sound for up to 1788 cycles and the player for up to 100000. Every other device of `hdl/src` has a job: the SD card controller, the clock, the counters, the fetch statistics, the network station, and the port for Ethernet frames with `formal/wb_slave_check.vhd` on the port, and the math unit and the FPU with assertions of their own for it.

@@ -122,7 +122,7 @@ goes through these steps on a small program, and a
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
 | `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
 | `--no-sound` | Make the sound, `0xFFFFFF08`–`0xFFFFFF0F`, ordinary memory, as on a system without one (see Sound below). |
-| `--wav FILE` | Write the samples of the sound to FILE, a WAV file of 16-bit stereo at 55930 Hz, from the start to the halt or the step limit (see Sound below). An error with `--link`, `--window`, or `--no-sound`. |
+| `--wav FILE` | Write the samples of the sound to FILE, a WAV file of 16-bit stereo at 55930 Hz, from the start to the halt, the step limit, or a signal that ends the run (see Sound below). An error with `--link`, `--window`, or `--no-sound`. |
 | `--pcm-wav FILE` | Write the samples of the sample player to FILE, as `--wav`, at the rate of its first sample (see Sound below). An error with `--link`, `--window`, or `--no-sound`. |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
 | `--no-screen-mode` | Make the screen's mode word, `0xFFFFFF87`, ordinary memory, so that a program that reaches it runs as on an FPGA core with none (DEVICES.md §1.10). The window shows the chunky mode while the word is 1. |
@@ -516,7 +516,11 @@ eight words ordinary memory.
 
 `--wav FILE` writes the samples to FILE as a WAV file: 16-bit stereo
 PCM, left first, at 55930 Hz, the sound's rate of 55930.4 rounded down.
-Its header states the sizes once the run ends. A run with `--step-time`
+Its header states the sizes once the run ends: at the halt, at the step
+limit, or on SIGINT, SIGTERM, or SIGHUP, which niceemu then dies of, so
+a run stopped with Ctrl-C leaves a whole file, with the samples up to
+the signal. The sizes of a header end at 4 GiB, some 5.3 hours of the
+sound: a longer run writes on, and its header states 4 GiB. A run with `--step-time`
 gives the same file each time. To hear a program to its last note, let
 it wait before its `HALT`: with `--step-time` by a write of `TIME_SKIP`,
 which is ignored without it, and else by reading `TIME_LO` in a loop.
@@ -534,7 +538,9 @@ it writes. The unit test of `src/opm.zig` replays the vectors of
 the status, a skip, and the waits of a full FIFO with `--step-time`, and
 `sound_mem` runs it again with `--no-sound`. `test/wav.py` plays the
 example of DEVICES.md §12.5 with `--wav`, and compares every sample with
-the model's, for the writes at the samples that their steps give. Then
+the model's, for the writes at the samples that their steps give. It
+ends a run that loops with SIGINT, SIGTERM, and SIGHUP, and both files
+must be whole. Then
 it plays the note without `--wav` and skips 9.5 hours, which must take
 no time, as no sample is computed.
 

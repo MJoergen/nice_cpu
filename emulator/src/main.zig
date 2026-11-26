@@ -856,7 +856,10 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
         if (turns & eth_check_mask == 0) eth_host.poll(&cpu);
         if (turns & signal_check_mask == 0) {
             const sig = stop_signal.load(.acquire);
-            if (sig != 0) dieOfSignal(out, sig);
+            if (sig != 0) {
+                finishWav(&cpu, .{ wav, pcm_wav }) catch {};
+                dieOfSignal(out, sig);
+            }
         }
         const k = skipWaits(&cpu, opts, steps, std.math.maxInt(u64));
         if (k != 0) {
@@ -869,14 +872,23 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     // A signal that interrupted a console read ended the input, and the
     // program may have halted before the next check above.
     const sig = stop_signal.load(.acquire);
-    if (sig != 0) dieOfSignal(out, sig);
-    // The samples up to the halt or the step limit.
+    if (sig != 0) {
+        finishWav(&cpu, .{ wav, pcm_wav }) catch {};
+        dieOfSignal(out, sig);
+    }
+    try finishWav(&cpu, .{ wav, pcm_wav });
+    return report(out, opts, syms, &cpu, steps, stop);
+}
+
+/// The samples up to the halt, the step limit, or a signal, and then the
+/// sizes into the headers of the files of --wav and --pcm-wav, so that a
+/// run that a signal ends leaves them whole too.
+fn finishWav(cpu: *Cpu, files: [2]?*WavFile) error{Load}!void {
     cpu.syncSound();
-    for ([_]?*WavFile{ wav, pcm_wav }) |file| if (file) |f| f.finish() catch |err| {
+    for (files) |file| if (file) |f| f.finish() catch |err| {
         std.debug.print("niceemu: cannot write {s}: {s}\n", .{ f.path, @errorName(err) });
         return error.Load;
     };
-    return report(out, opts, syms, &cpu, steps, stop);
 }
 
 /// The wait steps of the rest of a skip of `TIME_SKIP` (doc/DEVICES.md §3)

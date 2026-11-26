@@ -17,7 +17,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
   `doc/review/` records how decisions were reached; ISA.md supersedes it.
 - `doc/DEVICES.md`: the devices that the emulator maps into the I/O range
   (console, math unit, counters, SD card, network station,
-  Ethernet frames, clock, FPU), and the sound that it does not map yet. ISA.md reserves the range and defines no device.
+  Ethernet frames, clock, FPU, sound). ISA.md reserves the range and defines no device.
   ISA.md wins over it.
 - `doc/TOOLCHAIN.md`: the tools, what each reads and writes, the steps
   that build a program, how the tools use each other, and the compilers
@@ -82,7 +82,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     make test                        # every quick make test below, in parallel
     cd assembler && make test        # .nasm -> .bin comparisons, test/errors.py, fmt.py, and dis.py, and the layout of every .nasm
     cd assembler && make typecheck   # mypy --strict
-    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py and link.py, the FPU's model and vectors, the sound's model
+    cd emulator  && make test        # zig fmt --check, zig unit tests, example and probe programs, test/errors.py, link.py, and wav.py, the FPU's and the sound's models and vectors
     cd emulator  && make typecheck   # mypy --strict
     cd emulator  && make bincheck    # fail if a probe .bin is stale
     cd emulator  && make bins        # reassemble test/*.bin after editing a probe .nasm

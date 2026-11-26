@@ -17,6 +17,10 @@ pub fn build(b: *std.Build) void {
     // test/fpu_vectors.py. Without them, that test is skipped.
     const fpu_vectors = b.option([]const u8, "fpu-vectors", "The file of the FPU's test vectors");
     options.addOption(?[]const u8, "fpu_vectors", fpu_vectors);
+    // The same for the sound, which make test writes with
+    // test/opm_vectors.py.
+    const opm_vectors = b.option([]const u8, "opm-vectors", "The file of the sound's test vectors");
+    options.addOption(?[]const u8, "opm_vectors", opm_vectors);
     mod.addOptions("build_options", options);
 
     // SDL is a lazy dependency: the default build fetches nothing. Zig has
@@ -43,5 +47,6 @@ pub fn build(b: *std.Build) void {
     // and runs the test again only when an input changed, so the file is
     // named as one: otherwise new vectors would not be replayed.
     if (fpu_vectors) |path| run_tests.addFileInput(.{ .cwd_relative = path });
+    if (opm_vectors) |path| run_tests.addFileInput(.{ .cwd_relative = path });
     b.step("test", "Run the unit tests").dependOn(&run_tests.step);
 }

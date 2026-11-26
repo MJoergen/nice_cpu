@@ -65,7 +65,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
 | `0xFFFFFF02`–`0xFFFFFF07` | 6 | Reserved for I/O (§4). |
-| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12), which the emulator and the FPGA implementation do not map yet. |
+| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12). With `--no-sound`, the emulator makes them ordinary memory. The FPGA implementation does not map it yet. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
@@ -886,7 +886,7 @@ To push the microsecond counter (§3), as a binary64 value:
 
 ## 12. Sound
 
-The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator and the FPGA implementation do not map the sound yet. Until they do, its words are memory in the emulator.
+The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator maps the sound at `0xFFFFFF08`–`0xFFFFFF0F`, and `--no-sound` makes its words ordinary memory. `--wav` writes its samples to a file. The FPGA implementation does not map it yet.
 
 ### 12.1 Registers
 
@@ -957,7 +957,7 @@ At a reset, every register is 0 but `0x20`–`0x27`, which are `0xC0`, so that e
 - **A full FIFO** holds off the acknowledge of the write until the next sample takes a write from it, as the math unit (§2) and the FPU (§11.1) hold off theirs. So a program never needs to poll the status. A program that wants its writes to have taken effect waits for bit 7 to read 0.
 - **A key off and a key on in one sample** cannot happen, as one write takes effect in a sample. The envelope reads the key once in each sample, after the write.
 - **The samples.** Each sample is a left and a right value, signed, of 16 bits, rounded as the chip's DAC rounds (§12.4). The FPGA implementation gives them with a strobe. The mixer, and the conversion to the rate of an output, are the system's.
-- **When a sample is computed.** The FPGA implementation adds 3579545 to an accumulator in each cycle, and computes a sample each time the sum reaches 64 times its clock frequency in hertz, which it subtracts, as the microsecond counter does (§3). At 100 MHz, that is once in 1787.94 cycles on average. With `--step-time`, the emulator does the same with one microsecond for each step: it adds 3579545 for each step, and computes a sample each time the sum reaches 64000000, once in 17.879 steps on average. A skip (§3) computes the samples of the steps it skips. Without `--step-time`, the emulator computes the samples of the host's time, so a write lands where the host's timing puts it.
+- **When a sample is computed.** The FPGA implementation adds 3579545 to an accumulator in each cycle, and computes a sample each time the sum reaches 64 times its clock frequency in hertz, which it subtracts, as the microsecond counter does (§3). At 100 MHz, that is once in 1787.94 cycles on average. With `--step-time`, the emulator does the same with one microsecond for each step: it adds 3579545 for each step, and computes a sample each time the sum reaches 64000000, once in 17.879 steps on average. A skip (§3) computes the samples of the steps it skips, and the samples stop at a halt. A write to a full FIFO there takes the microseconds to the next sample, which the cycle counter, the microsecond counter, and the clock count, as the wait steps of a skip. Without `--step-time`, the emulator computes the samples of the host's time, so a write lands where the host's timing puts it.
 - **It always runs.** The sound computes its samples while the processor is held, paused, or halted, and empties its FIFO meanwhile, so a note that sounds goes on sounding. A reset of the system, and a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), empty the FIFO and reset the sound: every register as above, every envelope at its end, 0x3FF, with its key off, every phase at 0, and the LFO and the noise at their start. So it is silent.
 
 A log of writes, each with the number of the sample before which it takes effect, and at most one in a sample, gives the same samples in the model, the emulator, and the FPGA implementation. That is how they are tested.

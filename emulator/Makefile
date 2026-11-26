@@ -24,7 +24,7 @@ OPTS_wrap      = -d 0xffffffff:1
 PROBES = logic dest carry r15 cond rotate selfmod addr cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events input r15modes r0dest r14mem skipconst carryin shiftc \
   wrapmem smcown scrbound time trapsym sd font net eth bytewin skip clock clockhost stack \
-  fpu fpustack fpudec fpufunc chunky short shortfar
+  fpu fpustack fpudec fpufunc chunky short shortfar sound
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -86,6 +86,9 @@ OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # last value written there, or 0.
 OPTS_fpu_mem = --step-time --no-fpu -d 0x200:24 -d 0xffffff88:8
 OPTS_fpustack = -d 0x200:18 -d 0xffffff88:8
+OPTS_sound    = --step-time -d 0x200:9
+# sound again, with its words ordinary memory.
+OPTS_sound_mem = --step-time --no-sound -d 0x200:9
 OPTS_fpufunc = -d 0x200:22
 OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 
@@ -106,10 +109,17 @@ endef
 # only when an input changed, so build.zig names the vectors as one.
 # The last run checks that: the file gets a line that is wrong, a read
 # of FPU_X_LO that gives 1 for the model's 0, and the unit test must fail.
-test: build bincheck fmtcheck seqcheck
+test: build bincheck fmtcheck seqcheck opmcheck
 	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
-	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
-	$(ZIG) build test -Dcpu=baseline -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
+	@$(PYTHON) test/opm_vectors.py --count 20000 -o test/opm.vectors.out
+	$(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) -Dopm-vectors=$(abspath test/opm.vectors.out) --summary all
+	$(ZIG) build test -Dcpu=baseline -Dfpu-vectors=$(abspath test/fpu.vectors.out) -Dopm-vectors=$(abspath test/opm.vectors.out) --summary all
+	@sed -i 's/^19999 [-0-9]* /19999 12345 /' test/opm.vectors.out
+	@if $(ZIG) build test -Dopm-vectors=$(abspath test/opm.vectors.out) > test/opm.wrong.out 2>&1; \
+	  then echo "FAIL the unit test passes with a wrong sound vector: it did not read the file"; exit 1; \
+	  elif grep -Eq '(^| )1 of [0-9]+ vectors failed' test/opm.wrong.out; \
+	  then echo "PASS a wrong sound vector fails the unit test"; \
+	  else echo "FAIL the unit test with a wrong sound vector:"; cat test/opm.wrong.out; exit 1; fi
 	@echo "0 02 3FF0000000000000 0000000000000000 : R 0 00000001 : 0 02 3FF0000000000000 0000000000000000" \
 	  >> test/fpu.vectors.out
 	@if $(ZIG) build test -Dfpu-vectors=$(abspath test/fpu.vectors.out) > test/fpu.wrong.out 2>&1; \
@@ -141,6 +151,7 @@ programs:
 	$(call check,scrbound2004,test/scrbound.bin)
 	$(call check,clock_mem,test/clock.bin)
 	$(call check,fpu_mem,test/fpu.bin)
+	$(call check,sound_mem,test/sound.bin)
 	$(call check,skip_off,test/skip.bin)
 	$(call check,skip_limit,test/skip.bin)
 	$(call check,skip_mem,test/skip.bin)
@@ -151,6 +162,7 @@ programs:
 	else echo "FAIL eth frames"; diff test/eth.frames.expected test/eth.frames.out; exit 1; fi
 	@rm -f test/*.out
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/link.py
+	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/wav.py
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/udp.py
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/tap.py
 
@@ -193,7 +205,8 @@ WINDOW = niceemu-window-$(TAG)-x86_64-linux
 dist: bincheck
 	rm -rf $(DIST)
 	@$(PYTHON) test/fpu_vectors.py -o test/fpu.vectors.out
-	$(ZIG) build test -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl -Dfpu-vectors=$(abspath test/fpu.vectors.out) --summary all
+	@$(PYTHON) test/opm_vectors.py --count 20000 -o test/opm.vectors.out
+	$(ZIG) build test -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl -Dfpu-vectors=$(abspath test/fpu.vectors.out) -Dopm-vectors=$(abspath test/opm.vectors.out) --summary all
 	$(ZIG) build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl -p $(DIST)/$(PLAIN)
 	$(ZIG) build -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-gnu.2.31 -Dwindow -p $(DIST)/$(WINDOW)
 	@$(MAKE) --no-print-directory programs EMU=$(DIST)/$(PLAIN)/bin/niceemu
@@ -246,13 +259,19 @@ ymfmcheck:
 	fi
 	$(PYTHON) test/opm_ymfm.py --ymfm $(YMFM) --seeds $(SEEDS)
 
+# Fail if src/opm_tables.zig is not what test/opm_tables.py writes.
+opmcheck:
+	@$(PYTHON) test/opm_tables.py --zig | cmp -s - src/opm_tables.zig \
+	  || { echo "STALE src/opm_tables.zig: run $(PYTHON) test/opm_tables.py --zig > src/opm_tables.zig"; exit 1; }; \
+	echo "PASS opmcheck"
+
 # Needs mypy (pip install mypy).
 typecheck:
 	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py test/fpu_vectors.py test/fpu_seq.py \
-	  test/opm_tables.py test/opm_model.py test/opm_model_test.py test/opm_vectors.py test/opm_ymfm.py \
+	  test/opm_tables.py test/opm_model.py test/opm_model_test.py test/opm_vectors.py test/opm_ymfm.py test/wav.py \
 	  tools/nicetap.py font/gen_font.py
 
 clean:
 	rm -rf zig-out .zig-cache zig-pkg dist build test/*.out
 
-.PHONY: test fpu-long ymfmcheck programs dist build window window-test bins bincheck seqcheck fmtcheck typecheck clean
+.PHONY: test fpu-long ymfmcheck opmcheck programs dist build window window-test bins bincheck seqcheck fmtcheck typecheck clean

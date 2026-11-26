@@ -31,7 +31,7 @@ Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
 
 ## Build and test
 
-    make          # unit tests, example and probe programs, test/errors.py, the FPU's model and vectors, the sound's model
+    make          # unit tests, example and probe programs, test/errors.py, the FPU's model and vectors, the sound's model and vectors
     make build    # just build zig-out/bin/niceemu
     make window   # build it with the window of --window
     make window-test  # build it so, and run test/window.py
@@ -120,6 +120,8 @@ goes through these steps on a small program, and a
 | `--stack` | After the halt or the step limit, print the first value of R13, the lowest since, and the words between them (see Stack below). |
 | `--no-cycle-counter` | Make the cycle counter, the microsecond counter, and the clock of the time of day, `0xFFFFFF40`, `0xFFFFFF41`, and `0xFFFFFF44`–`0xFFFFFF49`, ordinary memory (see Performance counters below). |
 | `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
+| `--no-sound` | Make the sound, `0xFFFFFF08`–`0xFFFFFF0F`, ordinary memory, as on a system without one (see Sound below). |
+| `--wav FILE` | Write the samples of the sound to FILE, a WAV file of 16-bit stereo at 55930 Hz, from the start to the halt or the step limit (see Sound below). An error with `--link`, `--window`, or `--no-sound`. |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
 | `--no-screen-mode` | Make the screen's mode word, `0xFFFFFF87`, ordinary memory, so that a program that reaches it runs as on an FPGA core with none (DEVICES.md §1.10). The window shows the chunky mode while the word is 1. |
 | `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time, and make a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skip N wait steps (see Performance counters and Skipping time below). |
@@ -286,7 +288,9 @@ address twice and a file with no words are errors.
 | `0xFFFF4600`–`0xFFFFFEFF` | 47360 | Ordinary memory. The runtime's stack starts at `0xFFFFFF00` and grows down. |
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
-| `0xFFFFFF02`–`0xFFFFFF1F` | 30 | Reserved for I/O (ISA.md §8.3, DEVICES.md §1.9 and §4). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF02`–`0xFFFFFF07` | 6 | Reserved for I/O (ISA.md §8.3, DEVICES.md §1.9 and §4). Ordinary memory for data accesses. Instruction fetches read 0. |
+| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (DEVICES.md §12): the FM synthesizer, its write word and its status. With `--no-sound`, ordinary memory. |
+| `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF07`. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, and jumps, 64 bits each, and `0xFFFFFF52`–`0xFFFFFF5E`, which read 0. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
 | `0xFFFFFF80`–`0xFFFFFF86` | 7 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF1F`. `--window` draws its cursor from `0xFFFFFF80`–`0xFFFFFF82` (DEVICES.md §1.4), and takes its font base from `0xFFFFFF86` (DEVICES.md §1.8). |
@@ -445,6 +449,44 @@ included, from 0 with "set" 0. `test/clock.nasm` checks its reads, its
 writes, and its wrap with `--step-time`, and again with
 `--no-cycle-counter`, where its words are memory. `test/clockhost.nasm`
 checks it on the host's clock.
+
+### Sound
+
+The sound at `0xFFFFFF08`–`0xFFFFFF0F` is the FM synthesizer of
+DEVICES.md §12, in `src/opm.zig`, which computes what the model,
+`test/opm_model.py`, computes, and its FIFO of 64 writes. It computes
+its samples when the program reads or writes its words, and at the end
+of the run, for the time since it last did: the microseconds of the
+steps with `--step-time`, a skip's included, or else the host's time,
+which runs on while the processor is held, paused, or halted. So with
+`--step-time` the samples of a run are the same each time, and they end
+at the halt. A write to a full FIFO waits for the next sample: with
+`--step-time`, the step of the write counts the microseconds of the
+wait in the cycle counter, the microsecond counter, and the clock, as
+the wait steps of a skip, but not as steps of the run; without it, the
+emulator waits the host's time. A read changes nothing, so `--dump` and
+the debug link show the status as of the last sample computed. A start
+over the link resets the sound. `--no-sound` makes the eight words
+ordinary memory.
+
+`--wav FILE` writes the samples to FILE as a WAV file: 16-bit stereo
+PCM, left first, at 55930 Hz, the sound's rate of 55930.4 rounded down.
+Its header states the sizes once the run ends. A run with `--step-time`
+gives the same file each time. To hear a program to its last note, let
+it wait with `TIME_SKIP` before its `HALT`. The emulator plays no sound.
+
+`src/opm_tables.zig` holds the tables of the synthesizer. `test/opm_tables.py`
+writes it:
+
+    python3 test/opm_tables.py --zig > src/opm_tables.zig
+
+`make opmcheck`, which `make test` runs, fails if the file is not what
+it writes. The unit test of `src/opm.zig` replays the vectors of
+`test/opm_vectors.py` (Tests below). `test/sound.nasm` checks the words,
+the status, a skip, and the waits of a full FIFO with `--step-time`, and
+`sound_mem` runs it again with `--no-sound`. `test/wav.py` plays the
+example of DEVICES.md §12.5 with `--wav`, and compares every sample with
+the model's, for the writes at the samples that their steps give.
 
 ### SD card
 
@@ -778,11 +820,14 @@ ymfm has them, under ymfm's notice. `make test` runs
 `test/opm_model_test.py`, which checks the model against the formulas
 of DEVICES.md §12.4, its rules of writes, and its DAC on hand-checked
 values. `test/opm_vectors.py` writes random logs of writes from a seed,
-and with the model's samples, the vectors. `make ymfmcheck` clones ymfm
+and with the model's samples, the vectors. `make test` writes 20000
+samples of them to `test/opm.vectors.out`, and the unit test of
+`src/opm.zig` replays them, then must fail on a copy with one wrong
+sample. `make ymfmcheck` clones ymfm
 at `YMFM_COMMIT` into `build/ymfm`, or takes a checkout in `YMFM`,
 builds `test/opm_ymfm.cpp` against it, and compares every sample of
 `SEEDS` random logs, 20 by default, of 30000 samples each, through
-`test/opm_ymfm.py`. The emulator does not map the sound yet.
+`test/opm_ymfm.py`.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, F0, F1,

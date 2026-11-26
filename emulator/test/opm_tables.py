@@ -3,6 +3,8 @@
 
 The model, opm_model.py, reads them from here. Two are computed from
 their formulas, and three are data that the formulas do not give.
+With --zig, it writes them as emulator/src/opm_tables.zig, which
+make test checks is current.
 
 SIN and POW are computed with the host's floats, which differ between
 hosts in the last bits. So each value is checked to lie at least
@@ -50,7 +52,8 @@ script fails if one does not. Then every host computes the same table.
 from __future__ import annotations
 
 import math
-from typing import List, Tuple
+import sys
+from typing import List, Sequence, Tuple
 
 MARGIN = 1e-6
 
@@ -187,3 +190,44 @@ def lfo_wave(shape: int, index: int) -> Tuple[int, int]:
         am = ((index << 1) if index & 0x80 else ((index ^ 0xFF) << 1)) & 0xFF
         pm = am if index & 0x40 else am ^ 0xFF
     return am, pm - 256 if pm & 0x80 else pm
+
+
+def _zig_array(name: str, typ: str, values: Sequence[int], per_line: int, fmt: str) -> List[str]:
+    lines = [f"pub const {name} = [{len(values)}]{typ}{{"]
+    for i in range(0, len(values), per_line):
+        lines.append("    " + " ".join(fmt.format(v) + "," for v in values[i : i + per_line]))
+    lines.append("};")
+    return lines
+
+
+def zig() -> str:
+    """The tables as Zig, for emulator/src/opm_tables.zig."""
+    out = [
+        "// The tables of the sound, DEVICES.md §12. Written by",
+        "// test/opm_tables.py --zig; make test checks that it is current. Do",
+        "// not edit. PHASE_STEP, DETUNE, and INCREMENT follow ymfm, whose notice",
+        "// is in the header of test/opm_tables.py.",
+        "",
+        "/// The attenuation of |sin| for a quarter of the wave, 4.8 bits.",
+    ]
+    out += _zig_array("SIN", "u16", SIN, 12, "{:#05x}")
+    out += ["", "/// The mantissas of the linear level of an attenuation's fraction."]
+    out += _zig_array("POW", "u16", POW, 12, "{:#05x}")
+    out += ["", "/// The phase step of each of the 768 steps of an octave, in units of 32."]
+    out += _zig_array("PHASE_STEP", "u16", PHASE_STEP, 12, "{:4d}")
+    out += ["", "/// The detune of DT1 = 0 to 3 for each key code."]
+    out.append(f"pub const DETUNE = [{len(DETUNE)}][4]u8{{")
+    for row in DETUNE:
+        out.append("    .{ " + ", ".join(str(v) for v in row) + " },")
+    out.append("};")
+    out += ["", "/// The increment of the attenuation of each rate: nibble i for step i."]
+    out += _zig_array("INCREMENT", "u32", INCREMENT, 4, "0x{:08X}")
+    out += ["", "/// The step of DT2 = 0 to 3, in 64ths of a semitone."]
+    out += _zig_array("DT2", "u16", DT2, 4, "{:d}")
+    return "\n".join(out) + "\n"
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--zig"]:
+        sys.exit("usage: opm_tables.py --zig")
+    sys.stdout.write(zig())

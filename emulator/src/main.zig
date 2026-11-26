@@ -10,6 +10,7 @@ const mode_chunky = @import("cpu.zig").mode_chunky;
 const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
 const eth = @import("eth.zig");
+const opm = @import("opm.zig");
 const build_options = @import("build_options");
 const Window = if (build_options.window) @import("window.zig").Window else void;
 
@@ -22,7 +23,8 @@ const usage =
     \\of 0xFFFFFF00 returns the next byte of stdin plus 0x100, or 0x200 after
     \\the end of the input. The read counter is at 0xFFFFFF01, the math
     \\unit at 0xFFFFFF20-0xFFFFFF3F, the performance counters at 0xFFFFFF40-0xFFFFFF7F, the
-    \\floating-point unit at 0xFFFFFF88-0xFFFFFF8F, the SD card controller
+    \\floating-point unit at 0xFFFFFF88-0xFFFFFF8F, the sound at
+    \\0xFFFFFF08-0xFFFFFF0F, the SD card controller
     \\at 0xFFFFFFA0-0xFFFFFFAF, the network station's registers at
     \\0xFFFFFFB0-0xFFFFFFBF, and the port for Ethernet frames at
     \\0xFFFFFFC0-0xFFFFFFCF.
@@ -60,6 +62,11 @@ const usage =
     \\                       with an FPGA core.
     \\      --no-fpu         Make the floating-point unit, 0xFFFFFF88-0xFFFFFF8F,
     \\                       ordinary memory, as on a system without one.
+    \\      --no-sound       Make the sound, 0xFFFFFF08-0xFFFFFF0F, ordinary
+    \\                       memory, as on a system without one.
+    \\      --wav FILE       Write the sound's samples to FILE, a WAV file of
+    \\                       16-bit stereo at 55930 Hz, until the halt or the
+    \\                       step limit. Not with --link or --window.
     \\      --no-font        Make the font RAM and the character ROM,
     \\                       0xFFFE0000-0xFFFE3FFF, ordinary memory, for
     \\                       comparing traces with an FPGA core.
@@ -112,6 +119,9 @@ const Options = struct {
     max_steps: u64 = std.math.maxInt(u64),
     cycle_counter: bool = true,
     fpu: bool = true,
+    sound: bool = true,
+    /// The WAV file of the sound's samples, or "" for none.
+    wav: []const u8 = "",
     fonts: bool = true,
     screen_mode_word: bool = true,
     /// Count one microsecond per step rather than the host's time.
@@ -384,7 +394,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--sd0", "--sd1", "--eth-in", "--eth-out", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--sd0", "--sd1", "--eth-in", "--eth-out", "--wav", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -428,6 +438,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.eth_in = value;
         } else if (std.mem.eql(u8, arg, "--eth-out")) {
             opts.eth_out = value;
+        } else if (std.mem.eql(u8, arg, "--wav")) {
+            opts.wav = value;
         } else if (std.mem.eql(u8, arg, "--eth-udp")) {
             opts.eth_udp = try parseLink(arg, value);
         } else if (std.mem.eql(u8, arg, "--eth-peer")) {
@@ -447,6 +459,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.cycle_counter = false;
         } else if (std.mem.eql(u8, arg, "--no-fpu")) {
             opts.fpu = false;
+        } else if (std.mem.eql(u8, arg, "--no-sound")) {
+            opts.sound = false;
         } else if (std.mem.eql(u8, arg, "--no-font")) {
             opts.fonts = false;
         } else if (std.mem.eql(u8, arg, "--no-screen-mode")) {
@@ -463,6 +477,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     }
     if (opts.link != null and opts.input_given) return fail("--input cannot be given with --link", .{});
     if (speed_given and !opts.window) return fail("--speed needs --window", .{});
+    if (opts.wav.len != 0 and (opts.link != null or opts.window)) return fail("--wav cannot be given with --link or --window", .{});
+    if (opts.wav.len != 0 and !opts.sound) return fail("--wav cannot be given with --no-sound", .{});
     if ((opts.eth_udp == null) != (opts.eth_peer == null)) return fail("--eth-udp and --eth-peer go together", .{});
     if (opts.window and !build_options.window) return fail("--window needs a build with -Dwindow (emulator/README.md)", .{});
     if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
@@ -525,6 +541,75 @@ fn openImage(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load
         .write_fn = ImageFile.write,
     };
 }
+
+/// The file of --wav: a WAV file of 16-bit stereo PCM at the sound's
+/// rate (doc/DEVICES.md §12.3). Its header states the sizes, which `finish`
+/// writes once the samples are known.
+const WavFile = struct {
+    io: std.Io,
+    file: std.Io.File,
+    w: std.Io.File.Writer,
+    buf: [64 * 1024]u8,
+    samples: u64 = 0,
+    failed: bool = false,
+
+    const header_len = 44;
+
+    fn open(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load, OutOfMemory }!*WavFile {
+        const file = std.Io.Dir.cwd().createFile(io, path, .{}) catch |err| {
+            std.debug.print("niceemu: cannot write {s}: {s}\n", .{ path, @errorName(err) });
+            return error.Load;
+        };
+        const self = try arena.create(WavFile);
+        self.* = .{ .io = io, .file = file, .w = undefined, .buf = undefined };
+        self.w = file.writer(io, &self.buf);
+        self.header(0) catch {
+            std.debug.print("niceemu: cannot write {s}\n", .{path});
+            return error.Load;
+        };
+        return self;
+    }
+
+    /// The header for `samples` samples.
+    fn header(self: *WavFile, samples: u64) !void {
+        const data: u32 = @intCast(@min(samples * 4, std.math.maxInt(u32) - header_len));
+        const w = &self.w.interface;
+        try w.writeAll("RIFF");
+        try w.writeInt(u32, data + header_len - 8, .little);
+        try w.writeAll("WAVEfmt ");
+        try w.writeInt(u32, 16, .little);
+        try w.writeInt(u16, 1, .little); // PCM
+        try w.writeInt(u16, 2, .little); // stereo
+        try w.writeInt(u32, opm.sample_rate, .little);
+        try w.writeInt(u32, opm.sample_rate * 4, .little);
+        try w.writeInt(u16, 4, .little);
+        try w.writeInt(u16, 16, .little);
+        try w.writeAll("data");
+        try w.writeInt(u32, data, .little);
+    }
+
+    fn put(ctx: *anyopaque, sm: opm.Sample) void {
+        const self: *WavFile = @ptrCast(@alignCast(ctx));
+        const w = &self.w.interface;
+        w.writeInt(i16, sm.left, .little) catch {
+            self.failed = true;
+        };
+        w.writeInt(i16, sm.right, .little) catch {
+            self.failed = true;
+        };
+        self.samples += 1;
+    }
+
+    /// Write the rest, and the sizes into the header.
+    fn finish(self: *WavFile) !void {
+        try self.w.interface.flush();
+        if (self.failed) return error.WriteFailed;
+        try self.w.seekTo(0);
+        try self.header(self.samples);
+        try self.w.interface.flush();
+        self.file.close(self.io);
+    }
+};
 
 /// The host's side of the Ethernet frames (doc/DEVICES.md §7): the file of
 /// --eth-out, and the UDP socket of --eth-udp with its peer.
@@ -691,8 +776,11 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     cpu.console_flush = std.Io.File.stdout().isTty(io) catch false;
     cpu.cycle_counter = opts.cycle_counter;
     cpu.fpu_enabled = opts.fpu;
+    cpu.sound_enabled = opts.sound;
     cpu.mem.fonts = opts.fonts;
     cpu.mem.screen_mode_word = opts.screen_mode_word;
+    const wav: ?*WavFile = if (opts.wav.len != 0) try WavFile.open(arena, io, opts.wav) else null;
+    if (wav) |f| cpu.sound.sink = .{ .ctx = f, .put_fn = WavFile.put };
     // The clock counts from here, as a board's from its reset. A halt
     // stops it, the step limit does not (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
@@ -700,6 +788,7 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
         cpu.clock = &clock;
         clock.start();
         cpu.tod.useHost(io); // the host's time of day (doc/DEVICES.md §10)
+        cpu.useHostSound(io); // and of the sound (doc/DEVICES.md §12.3)
     }
     var in_buf: [4096]u8 = undefined;
     var in_r: InterruptibleReader = undefined;
@@ -750,6 +839,12 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     // program may have halted before the next check above.
     const sig = stop_signal.load(.acquire);
     if (sig != 0) dieOfSignal(out, sig);
+    // The samples up to the halt or the step limit.
+    cpu.syncSound();
+    if (wav) |f| f.finish() catch |err| {
+        std.debug.print("niceemu: cannot write {s}: {s}\n", .{ opts.wav, @errorName(err) });
+        return error.Load;
+    };
     return report(out, opts, syms, &cpu, steps, stop);
 }
 
@@ -975,8 +1070,11 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     cpu.console = &link.console_w;
     cpu.cycle_counter = opts.cycle_counter;
     cpu.fpu_enabled = opts.fpu;
+    cpu.sound_enabled = opts.sound;
     cpu.mem.fonts = opts.fonts;
     cpu.mem.screen_mode_word = opts.screen_mode_word;
+    // The sound runs on through a hold, a pause, and a halt (doc/DEVICES.md §12.3).
+    if (!opts.step_time) cpu.useHostSound(io);
     // Stopped while the processor is held, halted, or paused, and set to
     // 0 by the reset of a start (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
@@ -1296,6 +1394,7 @@ test "two idle reads within 1000 steps of each other are a wait loop" {
 test {
     _ = @import("cpu.zig");
     _ = @import("fpu.zig");
+    _ = @import("opm.zig");
     _ = @import("eth.zig");
     _ = @import("link.zig");
     _ = @import("frame.zig");

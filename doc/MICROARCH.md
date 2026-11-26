@@ -875,6 +875,13 @@ system built from them must follow these rules:
   watchdog of the system must allow for it. Its arithmetic unit,
   `hdl/src/fpu_unit.vhd`, is inside it
   ([hdl/README.md](../hdl/README.md#the-floating-point-unit)).
+- **Sound.** `hdl/src/opm.vhd` at `0xFFFFFF08`–`0xFFFFFF0F` (DEVICES §12),
+  8 aligned words, so the decoder compares address bits 31..3, and gives
+  the sound bits 2..0. It takes the reset of a start of the processor,
+  which empties its FIFO and silences it. A write to its full FIFO holds
+  its ACK for up to one sample's time, 1788 cycles at 100 MHz. Its
+  samples come out on a strobe, for the system's mixer
+  ([hdl/README.md](../hdl/README.md#the-sound)).
 - **SD card controller.** `hdl/src/sd_regs.vhd` at `0xFFFFFFA0`–`0xFFFFFFAF`
   (DEVICES §5): the registers and the buffer, with a port to a protocol
   engine that the board adds. With `G_HOLD_ACK`, as in simulation, the ACK

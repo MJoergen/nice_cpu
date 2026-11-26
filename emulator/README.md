@@ -827,7 +827,8 @@ sample. `make ymfmcheck` clones ymfm
 at `YMFM_COMMIT` into `build/ymfm`, or takes a checkout in `YMFM`,
 builds `test/opm_ymfm.cpp` against it, and compares every sample of
 `SEEDS` random logs, 20 by default, of 30000 samples each, through
-`test/opm_ymfm.py`.
+`test/opm_ymfm.py`. `tb_opm` in `hdl/` replays the vectors on the
+sound of the cores' system, `hdl/src/opm.vhd`.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, F0, F1,

@@ -3,8 +3,9 @@
 
 The model, opm_model.py, reads them from here. Two are computed from
 their formulas, and three are data that the formulas do not give.
-With --zig, it writes them as emulator/src/opm_tables.zig, which
-make test checks is current.
+With --zig, it writes them as emulator/src/opm_tables.zig, and with
+--vhdl as hdl/src/opm_tables_pkg.vhd. The make test of each directory
+checks that its file is current.
 
 SIN and POW are computed with the host's floats, which differ between
 hosts in the last bits. So each value is checked to lie at least
@@ -227,7 +228,50 @@ def zig() -> str:
     return "\n".join(out) + "\n"
 
 
+def _vhdl_array(name: str, values: Sequence[int], per_line: int) -> List[str]:
+    lines = [f"   constant {name} : t_table(0 to {len(values) - 1}) := ("]
+    for i in range(0, len(values), per_line):
+        row = ", ".join(str(v) for v in values[i : i + per_line])
+        last = i + per_line >= len(values)
+        lines.append("      " + row + (");" if last else ","))
+    return lines
+
+
+def vhdl() -> str:
+    """The tables as VHDL, for hdl/src/opm_tables_pkg.vhd. DETUNE is
+    indexed by 4 * the key code + DT1 mod 4, and INCREMENT, a nibble a
+    step, by 8 * the rate + the step."""
+    out = [
+        "-- The tables of the sound, DEVICES.md §12. Written by",
+        "-- emulator/test/opm_tables.py --vhdl; make test checks that it is",
+        "-- current. Do not edit. PHASE_STEP, DETUNE, and INCREMENT follow ymfm,",
+        "-- whose notice is in the header of emulator/test/opm_tables.py.",
+        "",
+        "package opm_tables_pkg is",
+        "",
+        "   type t_table is array (natural range <>) of natural;",
+        "",
+        "   -- The attenuation of |sin| for a quarter of the wave, 4.8 bits.",
+    ]
+    out += _vhdl_array("C_SIN", SIN, 12)
+    out += ["", "   -- The mantissas of the linear level of an attenuation's fraction."]
+    out += _vhdl_array("C_POW", POW, 12)
+    out += ["", "   -- The phase step of each of the 768 steps of an octave, in units of 32."]
+    out += _vhdl_array("C_PHASE_STEP", PHASE_STEP, 12)
+    out += ["", "   -- The detune of DT1 = 0 to 3 for each key code."]
+    out += _vhdl_array("C_DETUNE", [v for row in DETUNE for v in row], 8)
+    out += ["", "   -- The increment of the attenuation of each rate, for each of its 8 steps."]
+    out += _vhdl_array("C_INCREMENT", [(w >> (4 * i)) & 15 for w in INCREMENT for i in range(8)], 16)
+    out += ["", "   -- The step of DT2 = 0 to 3, in 64ths of a semitone."]
+    out += _vhdl_array("C_DT2", DT2, 4)
+    out += ["", "end package opm_tables_pkg;"]
+    return "\n".join(out) + "\n"
+
+
 if __name__ == "__main__":
-    if sys.argv[1:] != ["--zig"]:
-        sys.exit("usage: opm_tables.py --zig")
-    sys.stdout.write(zig())
+    if sys.argv[1:] == ["--zig"]:
+        sys.stdout.write(zig())
+    elif sys.argv[1:] == ["--vhdl"]:
+        sys.stdout.write(vhdl())
+    else:
+        sys.exit("usage: opm_tables.py --zig | --vhdl")

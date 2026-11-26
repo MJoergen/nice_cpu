@@ -36,6 +36,7 @@ and `make timing` found in the release stamp
 - [The console](#the-console)
 - [The math unit](#the-math-unit)
 - [The floating-point unit](#the-floating-point-unit)
+- [The sound](#the-sound)
 - [The performance counters](#the-performance-counters)
 - [The clock of the time of day](#the-clock-of-the-time-of-day)
 - [The fetch statistics](#the-fetch-statistics)
@@ -54,7 +55,7 @@ and `make timing` found in the release stamp
 | [vsg.yml](vsg.yml) | The rules of CODING_STYLE.md for vsg, which `make lint` runs. |
 | [sim.mk](sim.mk) | The commands of the simulators, GHDL and nvc, for the Makefile and `bench/Makefile`. |
 | [ASSUMPTIONS.md](ASSUMPTIONS.md) | Where the pipelined core settles a question that MICROARCH.md leaves open, or departs from it. |
-| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core or the FPU alone, placed and routed, and its worst paths. |
+| [timing.tcl](timing.tcl) | The Vivado script of `make timing`: the pipelined core, the FPU, or the sound alone, placed and routed, and its worst paths. |
 | [src/](src/README.md) | The synthesizable VHDL: the two cores, their shared packages, and the devices. |
 | [sim/](sim/README.md) | The trace writer, the memory model, and the SD card engine, for simulation only. |
 | [test/](test/README.md) | The testbenches, the test programs, and the scripts that run them. |
@@ -75,7 +76,7 @@ GHDL 6.0.0-dev and GHDL 4.1.0 (mcode backend). CI installs 4.1.0, the
 | `make test` | The synthesis check, the unit tests, `tb_trace`, and the test programs on both cores, each run compared with the emulator ([What the tests check](#what-the-tests-check)). | 5 minutes in GHDL on 20 CPUs (2026-11-22) |
 | `make lint` | vsg on every VHDL file, with the rules of CODING_STYLE.md. | seconds |
 | `make formal` | The SymbiYosys jobs of `formal/` ([The formal checks](#the-formal-checks)). | 28 minutes on 20 CPUs at the release check of `V2.1` (2026-11-11), most of it the debug link's `cover`, and 31 in CI (2026-11-14); the FPU's `prove_stack` runs beside it, 12 minutes alone (2026-11-14) |
-| `make timing` | Vivado on the pipelined core alone, out of context, or with `UNIT=fpu` on the FPU ([Timing](#timing)). | 3 minutes |
+| `make timing` | Vivado on the pipelined core alone, out of context, with `UNIT=fpu` on the FPU, or with `UNIT=opm` on the sound ([Timing](#timing)). | 3 minutes, 2 for the sound |
 | `make timing-spread` | `make timing` in seven variants at once, and the least, median, and most of each slack: seven counts of breakpoints and watchpoints, or with `UNIT=fpu` seven orders of the FPU's functions in its ROM ([Timing](#timing)). | 4 minutes on 20 CPUs, 9 with `FLOW=timing` (2026-11-25); for the FPU 4 and 5 (2026-11-26) |
 | `make programs` | The runtime's and the translator's test programs, and random modules of `translator/test/fuzz.py`, on `CORE`; `SHARD=I/N` runs the Ith of N shares. | 7 minutes on the pipelined core in nvc on 20 CPUs (2026-11-14), and 15 and 24 on the two cores in CI; several times longer in GHDL |
 | `make random` | More random programs, with `RANDOM_SEEDS`, `RANDOM_STEPS`, and `RANDOM_STALL`. | |
@@ -97,7 +98,7 @@ for `SIM`.
 
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
 synthesize both cores, the math unit, the FPU and its arithmetic unit,
-the performance counters, the clock of the time of day, the fetch
+the sound, the performance counters, the clock of the time of day, the fetch
 statistics, the data bus decoder, the debug link, the SD card
 controller, the network station, and the port for Ethernet frames
 (`ghdl --synth`), and runs the tests, those of the cores once for each
@@ -284,6 +285,12 @@ whose requests come from the system's address decode, and its outputs go
 to the system's read mux and to the core's stall. It has no
 `timing_ack.rpt`.
 
+`UNIT=opm` runs the same on the sound of DEVICES.md §12
+([src/opm.vhd](src/opm.vhd) with [src/opm_engine.vhd](src/opm_engine.vhd)),
+which a system builds beside the core too, with the reports in
+`build/timing/opm-BOARD-FLOW/`. Its ports are those of the FPU, and its
+outputs the samples too. It has no `timing-spread`.
+
 At the end it judges the slacks against the budget of the unit and the
 board in [test/timing_budget.py](test/timing_budget.py), at a 10 ns clock:
 the core alone must meet the clock, and the inputs and the outputs must
@@ -291,7 +298,7 @@ leave the system 1.5 and 2.2 ns (`mega65` only). The two come from the
 slack of the ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of
 it. The FPU must leave 1.0 ns on its own paths, as the system took 0.5 to
 1 ns of them in NiceMonMEGA65's build, and the same 1.5 and 2.2 ns at its
-ports. It prints the result, writes `budget.json` beside the
+ports. The sound has the FPU's budget. It prints the result, writes `budget.json` beside the
 reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
 the result in its stamp, and no release waits for it.
 
@@ -775,6 +782,46 @@ the model of `emulator/test/fpu_model.py` (What the tests check), and
 a model, with a free stand-in for the arithmetic unit (The formal
 checks).
 
+## The sound
+
+`opm` is the sound of DEVICES.md §12, an FM synthesizer whose registers
+are the YM2151's, with a FIFO of 64 writes. Offset 0 is `OPM_WRITE`,
+offset 1 `OPM_STATUS`, and offsets 2 to 7 read 0. It is a pipelined
+Wishbone slave with a 3-bit address. The bus decoder selects it for
+`0xFFFFFF08`–`0xFFFFFF0F` and passes address bits 2..0 as the offset.
+The generic `G_CLK_HZ`, the frequency of its clock, sets the rate of the
+samples. Each sample comes out on `sample_valid_o`, high for one cycle,
+with `sample_left_o` and `sample_right_o`, signed: the mixer and the
+conversion to an output's rate are the system's.
+
+It acknowledges each request in the cycle after it accepts it, but a
+write of `OPM_WRITE` while the FIFO is full. That one holds STALL high
+until a sample takes a write from the FIFO, up to one sample's time,
+1788 cycles at 100 MHz. A pause and a step of the debug link wait that
+long. Its reset is that of a start of the processor, as for the FPU, so
+that a start over the debug link empties the FIFO and silences the
+sound (DEVICES.md §12.3).
+
+`opm_engine` computes the samples, one step at a time, in the order of
+the model, `emulator/test/opm_model.py`, so that it gives its samples
+bit for bit. It takes at most 422 cycles for a sample, so `G_CLK_HZ` must be
+at least 24 MHz. The header of `src/opm_engine.vhd` explains how. It
+starts from [github.com/MJoergen/ym2151](https://github.com/MJoergen/ym2151)
+(MIT): the registers in a RAM for each range, as its configurator keeps
+them, and the sine and the exponent in ROMs. Its pipeline of one slot in
+each of the chip's clocks is not kept, as the model computes the
+operators channel by channel. The tables are in `src/opm_tables_pkg.vhd`,
+which `emulator/test/opm_tables.py --vhdl` writes from the model's, and
+`make test` checks that it is current (`make opmcheck`).
+
+`make timing UNIT=opm` places the sound alone, out of context
+([Timing](#timing)). On the MEGA65 with the default flow, on 2026-11-26,
+it leaves +2.271 ns on its own paths, +6.599 ns at its inputs, and
++7.958 ns at its outputs. It takes 1432 LUTs, 172 of them distributed
+RAM, 769 registers, and no DSP or block RAM.
+
+`tb_opm` checks it against the vectors of the model (What the tests check).
+
 ## The performance counters
 
 `perf` holds the performance counters of DEVICES.md §3: `CYCLE_LO` and
@@ -1013,6 +1060,22 @@ which adds some 6, and fails if the most of a command is over its bound:
 the times of DEVICES.md §11.5 with a margin, and for `DIGITS` and the
 functions 20% above the slowest. It reports
 the most of each command that takes more than a few cycles.
+
+`tb_opm` replays the vectors of the sound's model,
+`emulator/test/opm_vectors.py`, which the emulator replays too, over the
+sound's bus, with `G_CLK_HZ` at 32 MHz, so that a sample is due once in
+572 cycles. Each write goes in behind those of the samples just before
+its own, so that it is the oldest in the FIFO when its sample starts. The
+first 228 writes of a log, which set up the channels, fill the FIFO, and
+164 of them wait for its ACK. Each of the 20000 samples, `OPM_COUNT`,
+must be the model's. `run/opm/start` starts from a reset, with the seed
+`OPM_SEED`, and `run/opm/state` with the envelope's counter at 65521,
+the generic `G_ENV_START`, and the model's too, so that the counter
+passes its wrap in the 16 bits of the RTL, and its low bits differ from
+those of a reset: without the generic, 10923 samples differ.
+`run/opm/wrong` replays the vectors of `start` with the last sample
+changed, and must fail. It also checks the status after a reset, that
+the other words read 0, and that a write of the status does nothing.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and

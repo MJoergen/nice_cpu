@@ -65,7 +65,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
 | `0xFFFFFF02`–`0xFFFFFF07` | 6 | Reserved for I/O (§4). |
-| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12). With `--no-sound`, the emulator makes them ordinary memory. The FPGA implementation does not map it yet. |
+| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12). With `--no-sound`, the emulator makes them ordinary memory. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
@@ -886,7 +886,7 @@ To push the microsecond counter (§3), as a binary64 value:
 
 ## 12. Sound
 
-The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator maps the sound at `0xFFFFFF08`–`0xFFFFFF0F`, and `--no-sound` makes its words ordinary memory. `--wav` writes its samples to a file. The FPGA implementation does not map it yet.
+The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator maps the sound at `0xFFFFFF08`–`0xFFFFFF0F`, and `--no-sound` makes its words ordinary memory. `--wav` writes its samples to a file. The FPGA implementation has it too, in `hdl/src/opm.vhd`.
 
 ### 12.1 Registers
 

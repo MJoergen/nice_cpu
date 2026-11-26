@@ -174,13 +174,14 @@ If a figure in the documents changed, go back to step 2.4.
 ### Timing
 
 `release.py check` also runs `make -C hdl timing` (`BOARD=mega65`, about 3
-minutes), for the core and with `UNIT=fpu` for the FPU, and compares the
+minutes), for the core, with `UNIT=fpu` for the FPU, and with `UNIT=opm`
+for the sound, and compares the
 slacks with the budget in
 [hdl/test/timing_budget.py](../hdl/test/timing_budget.py): the core alone must
 meet the 10 ns clock, and the paths from the core's inputs and to its
-outputs must leave the system around it 1.5 and 2.2 ns. The FPU must keep
-1.0 ns on its own paths, and the same at its ports. The stamp has the
-result of each, and the worst of the two. This is **not a
+outputs must leave the system around it 1.5 and 2.2 ns. The FPU and the
+sound must keep 1.0 ns on their own paths, and the same at their ports.
+The stamp has the result of each, and the worst of them. This is **not a
 gate**. A miss prints a warning and goes into the stamp, and `tag` shows
 it. If it missed, say so in the release notes, with the cause, or the
 commit to blame. The out-of-context figures are a proxy: the memory and

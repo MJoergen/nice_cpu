@@ -250,6 +250,8 @@ def test_timing_budget() -> None:
             written = '{"status": "met"}'
             fpu = release.timing_dir("mega65", "fpu")
             fpu.mkdir(parents=True)
+            opm = release.timing_dir("mega65", "opm")
+            opm.mkdir(parents=True)
             r = release.timing_budgets()
             check(r["status"] == "error", "the FPU without a budget.json makes the whole an error")
             units = r["units"]
@@ -260,16 +262,17 @@ def test_timing_budget() -> None:
             check(r["status"] == "error", "the core without a budget.json is an error")
             written = ""
 
-            def run_both(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-                for d, text in ((release.timing_dir("mega65"), '{"status": "met"}'), (fpu, written)):
+            def run_all(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+                for d, text in ((release.timing_dir("mega65"), '{"status": "met"}'), (fpu, written),
+                                (opm, '{"status": "met"}')):
                     d.joinpath("budget.json").write_text(text)
                 return subprocess.CompletedProcess([], 0)
 
-            with mock.patch.object(subprocess, "run", run_both):
+            with mock.patch.object(subprocess, "run", run_all):
                 written = '{"status": "missed"}'
                 check(release.timing_budgets()["status"] == "missed", "a miss of the FPU is a miss")
                 written = '{"status": "met"}'
-                check(release.timing_budgets()["status"] == "met", "both met")
+                check(release.timing_budgets()["status"] == "met", "all met")
 
 
 def test_timing_dir() -> None:

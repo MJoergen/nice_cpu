@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/perf.vhd src/tod.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/opm_tables_pkg.vhd src/opm_engine.vhd src/opm.vhd src/perf.vhd src/tod.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_opm.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -93,6 +93,33 @@ $(FPU_RUNS): run/fpu/%:
 	  && $(call sim_run,tb_fpu,-gG_VECTORS=vectors) > tb_fpu.log 2>&1); \
 	if [ $$? -eq 0 ]; then echo "PASS tb_fpu $*/$(FPU_SHARES)"; else echo "FAIL tb_fpu $*/$(FPU_SHARES)"; \
 	  tail -30 $(RUNDIR)/tb_fpu.log; exit 1; fi
+
+# tb_opm replays the vectors of the sound's model,
+# emulator/test/opm_vectors.py, OPM_COUNT samples of them, over the
+# sound's bus, with a sample every 572 cycles, at G_CLK_HZ 32 MHz: start
+# from reset, from the seed OPM_SEED, and state from the seed after it
+# with the envelope's counter at 65521, so that it passes 65536, the
+# wrap of the RTL's 16 bits, and its low bits are not those of 0. wrong
+# replays the vectors of start with one sample changed, and must fail on
+# that sample alone.
+OPM_SEED ?= 1
+OPM_COUNT ?= 20000
+OPM_RUNS = start state wrong
+OPTS_OPM_start = --seed $(OPM_SEED)
+OPTS_OPM_state = --seed $(shell expr $(OPM_SEED) + 1) --env-start 65521
+OPTS_OPM_wrong = $(OPTS_OPM_start)
+GENERICS_OPM_state = -gG_ENV_START=65521
+SED_OPM_wrong = && sed -i 's/^$(shell expr $(OPM_COUNT) - 1) [-0-9]* /$(shell expr $(OPM_COUNT) - 1) 12345 /' vectors
+EXPECT_OPM_wrong = 1
+GREP_OPM_wrong = grep -q "$(OPM_COUNT) samples, 1 failures" $(RUNDIR)/tb_opm.log
+
+$(OPM_RUNS:%=run/opm/%): run/opm/%:
+	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/opm_vectors.py $(OPTS_OPM_$*) --count $(OPM_COUNT) \
+	  -o vectors $(SED_OPM_$*) && $(call sim_run,tb_opm,-gG_VECTORS=vectors -gG_CLK_HZ=32000000 \
+	  $(GENERICS_OPM_$*)) > tb_opm.log 2>&1); s=$$?; \
+	if [ "$$s" = "$(or $(EXPECT_OPM_$*),0)" ] $(if $(GREP_OPM_$*),&& $(GREP_OPM_$*)); then echo "PASS tb_opm $*"; \
+	else echo "FAIL tb_opm $*"; \
+	  tail -30 $(RUNDIR)/tb_opm.log; exit 1; fi
 
 # tb_trace stands in for the core and runs test/trace.nasm. Each run's output
 # and exit status must equal those of the emulator on the same program, with
@@ -479,7 +506,7 @@ endef
 
 $(foreach c,$(sort $(CORES) $(CORE)),$(eval $(call core_runs,$(c))))
 
-test: emulator seqcheck analyze synth
+test: emulator seqcheck opmcheck analyze synth
 	@$(MAKE) --no-print-directory $(PARALLEL) runs
 
 # The ROM of the FPU's functions must be that of their programs,
@@ -488,6 +515,13 @@ seqcheck:
 	@$(PYTHON) ../emulator/test/fpu_seq.py --vhdl | cmp -s - src/fpu_seq_pkg.vhd \
 	  || { echo "src/fpu_seq_pkg.vhd is stale: ../emulator/test/fpu_seq.py --vhdl > src/fpu_seq_pkg.vhd"; exit 1; }; \
 	echo "PASS seqcheck"
+
+# The tables of the sound must be those of its model,
+# emulator/test/opm_tables.py.
+opmcheck:
+	@$(PYTHON) ../emulator/test/opm_tables.py --vhdl | cmp -s - src/opm_tables_pkg.vhd \
+	  || { echo "src/opm_tables_pkg.vhd is stale: ../emulator/test/opm_tables.py --vhdl > src/opm_tables_pkg.vhd"; exit 1; }; \
+	echo "PASS opmcheck"
 
 # How test/programs.py divides the programs into shards.
 run/split:
@@ -519,7 +553,7 @@ run/shown:
 
 # The runs of make test: the unit tests, tb_link and tb_trace, and those of
 # each core in CORES.
-runs: run/split run/jobserver run/budget run/reads run/shown $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
+runs: run/split run/jobserver run/budget run/reads run/shown $(UNITS:%=run/unit/%) $(FPU_UNIT_RUNS:%=run/fpu_unit/%) $(FPU_RUNS) $(OPM_RUNS:%=run/opm/%) $(LINK_RUNS) $(TRACE_RUNS:%=run/trace/%) $(foreach c,$(CORES),$(RUNS_$(c)))
 
 # More random programs than make test runs, for example
 #     make random RANDOM_SEEDS="$$(seq 31 90)" RANDOM_STALL=60 RANDOM_STEPS=5000
@@ -572,11 +606,11 @@ analyze-nvc:
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize both cores, the math unit, the FPU and
-# its arithmetic unit, the performance counters, the clock of the time of
+# its arithmetic unit, the sound, the performance counters, the clock of the time of
 # day, the fetch statistics, the data bus decoder, the debug link, the SD
 # card controller, the network station, and the port for Ethernet frames,
 # with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu fpu_unit fpu perf tod fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
+SYNTH = multicycle pipeline mpu fpu_unit fpu opm perf tod fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -627,7 +661,8 @@ emulator:
 	$(if $(PREBUILT),,$(MAKE) -C ../emulator build)
 
 # The out-of-context timing of UNIT in Vivado, which timing.tcl
-# describes: the pipelined core, pipeline, by default, or the FPU, fpu.
+# describes: the pipelined core, pipeline, by default, the FPU, fpu, or
+# the sound, opm.
 # For the part of BOARD (mega65 or nexys4ddr) with the directives of FLOW
 # (default, or timing as NiceMonMEGA65 builds), a clock of PERIOD ns, and
 # for the core BREAKS breakpoints and WATCHES watchpoints, or for the FPU
@@ -635,7 +670,8 @@ emulator:
 # (emulator/test/fpu_seq.py --vhdl --rotate). The reports go to
 # build/timing/BOARD-FLOW-BREAKS-WATCHES/ for the core, and to
 # build/timing/fpu-BOARD-FLOW/ for the FPU, with -rROTATE after it for a
-# rotation other than 0: the worst
+# rotation other than 0, and to build/timing/opm-BOARD-FLOW/ for the
+# sound: the worst
 # register-to-register paths to timing.rpt, the worst from an input to
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
@@ -655,11 +691,12 @@ PART_mega65    = xc7a200tfbg484-2
 PART_nexys4ddr = xc7a100tcsg324-1
 TIMING_DIR_pipeline = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)-$(WATCHES)
 TIMING_DIR_fpu      = $(BUILD)/timing/fpu-$(BOARD)-$(FLOW)$(if $(filter-out 0,$(ROTATE)),-r$(ROTATE))
+TIMING_DIR_opm      = $(BUILD)/timing/opm-$(BOARD)-$(FLOW)
 TIMING_DIR = $(TIMING_DIR_$(UNIT))
 SEQ_PKG = $(if $(filter-out 0,$(ROTATE)),$(abspath $(TIMING_DIR))/fpu_seq_pkg.vhd,$(CURDIR)/src/fpu_seq_pkg.vhd)
 
 timing:
-	@test -n "$(TIMING_DIR)" || { echo "unknown UNIT $(UNIT), not pipeline or fpu"; exit 1; }
+	@test -n "$(TIMING_DIR)" || { echo "unknown UNIT $(UNIT), not pipeline, fpu, or opm"; exit 1; }
 	@test -n "$(PART_$(BOARD))" || { echo "unknown BOARD $(BOARD)"; exit 1; }
 	@mkdir -p $(TIMING_DIR)
 	@test "$(ROTATE)" = 0 || $(PYTHON) ../emulator/test/fpu_seq.py --vhdl --rotate $(ROTATE) > $(SEQ_PKG)
@@ -713,4 +750,4 @@ lint:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: test seqcheck runs jobserver-probe programs random analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean
+.PHONY: test seqcheck opmcheck runs jobserver-probe programs random analyze analyze-ghdl analyze-nvc synth formal emulator timing timing-spread typecheck lint clean

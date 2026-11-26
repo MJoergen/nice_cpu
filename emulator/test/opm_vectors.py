@@ -10,7 +10,9 @@ included, while they sound. opm_ymfm.py checks the model against ymfm
 with such logs, and the emulator and the RTL replay the vectors.
 
 A vector file is the log, then one line for each sample: its number,
-and the left and the right sample, in decimal.
+and the left and the right sample, in decimal. --env-start starts the
+envelope's counter elsewhere than at 0, as a test of the RTL can, so
+that its high bits are reached in a short run.
 """
 
 from __future__ import annotations
@@ -96,12 +98,17 @@ def main() -> int:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--count", type=int, default=20000, help="the number of samples")
     p.add_argument("--log", action="store_true", help="write the log only")
+    p.add_argument(
+        "--env-start", type=int, default=0, help="the envelope's counter at the start, as the RTL's G_ENV_START sets it"
+    )
     p.add_argument("-o", "--output", default="-")
     a = p.parse_args()
     writes = random_log(a.seed, a.count)
     text = write_log(writes, a.count)
     if not a.log:
-        samples = opm_model.run(writes, a.count)
+        opm = opm_model.Opm()
+        opm.env_counter = a.env_start
+        samples = opm_model.run(writes, a.count, opm)
         text += "".join(f"{n} {left} {right}\n" for n, (left, right) in enumerate(samples))
     if a.output == "-":
         sys.stdout.write(text)

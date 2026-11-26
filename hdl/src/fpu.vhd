@@ -301,8 +301,11 @@ architecture synthesis of fpu is
    -- runs, the flags from before it, whether its operands are finite, and
    -- whether POLE ran. fn_r and fn2_r say, from CMD_ST on, whether the
    -- command is a function, and one of two operands, so that ARITH2_ST
-   -- does not decode num_r on its way to the stack.
+   -- does not decode num_r on its way to the stack, and base_r the
+   -- address of its first step, so that the decode is not on the way to
+   -- pc_r either (#194).
    signal pc_r   : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
+   signal base_r : natural range 0 to C_SEQ_STEPS'length - 1 := 0;
    signal fn_r   : boolean;
    signal fn2_r  : boolean;
    signal step_r : std_logic_vector(19 downto 0);
@@ -1256,6 +1259,7 @@ begin
                info_v := info(num_v);
                fn_r   <= seq_pops(num_v) /= 0;
                fn2_r  <= seq_pops(num_v) = 2;
+               base_r <= seq_base(num_v);
                x_r    <= x_val;
                y_r    <= y_val;
                noovf_r <= '0';
@@ -1441,7 +1445,7 @@ begin
                            finite_r <= not p_xinf_r and (not fn2_r or not p_yinf_r);
                            pole_r   <= '0';
                            seq_r    <= '1';
-                           pc_r     <= seq_base(num_r);
+                           pc_r     <= base_r;
                            if fn2_r then
                               finish(y_r, x_r, 2, "000");
                            else

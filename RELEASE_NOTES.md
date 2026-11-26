@@ -43,6 +43,223 @@ pin each are:
 The board's `RC02` pins `4cd869e`, a commit before nice_cpu's `RC02`.
 The others pin the tagged commit.
 
+## V3.1 (2026-11-26)
+
+The systems have sound: an FM synthesizer whose registers are those of
+Yamaha's YM2151 (#209), and a sample player that plays what a program
+writes into its FIFO (#216), at `0xFFFFFF08`–`0xFFFFFF0F`. The
+emulator and the FPGA implementation give the same samples, bit for
+bit. The FPU's `SIN`, `COS`, and `TAN` take any finite argument
+(#185), and its steps are faster (#164). The debug link stays version
+`0x10`.
+
+**Upgrade notes.**
+
+- **The sound** (#209) is an FM synthesizer with the registers of the
+  YM2151: 8 channels of 4 operators, an LFO, and noise (DEVICES.md
+  §12). A program writes a register's number and its data in one word
+  to `OPM_WRITE`, `0xFFFFFF08`, and reads the status at `OPM_STATUS`,
+  `0xFFFFFF09`. A FIFO holds 64 writes, and one takes effect in each
+  sample, 55930 times a second. A write to a full FIFO waits, so a
+  program never polls. The chip's timers and its CSM are not there,
+  and its busy flag is the FIFO's (§12.6).
+- **The sample player** (#216) has `PCM_DATA`, `PCM_RATE`, and
+  `PCM_STATUS` at `0xFFFFFF0A`–`0xFFFFFF0C` (§12.7): a FIFO of 4096
+  stereo samples of 16 bits, played at the rate that the program sets,
+  1000 to 48000 Hz, or stopped with the rate 0. An empty FIFO plays 0
+  and sets the underrun flag.
+- **`0xFFFFFF08`–`0xFFFFFF0F` are no longer memory** in the emulator,
+  where they were reserved words. A program that kept data there runs
+  with `--no-sound`, which makes them memory again.
+- **A system may leave out the sound**, or its sample player alone,
+  and a program finds out from `OPM_STATUS`, whose bits 31..16 read
+  `0x2151` where the sound is (§8). A system that has it mixes the two
+  streams and converts their rates. NiceMonMEGA65 follows in
+  MJoergen/NiceMonMEGA65#176.
+- **The model defines the samples.** `emulator/test/opm_model.py`
+  follows ymfm by Aaron Giles, step by step, and three tables are
+  ymfm's data, so what the emulator and `hdl/` have of it is under
+  ymfm's BSD 3-Clause license (README.md, License). The archives of a
+  release have its notice.
+- **niceemu.** `--wav FILE` writes the sound's samples to a WAV file,
+  16-bit stereo at 55930 Hz, and `--pcm-wav FILE` those of the sample
+  player, at the rate of its first sample. `--no-sound` makes the
+  eight words ordinary memory. With `--window`, both play on the
+  host's audio device; where there is none, niceemu says `niceemu: no
+  sound:` and runs without.
+- **`SIN`, `COS`, and `TAN` of any finite X** (#185). They gave a NaN
+  from 2²⁰·π/2 on, and now reduce the argument by 1176 bits of 2/π
+  (DEVICES.md §11.3). The C library's `sin`, `cos`, and `tan`, and
+  their float versions, are routines of the float library, as the
+  other functions are: `sin` and `cos` take 19 steps a call on the
+  emulator, where 43, and `tan` 20, where 45. A program that uses
+  every math function gets 880 words of C, where 5723, as musl's
+  `__rem_pio2`, `__rem_pio2_large`, and kernels are gone. A few
+  results from 2²⁰·π/2 on are 1 ulp from musl's.
+- **Programs that call `sin`, `cos`, or `tan` are built again.** The
+  labels `_nice_sin`, `_nice_cos`, and `_nice_tan` are gone, so a
+  `.wasm` file built with the C library of `V3.0` that calls one of
+  the three does not join: "undefined symbol '_nice_cos'". `_sin`,
+  `_cos`, `_tan`, `_sinf`, `_cosf`, and `_tanf` are labels of the
+  float library now, so a module that exports a function of such a
+  name and uses a float cannot be joined with it (runtime/README.md).
+  On a system with the FPU of `V3.0`, such as NiceMonMEGA65 until it
+  follows, the new `sin` gives a NaN from 2²⁰·π/2 on.
+- **The FPU is faster** (#164). The steps `PUT` and `POLE`, and a `JZ`
+  that does not jump, take one cycle, where two, and a command of the
+  arithmetic unit two or three fewer. `float.c` takes 577066 cycles on
+  the pipelined core, where 600538, and 331137 with `--inline-fpu`,
+  where 354930. The FPU's ports are unchanged.
+- **A watchdog waits longer.** The FPU's longest command is `TAN` of a
+  huge argument, 6108 cycles, where `DIGITS` was the longest, with
+  some 3400. A write to a full FIFO holds the bus for up to 1788
+  cycles at 100 MHz in the sound, and for up to 100000 in the sample
+  player, at 1000 Hz. A pause and a step of the debug link wait that
+  long, and so must a watchdog of the system.
+- **The debug link** stays version `0x10`. A start over the link
+  resets the sound and the sample player too, and both run on while
+  the processor is paused, held, or halted (DEBUG.md §6).
+- **Timing**, out of context on the MEGA65 on 2026-11-26, in the
+  default flow. The pipelined core is that of `V3.0`. The FPU leaves
+  0.460 ns on its own paths, where its budget is 1.0 ns, and 0.811 ns
+  in the timing flow; over the seven orders of its functions of `make
+  timing-spread UNIT=fpu`, the medians are 1.026 and 0.879 ns, and the
+  budget lies inside the range of both flows. It still meets 100 MHz.
+  The sound leaves 2.271 ns, 6.599 ns at its inputs, and 7.958 ns at
+  its outputs, and the sample player 3.701, 5.868, and 5.185 ns: both
+  meet the FPU's budget, which they share.
+- Zig stays 0.17.0.
+
+**Specification and documents**
+
+- ISA.md is unchanged.
+- DEVICES.md §12 is the sound: its two words, the chip's registers,
+  the writes and the samples, the formulas, an example program, and
+  the differences from the YM2151. §12.7 is the sample player. §4 has
+  the rule for a new device's words: the I/O range holds control and
+  status words, and tables go in blocks of memory outside it. §8 says
+  what a system may leave out. §1.3 says that the window plays the
+  sound.
+- DEVICES.md §11.3 has `SIN`, `COS`, and `TAN` for any finite X, with
+  the step `KX` and the table of 2/π, and §11.5 names them among the
+  longest commands.
+- DEBUG.md §6 and §7.3 name the sound and its sample player among the
+  devices that a start resets and that do not stop.
+- MICROARCH.md §8 has the sound and the sample player, with the
+  longest hold of each. §5.6 has six rows that it lacked, with their
+  shares in the random programs, and `hdl/test/random_stats.py` reads
+  all of the section's shares (#207).
+- HISTORY.md says how `sin`, `cos`, and `tan` left the C library, what
+  the cycle model got wrong at a read after an I/O store (#206), and
+  how the FPU's timing came to its figures.
+- `decisions.md` has what was decided against: one math unit (#171),
+  `K` and `PICK` of the FPU in one cycle (#164), a read that loads in
+  the cycle after a store into the I/O range (#210), and what the
+  sound's two issues dropped, such as a busy flag that a program
+  polls, the chip's timers, an MP3 decoder in RTL, and one WAV file
+  for both streams.
+- README.md's License section names ymfm, and says what the archives
+  of a release have in `licenses/`.
+- The sixteenth review, `doc/review/sixteenth-repository-review.md`,
+  read the documents of this release. Its findings are fixed, and
+  three issues came of them: #217, #218, and #219.
+
+**Emulator (`niceemu`)**
+
+- The sound and its sample player, with `--wav`, `--pcm-wav`, and
+  `--no-sound`, and the probes `sound` and `pcm` (#209, #216). The
+  window plays both through SDL. Without `--step-time`, they run on
+  the host's time; with it, on the steps, so that a run gives the same
+  file each time.
+- A run with `--wav` or `--pcm-wav` that SIGINT, SIGTERM, or SIGHUP
+  ends leaves a whole WAV file, with the samples up to the signal.
+- The unit test of `src/opm.zig` replays the vectors of the model,
+  20000 samples, and `make test` checks that a wrong vector fails it.
+  `test/opm_model_test.py` checks the model's formulas, and
+  `test/wav.py` the two files.
+- `make ymfmcheck` compares the model with ymfm, every sample of 20
+  random logs of writes. It needs git and a C++ compiler, so `make
+  test` leaves it out, and CI runs it.
+- `SIN`, `COS`, and `TAN` take any finite X (#185), with the step `KX`
+  in the FPU's sequences, and the worst errors of the three stay below
+  0.75 ulp.
+- The archives of a release have `licenses/` in both builds, with the
+  notices of ymfm, of Spleen, and of the code that the FPU's sequences
+  follow.
+- The version is 3.1.0.
+
+**Runtime (`runtime/`)**
+
+- The float library has `_sin`, `_cos`, `_tan`, and their float
+  versions, and is 409 words, where it was 400 (#185). The C library's
+  `sin.c`, `cos.c`, and `tan.c` are gone, with musl's reduction and
+  kernels.
+- The README's sizes and steps of the C library come from two programs
+  that are kept: `make -C bench words` and `make -C bench mathsteps`
+  (#205).
+
+**Translator (`nicewasm`, `nicebuild.py`)**
+
+- `sin`, `cos`, and `tan`, and their float versions, are imports of
+  the float library, as the other math functions, so a program that
+  calls one looks for the FPU at its start. The imports `nice_sin`,
+  `nice_cos`, and `nice_tan` are gone (#185).
+
+**Benchmarks**
+
+- Words: `float.c` goes from 8632 to 8641, Dhrystone from 16797 to
+  16806, and CoreMark from 25235 to 25244, the 9 words of the float
+  library. `bench.c` stays 9869.
+- Cycles on the pipelined core: `float.c` goes from 600538 to 577066,
+  and from 354930 to 331137 with `--inline-fpu`, which now saves 43%.
+  Those of `bench.c`, `hand.nasm`, Dhrystone, and CoreMark are those
+  of `V3.0`.
+- The cycle model loads a read after a store into the I/O range a
+  cycle later, as the core does (#206): `hand.nasm` is 1247576 cycles
+  in the model, where 1247321, 79 fewer than the core's, where 334.
+  Its averages for the FPU are `--fpu-op 16` and `--fpu-long 72`,
+  where 18 and 75.
+- `make mathsteps` prints the steps of a call of each math function,
+  and `make words` the sizes of the C library's parts (#205).
+  `words.py` counts a `.nasm` file as it is, so `make words` prints
+  the float library's own 409 words.
+
+**FPGA cores (`hdl/`)**
+
+- `src/opm.vhd`, with `opm_engine.vhd` and `opm_tables_pkg.vhd`, is
+  the sound, and `src/pcm.vhd` its sample player (#209, #216). Each is
+  a slave of the data bus, as the FPU is, with a strobe for its
+  samples, which a system mixes. The generic `G_CLK_HZ` gives the
+  clock: 24 to 268 MHz for the sound, and 1 to 268 MHz for the player.
+  The sound takes 1453 LUTs, 773 registers, 3 block RAMs of 18 Kb, and
+  1 DSP, and the player 183 LUTs, 137 registers, and 4 block RAMs of
+  36 Kb.
+- `tb_opm` replays the model's vectors on the sound, each of 20000
+  samples, and `tb_pcm` checks the player. Neither has a formal check
+  (#219).
+- The FPU keeps the start of a function, and X and Y, in registers
+  (#194, #211), runs its steps faster (#164), and reduces a huge
+  argument of `SIN`, `COS`, and `TAN` (#185). It takes 10090 LUTs and
+  2919 registers, where 10045 and 2760. `formal_fpu` proves that the
+  two registers hold the top of the stack.
+- `make timing` takes `UNIT=opm` and `UNIT=pcm`, with a budget for
+  each, and `make timing-spread` takes `UNIT=fpu`, which builds the
+  FPU with its functions in seven orders in the ROM.
+- The random runs give niceemu `--no-sound`, as `tb_core` has no
+  sound.
+- hdl/README.md has the timing of this release, the cycles of each
+  command of the FPU, and what each unit takes.
+
+**Release**
+
+- `release.py check` runs `make timing` for four units: the core, the
+  FPU, the sound, and the sample player. `release.py figures` checks
+  the cycles of the two float runs too.
+- CI has a job `ymfm`, which runs `make ymfmcheck`, and `release.py
+  ci` waits for it as for the others.
+- RELEASE.md step 2.4 names the two checks that no gate runs, `make -C
+  bench words` and `mathsteps`.
+
 ## V3.0 (2026-11-25)
 
 NICE has no interrupts (#162): IRQ, NMI, `INT`, `RTI`, and `WAIT` are

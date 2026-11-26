@@ -50,6 +50,8 @@ The newest section is `V3.0`. RELEASE.md step 2.8 asks for the section, and for 
 
 **Fix:** write the section, with the line "The version is 3.1.0." under the emulator's heading, and the row of the table.
 
+**Resolved.** RELEASE_NOTES.md has the section `V3.1`, with the upgrade notes above, the timing as the reports of 2026-11-26 give it, and what the fixes of this review changed for a user: whole WAV files after a signal, `licenses/` in the archives, the CI job against ymfm, and `make words` on the float library. Every closed issue of the milestone is cited but the four stages of #209. `release.py section V3.1` prints it. The date in its heading is today's, and is the tag's to fix if the tag comes later.
+
 ### 1.2 The table of board tags says "none yet" for `V3.0`
 
 NiceMonMEGA65 has a tag `V3.0`, of 2026-11-26, which pins ea1f485, `V3.0` here. The table at the top of RELEASE_NOTES.md says `V3.0`, "none yet". `release.py preflight` warns of it:
@@ -83,6 +85,8 @@ CI passed all 15 jobs on the head, `formal` among them, and on a592877 before it
 The code review of the branch against `main` was made at bc4b116, and its eight fixes end at a592877. The four commits of the sample player came after it: e0223a2, c16d0ce, 1be8e50, and d2b0143, with `emulator/src/pcm.zig` and `hdl/src/pcm.vhd`. This review reads documents, and is no review of that code. What it did look at there: the rules of §12.7 on the emulator, by probes of the reader (§5), and the speed of the emulator, as the review of the sound had found a run with `--step-time` twice as slow. A loop of 500 million steps takes 7.1 s on the head, on a592877, and on `main`, and 7.3 to 7.5 s with `--step-time` on all three, so the player costs a run nothing.
 
 **Fix:** none for CI. A code review of the four commits is the user's call.
+
+**Resolved.** Nothing to fix for CI, which now has 16 jobs with `ymfm` (§4.4), first run at the next push. The code review of the four commits of the sample player is left to the user.
 
 ## 2. What the documents say that is not so, since `V3.0`
 

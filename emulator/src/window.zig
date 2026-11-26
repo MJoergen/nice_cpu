@@ -1,6 +1,6 @@
 //! The window of `--window` (doc/DEVICES.md §1), on SDL 3. It shows the
-//! frame of frame.zig and queues the keys of keys.zig. Only a build with
-//! `-Dwindow` has it.
+//! frame of frame.zig, queues the keys of keys.zig, and plays the samples
+//! of the sound (§12). Only a build with `-Dwindow` has it.
 
 const std = @import("std");
 const c = @import("sdl");
@@ -8,12 +8,27 @@ const cpu_ = @import("cpu.zig");
 const Cpu = cpu_.Cpu;
 const frame = @import("frame.zig");
 const keys = @import("keys.zig");
+const opm = @import("opm.zig");
 
 /// The time between two redraws, about 60 a second.
 const redraw_ms = 16;
 /// The time of each half of the cursor's blink, so that it blinks about
 /// twice a second.
 const blink_ms = 250;
+
+/// The sound's samples go to SDL in batches of this many.
+const batch = 512;
+/// The silence that goes ahead of the samples when the stream to the
+/// device is empty, at the start and after the samples came too late, so
+/// that the next ones come in time.
+const lead_samples = opm.sample_rate / 20; // 50 ms
+/// A stream that holds more than this, as the samples came faster than
+/// the device plays them, starts again with the lead.
+const most_samples = opm.sample_rate / 4; // 250 ms
+/// Pumped with the sound, the window looks for events no longer than this
+/// at a time, so that the samples go to the stream before the lead ends.
+const sound_look_ms = 10;
+const silence: [lead_samples][2]i16 = @splat(.{ 0, 0 });
 
 pub const Window = struct {
     window: *c.SDL_Window,
@@ -26,6 +41,11 @@ pub const Window = struct {
     queue: keys.Queue,
     /// The SDL time of the last redraw, in ms.
     drawn_at: u64 = 0,
+    /// The stream of the sound's samples to the device, if it plays.
+    stream: ?*c.SDL_AudioStream = null,
+    /// The samples not yet in the stream.
+    held: [batch][2]i16 = undefined,
+    held_len: usize = 0,
 
     /// Open the window, as high as the rows of `size`. `file` is the input
     /// of `--input`, if given, which the console reads before the keys.
@@ -59,7 +79,59 @@ pub const Window = struct {
         };
     }
 
+    /// Play the samples of `sound` on the default device, with SDL's
+    /// conversion from the sound's rate to the device's. If no device can
+    /// be opened, the run goes on without the sound, after a warning.
+    pub fn playSound(self: *Window, sound: *opm.Sound) void {
+        if (!c.SDL_InitSubSystem(c.SDL_INIT_AUDIO)) return noSound("SDL_InitSubSystem");
+        const spec: c.SDL_AudioSpec = .{ .format = c.SDL_AUDIO_S16LE, .channels = 2, .freq = opm.sample_rate };
+        const stream = c.SDL_OpenAudioDeviceStream(c.SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, null, null) orelse {
+            noSound("SDL_OpenAudioDeviceStream");
+            c.SDL_QuitSubSystem(c.SDL_INIT_AUDIO);
+            return;
+        };
+        if (!c.SDL_ResumeAudioStreamDevice(stream)) {
+            noSound("SDL_ResumeAudioStreamDevice");
+            c.SDL_DestroyAudioStream(stream);
+            c.SDL_QuitSubSystem(c.SDL_INIT_AUDIO);
+            return;
+        }
+        self.stream = stream;
+        self.held_len = 0;
+        sound.sink = .{ .ctx = self, .put_fn = put };
+    }
+
+    /// A sample of the sound, which goes to the stream with its batch.
+    fn put(ctx: *anyopaque, s: opm.Sample) void {
+        const self: *Window = @ptrCast(@alignCast(ctx));
+        self.held[self.held_len] = .{ s.left, s.right };
+        self.held_len += 1;
+        if (self.held_len == batch) self.flush();
+    }
+
+    /// Put the samples held into the stream, behind the lead if the
+    /// stream is empty, or after a clear if it holds too many.
+    fn flush(self: *Window) void {
+        const stream = self.stream orelse return;
+        if (self.held_len == 0) return;
+        if (restartDue(c.SDL_GetAudioStreamQueued(stream))) {
+            _ = c.SDL_ClearAudioStream(stream);
+            _ = c.SDL_PutAudioStreamData(stream, &silence, @sizeOf(@TypeOf(silence)));
+        }
+        _ = c.SDL_PutAudioStreamData(stream, &self.held, @intCast(self.held_len * 4));
+        self.held_len = 0;
+    }
+
+    /// Compute the samples of the sound up to now, and put them into the
+    /// stream.
+    fn playSamples(self: *Window, cpu: *Cpu) void {
+        if (self.stream == null) return;
+        cpu.syncSound();
+        self.flush();
+    }
+
     pub fn close(self: *Window, gpa: std.mem.Allocator) void {
+        if (self.stream) |s| c.SDL_DestroyAudioStream(s);
         self.frame.deinit(gpa);
         c.SDL_DestroyTexture(self.texture);
         c.SDL_DestroyRenderer(self.renderer);
@@ -68,11 +140,21 @@ pub const Window = struct {
     }
 
     /// Handle the events that have come, waiting up to `timeout_ms` for
-    /// the first, and redraw the screen at `base` if it is time. Returns
-    /// false when the window has been closed.
-    pub fn pump(self: *Window, cpu: *const Cpu, base: u32, timeout_ms: i32) bool {
+    /// the first, play the samples of the sound up to now, and redraw the
+    /// screen at `base` if it is time. With the sound, the wait plays the
+    /// samples every `sound_look_ms`. Returns false when the window has
+    /// been closed.
+    pub fn pump(self: *Window, cpu: *Cpu, base: u32, timeout_ms: i32) bool {
         var ev: c.SDL_Event = undefined;
-        var got = if (timeout_ms > 0) c.SDL_WaitEventTimeout(&ev, timeout_ms) else c.SDL_PollEvent(&ev);
+        var left = timeout_ms;
+        var got = false;
+        while (true) {
+            const wait = if (self.stream != null) @min(left, sound_look_ms) else left;
+            got = if (wait > 0) c.SDL_WaitEventTimeout(&ev, wait) else c.SDL_PollEvent(&ev);
+            self.playSamples(cpu);
+            if (got or left <= wait) break;
+            left -= wait;
+        }
         while (got) : (got = c.SDL_PollEvent(&ev)) {
             if (!self.handle(&ev)) return false;
         }
@@ -173,6 +255,16 @@ fn key(code: c.SDL_Keycode) ?keys.Key {
     };
 }
 
+/// Whether a stream that holds `queued` bytes starts again with the lead:
+/// when it is empty, or holds more than `most_samples`.
+fn restartDue(queued: c_int) bool {
+    return queued <= 0 or queued > most_samples * 4;
+}
+
+fn noSound(what: []const u8) void {
+    std.debug.print("niceemu: no sound: {s}: {s}\n", .{ what, c.SDL_GetError() });
+}
+
 fn sdlError(what: []const u8) error{Sdl} {
     std.debug.print("niceemu: {s}: {s}\n", .{ what, c.SDL_GetError() });
     return error.Sdl;
@@ -203,6 +295,42 @@ test "Ctrl with a letter gives its control code, but not with Alt" {
     try testing.expectEqual(null, control(c.SDLK_C, c.SDL_KMOD_LCTRL | c.SDL_KMOD_RALT));
     try testing.expectEqual(null, control(c.SDLK_RETURN, c.SDL_KMOD_LCTRL));
     try testing.expectEqual(null, control(c.SDLK_F1, c.SDL_KMOD_LCTRL));
+}
+
+test "the stream starts again with the lead when it is empty or holds too much" {
+    try testing.expect(restartDue(0));
+    try testing.expect(restartDue(-1)); // SDL's error
+    try testing.expect(!restartDue(4));
+    try testing.expect(!restartDue(most_samples * 4));
+    try testing.expect(restartDue(most_samples * 4 + 4));
+}
+
+test "the samples of the sound go to the stream behind the lead (DEVICES §12.3)" {
+    _ = c.SDL_SetHintWithPriority(c.SDL_HINT_VIDEO_DRIVER, "dummy", c.SDL_HINT_OVERRIDE);
+    _ = c.SDL_SetHintWithPriority(c.SDL_HINT_AUDIO_DRIVER, "dummy", c.SDL_HINT_OVERRIDE);
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    var w: Window = undefined;
+    try w.open(testing.allocator, false, frame.size_full, null);
+    defer w.close(testing.allocator);
+    w.playSound(&cpu.sound);
+    const stream = w.stream orelse return error.NoStream;
+    // Paused, the device takes nothing from the stream.
+    try testing.expect(c.SDL_PauseAudioStreamDevice(stream));
+    try testing.expectEqual(0, c.SDL_GetAudioStreamQueued(stream));
+    // A batch goes in with the lead ahead of it, the rest of the samples
+    // when the window plays them.
+    for (0..batch + 3) |_| cpu.sound.tick();
+    try testing.expectEqual(3, w.held_len);
+    try testing.expectEqual(@as(c_int, (lead_samples + batch) * 4), c.SDL_GetAudioStreamQueued(stream));
+    w.flush();
+    try testing.expectEqual(0, w.held_len);
+    try testing.expectEqual(@as(c_int, (lead_samples + batch + 3) * 4), c.SDL_GetAudioStreamQueued(stream));
+    // Too many start again with the lead: without, the stream would hold
+    // more than most_samples.
+    for (0..most_samples) |_| cpu.sound.tick();
+    w.flush();
+    try testing.expect(c.SDL_GetAudioStreamQueued(stream) <= most_samples * 4);
 }
 
 /// Whether the lines of the frame above `lines` are all white, and those

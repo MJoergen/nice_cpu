@@ -16,7 +16,7 @@ files of V1.2 are:
 | File | What it is |
 |---|---|
 | `niceemu-V1.2-x86_64-linux.tar.gz` | Without the window. Static, so it runs on any distribution. |
-| `niceemu-window-V1.2-x86_64-linux.tar.gz` | With the window of `--window`. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/`. |
+| `niceemu-window-V1.2-x86_64-linux.tar.gz` | With the window of `--window`, which plays the sound. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/`. |
 | `SHA256SUMS` | The SHA-256 of both. |
 
 Each archive holds one directory, with `niceemu`, this README, and the
@@ -232,6 +232,21 @@ window stays after the halt. Ctrl-C in the window is a key, `0x03`. If no
 window can be opened, as without a display, niceemu prints SDL's error
 and exits with status 1 before the run.
 
+The window plays the samples of the sound (DEVICES.md §12) on the
+default audio device, which SDL converts from the sound's rate, 55930 Hz,
+to the device's. It computes the samples up to now and gives them to SDL
+at least every 10 ms, also while it waits for an event and after the
+halt, as the sound plays on. Ahead of them goes 50 ms of silence, the
+latency, so that the next ones come in time. When the device has played
+every sample given, the next ones get the 50 ms again, and when more
+than 250 ms wait, as the samples come faster than the device plays them,
+those that wait are dropped, and the next ones get the 50 ms. The
+samples keep the host's time, so they come at the device's rate. With
+`--step-time` they keep the time of the steps, so they sound right only
+at `--speed 1000000`. If no audio device can be opened, niceemu prints
+`niceemu: no sound:` and SDL's error, and runs without the sound.
+`--no-sound` opens none.
+
 With `--link`, the window opens when niceemu starts and stays open over
 every run, and shows the screen also while the processor is held, halted,
 or paused. The console reads the link's input buffer, into which the keys
@@ -252,14 +267,23 @@ without a display. The close of the window, before the halt, after it, and
 with `--link`, it checks through a hook of niceemu for the test, as the
 dummy driver cannot close one. With `--link`, as a host, it checks that a
 read returns 0 until a byte comes, the sleep in the wait loop, and the end
-of the input, and that the link is served in a long skip. The key table and the drawing of the screen are unit tests
+of the input, and that the link is served in a long skip. It plays the
+note of DEVICES.md §12.5 on SDL's disk audio driver, which writes the
+samples to a file at the sound's rate, and checks them against the
+model's: silence, then the model's samples from the first that is not
+silence, for at least 0.2 s, and after each silence that the window put
+in, a later part of them. It checks that `--no-sound` plays nothing, and
+the warning without an audio device. The others run on SDL's dummy audio
+driver. The key table and the drawing of the screen are unit tests
 in `src/keys.zig` and `src/frame.zig`, the keys' way into the link's
 buffer one in `src/link.zig`, and the mapping of SDL's key events to the
 keys one in `src/window.zig`, which `make window-test` runs. Another
 there opens a window on the dummy driver with all the rows, and one with
 those of `-2004`, and checks the size of each, 1280×896 and 1280×800,
 that the words after its rows do not show, in the text and in the chunky
-mode, and that its last row is at the bottom edge.
+mode, and that its last row is at the bottom edge. One more gives the
+samples of the sound to a stream on the dummy audio driver, paused, and
+checks the 50 ms ahead of them, and the drop of too many.
 `make window-test` runs these unit tests with `DISPLAY` and
 `WAYLAND_DISPLAY` unset, so that a test that needs a display fails there
 as it does in CI.
@@ -473,7 +497,8 @@ ordinary memory.
 PCM, left first, at 55930 Hz, the sound's rate of 55930.4 rounded down.
 Its header states the sizes once the run ends. A run with `--step-time`
 gives the same file each time. To hear a program to its last note, let
-it wait with `TIME_SKIP` before its `HALT`. The emulator plays no sound.
+it wait with `TIME_SKIP` before its `HALT`. The window of `--window`
+plays the samples (Window below).
 
 `src/opm_tables.zig` holds the tables of the synthesizer. `test/opm_tables.py`
 writes it:

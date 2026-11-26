@@ -29,7 +29,8 @@ needs them.
     cd doc && make test               # check the section references and links of the documents
 
 `make -C emulator window-test` builds the emulator with its window, SDL
-compiled from source, and tests it on SDL's dummy video driver. It is not
+compiled from source, and tests it on SDL's dummy video driver, and its
+sound on SDL's dummy and disk audio drivers. It is not
 in `make test`, as its build replaces the emulator that the other tests
 run ([emulator/README.md](emulator/README.md#window)).
 `make -C emulator dist` builds the two emulators of a release, with and

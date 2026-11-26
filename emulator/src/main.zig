@@ -85,7 +85,8 @@ const usage =
     \\                       keep it after the halt until it is closed. The console
     \\                       reads --input, if given, then the keys typed into the
     \\                       window, and a read returns 0 while no byte waits.
-    \\                       Needs a build with -Dwindow.
+    \\                       The window plays the sound. Needs a build with
+    \\                       -Dwindow.
     \\      --speed N        With --window, run N steps a second: 1000000 is one
     \\                       per microsecond. 0, the default, runs as fast as the
     \\                       host can, and sleeps while the program polls the
@@ -958,7 +959,7 @@ fn chunkSteps(speed: u64) u64 {
 /// it is still open. With NICEEMU_CLOSE_AFTER (Options), it counts as
 /// closed once the run has made `steps` steps and that is the number or
 /// more.
-fn windowOpen(win: *Window, cpu: *const Cpu, opts: Options, wait_ms: u32, steps: u64) bool {
+fn windowOpen(win: *Window, cpu: *Cpu, opts: Options, wait_ms: u32, steps: u64) bool {
     const open = win.pump(cpu, opts.screen_base, @intCast(wait_ms));
     if (opts.close_after) |n| if (steps >= n) return false;
     return open;
@@ -972,6 +973,7 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
     var win: Window = undefined;
     win.open(arena, opts.invert_fg, opts.screen_size, file) catch return error.Load;
     defer win.close(arena);
+    if (opts.sound) win.playSound(&cpu.sound);
     cpu.input = win.queue.input();
     var pacer: Pacer = .{ .speed = opts.speed, .start_ns = nowNs(io) };
     const chunk = chunkSteps(opts.speed);
@@ -1087,6 +1089,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     var win: Window = undefined;
     if (windowed) {
         win.open(arena, opts.invert_fg, opts.screen_size, null) catch return error.Load;
+        if (opts.sound) win.playSound(&cpu.sound);
         cpu.input = link.pollInput();
     } else {
         cpu.input = .fromReader(&link.reader);

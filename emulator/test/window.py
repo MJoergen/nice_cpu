@@ -7,7 +7,8 @@ which comes at the halt, and then ends niceemu with SIGTERM. The close of
 the window is tested through NICEEMU_CLOSE_AFTER=N in the environment, a
 hook of niceemu for this file: the window counts as closed once a run has
 made N steps. test_link and test_close_link run --window with --link, with
-the host of link.py."""
+the host of link.py. The sound plays on SDL's dummy audio driver, and on
+its disk driver, which writes the samples to a file, in test_sound."""
 
 from __future__ import annotations
 
@@ -20,9 +21,11 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import List, Optional
+import struct
+from typing import List, Optional, Tuple
 
 import link
+import opm_model
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NICEASM = os.path.join(HERE, "..", "..", "assembler", "niceasm.py")
@@ -30,6 +33,7 @@ NICEASM = os.path.join(HERE, "..", "..", "assembler", "niceasm.py")
 NICEEMU = os.environ.get("NICEEMU") or os.path.join(HERE, "..", "zig-out", "bin", "niceemu")
 # Also for the niceemu that link.Emu starts.
 os.environ["SDL_VIDEODRIVER"] = "dummy"
+os.environ["SDL_AUDIODRIVER"] = "dummy"
 ENV = dict(os.environ)
 
 # Reads the console three times, into R1, R2, and R3.
@@ -72,6 +76,13 @@ loop            MOVE    R1, @TIME_LO
                 ADD     R2, R2, 1
                 MOVE    R15, loop
 """
+
+
+# The note of DEVICES.md §12.5, then a halt, after which the sound plays
+# on.
+NOTE_WRITES = [0x20C7, 0x284A, 0x607F, 0x687F, 0x707F, 0x5801, 0x981F, 0xF80F, 0x0878]
+NOTE = "OPM_WRITE       .EQU    0xFFFFFF08\n" + "".join(
+    f"                MOVE    @OPM_WRITE, 0x{w:04X}\n" for w in NOTE_WRITES) + "                HALT\n"
 
 
 def assemble(tmp: str, name: str, text: str) -> str:
@@ -271,6 +282,82 @@ def test_no_display(tmp: str) -> None:
         fail(f"stderr without a display: {p.stderr!r}")
 
 
+def play(tmp: str, args: List[str], seconds: float) -> Tuple[List[Tuple[int, int]], bytes]:
+    """Run the note with the arguments on SDL's disk audio driver for the
+    seconds given, and return the samples that it wrote, and stderr."""
+    note = assemble(tmp, "note", NOTE)
+    raw = os.path.join(tmp, "sound.raw")
+    if os.path.exists(raw):
+        os.remove(raw)
+    env = dict(ENV, SDL_AUDIODRIVER="disk", SDL_AUDIO_DISK_OUTPUT_FILE=raw)
+    p = subprocess.Popen([NICEEMU, "--window"] + args + [note], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    expect("the report of the note", read_lines(p, 1)[0], "Halted (HALT) after 10 steps, PC=0000001c")
+    time.sleep(seconds)
+    stop(p)
+    assert p.stderr is not None
+    err = p.stderr.read()
+    if not os.path.exists(raw):
+        return [], err
+    with open(raw, "rb") as f:
+        data = f.read()
+    return [struct.unpack_from("<hh", data, i) for i in range(0, len(data) - 3, 4)], err
+
+
+def test_sound(tmp: str) -> None:
+    """The window plays the sound's samples (DEVICES.md §12.3) on the
+    default device, here SDL's disk driver, which takes them at the
+    sound's rate as they are, and writes them to a file. The writes land
+    in consecutive samples, after silence. So the file is silence, then
+    the model's samples from the first that is not silence. Where the
+    stream ran empty, the window put 50 ms of silence ahead of the next
+    samples, and where it held too many, it dropped them: each stretch
+    after a silence of more than 100 samples must be the model's samples
+    from a later point. The first must last 0.2 s. With --no-sound, no
+    sound plays, and with no audio device, the run goes on after a
+    warning."""
+    got, _ = play(tmp, [], 1.0)
+    want = opm_model.run([(i, w >> 8, w & 0xFF) for i, w in enumerate(NOTE_WRITES)], 3 * 55930)
+    onset = next(i for i, s in enumerate(want) if s != (0, 0))
+    # The stretches of the file between the silences.
+    stretches: List[Tuple[int, int]] = []
+    start_at: Optional[int] = None
+    zeros = 0
+    for i, smp in enumerate(got + [(0, 0)] * 101):
+        if smp != (0, 0):
+            if start_at is None:
+                start_at = i
+            zeros = 0
+            continue
+        zeros += 1
+        if zeros == 101 and start_at is not None:
+            stretches.append((start_at, i - 100))
+            start_at = None
+    if not stretches or stretches[0][1] - stretches[0][0] < 55930 // 5:
+        fail(f"sound: stretches {stretches} of {len(got)} samples")
+    a, b = stretches[0]
+    if got[a:b] != want[onset:onset + b - a]:
+        fail("sound: the first stretch is not the model's samples")
+    at = onset + b - a
+    for a, b in stretches[1:]:
+        while at + b - a <= len(want) and got[a:b] != want[at:at + b - a]:
+            at += 1
+        if at + b - a > len(want):
+            fail(f"sound: the stretch at {a} is not a later part of the model's samples")
+        at += b - a
+    got, _ = play(tmp, ["--no-sound"], 0.2)
+    expect("samples with --no-sound", got, [])
+    note = assemble(tmp, "note", NOTE)
+    p = subprocess.Popen([NICEEMU, "--window", note], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, env=dict(ENV, SDL_AUDIODRIVER="nonexistent"))
+    expect("the report without an audio device", read_lines(p, 1)[0], "Halted (HALT) after 10 steps, PC=0000001c")
+    stop(p)
+    assert p.stderr is not None
+    err = p.stderr.read()
+    if not err.startswith(b"niceemu: no sound: SDL_InitSubSystem: "):
+        fail(f"stderr without an audio device: {err!r}")
+
+
 def test_close_link(tmp: str) -> None:
     """With --link, closing the window ends niceemu with status 0, as a
     signal does, also while a program runs."""
@@ -371,7 +458,8 @@ def main() -> None:
         test_link(tmp)
         test_link_skip(tmp)
         test_close_link(tmp)
-    print("PASS window (12 tests)")
+        test_sound(tmp)
+    print("PASS window (13 tests)")
 
 
 if __name__ == "__main__":

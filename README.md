@@ -307,3 +307,11 @@ The code and the documents are under the [MIT license](LICENSE),
   operation by operation, with its constants. What they have of that
   code is under Sun's notices and musl's MIT license, which the header
   of `fpu_seq.py` gives.
+- **The model of the sound**, `emulator/test/opm_model.py`, follows
+  ymfm by Aaron Giles step by step, and three of the tables of
+  `emulator/test/opm_tables.py` are ymfm's data. The emulator's
+  `emulator/src/opm.zig` and the FPGA implementation's
+  `hdl/src/opm_engine.vhd` follow the model, and
+  `emulator/src/opm_tables.zig` and `hdl/src/opm_tables_pkg.vhd` are
+  written from the tables. What they have of ymfm is under its BSD
+  3-Clause license, which the header of `opm_tables.py` gives.

@@ -111,6 +111,8 @@ DEVICES.md §12.3 and §12.7 cite DEBUG.md §6 for the start: "A reset of the sy
 
 **Fix:** a bullet for the six files, as the bullet of the FPU's sequences: the model and the tables follow ymfm, under its BSD 3-Clause license, which the header of `opm_tables.py` gives. The archives of a release are §4.1.
 
+**Resolved.** The License section of README.md has a bullet for the model of the sound, the tables, and the four files that follow them or are written from them: what they have of ymfm is under its BSD 3-Clause license, which the header of `opm_tables.py` gives.
+
 ### 2.3 hdl/README.md: the sound has block RAM and a DSP
 
 hdl/README.md, "The sound": "It takes 1432 LUTs, 172 of them distributed RAM, 769 registers, and no DSP or block RAM." There was no report of `make timing UNIT=opm` on disk, and the figures are those of the message of 6433a20, which has no word of RAMs or DSPs. I ran it once on the head. The slacks are the README's to the picosecond, +2.271, +6.599, and +7.958 ns, so 9f18717 changed no logic, as it says. `timing_util.rpt` of that run:

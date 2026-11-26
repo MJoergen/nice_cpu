@@ -903,7 +903,8 @@ file, and the unit test must fail. `make ymfmcheck` clones ymfm
 at `YMFM_COMMIT` into `build/ymfm`, or takes a checkout in `YMFM`,
 builds `test/opm_ymfm.cpp` against it, and compares every sample of
 `SEEDS` random logs, 20 by default, of 30000 samples each, through
-`test/opm_ymfm.py`. `tb_opm` in `hdl/` replays the vectors on the
+`test/opm_ymfm.py`. `make test` leaves it out, as it needs the network,
+and CI runs it on each push. `tb_opm` in `hdl/` replays the vectors on the
 sound of the cores' system, `hdl/src/opm.vhd`.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:

@@ -134,7 +134,7 @@ another name, set `AR`. The tests use
 `make ymfmcheck`, which checks the model of the sound against ymfm
 ([DEVICES.md §12.6](DEVICES.md#126-differences-from-the-ym2151)),
 needs git, to fetch ymfm, and a C++ compiler, so `make test` leaves it
-out.
+out. CI runs it on each push.
 
 The cores need more. GHDL runs their tests, and nvc the long simulations;
 vsg checks the VHDL style, SymbiYosys with Yosys and its solvers runs the
@@ -145,6 +145,7 @@ Zig fetches, so it needs no system package
 ([emulator/README.md](../emulator/README.md#window)). The slides and the
 diagrams of `doc/` need pdflatex, and the diagrams pdftoppm. GitHub
 Actions runs every `make test` and `make typecheck`, `make window-test`,
+`make ymfmcheck`,
 the document checks, `make programs` on both cores, `make lint`,
 `make formal`, and `make pdfcheck` on each push. On a tag, it runs
 `make -C emulator dist` and attaches the two builds of niceemu to the

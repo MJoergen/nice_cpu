@@ -41,7 +41,8 @@ Each directory with Python in it also has `make typecheck`, which runs
 `mypy --strict`. The README of each directory lists its other targets,
 such as the long simulations and the formal checks of `hdl/`. Run the
 relevant `make test` after every change. GitHub Actions runs every
-`make test` and `make typecheck`, `make window-test`, the document
+`make test` and `make typecheck`, `make window-test`, `make ymfmcheck`,
+the document
 checks, `make programs` on both cores, `make lint`, `make formal`, and
 `make pdfcheck` on each push, and `make -C emulator dist` on each tag.
 

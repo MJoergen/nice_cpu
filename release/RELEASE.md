@@ -72,7 +72,10 @@ tools. Item 2 is by hand.
 4. The figures quoted in the documents (the cycle counts of the benchmark,
    the word counts, the timing) are those you measure in steps 3 to 5. The
    cycle counts are in `bench/README.md`, and the timing in
-   `hdl/README.md` and [doc/MICROARCH.md](../doc/MICROARCH.md).
+   `hdl/README.md` and [doc/MICROARCH.md](../doc/MICROARCH.md). No step
+   below runs `make -C bench words` and `make -C bench mathsteps`, which
+   need clang: run them after a change of the runtime, the C library, or
+   the translator, as `runtime/README.md` quotes their sizes and steps.
 5. The diagrams match their sources: after an edit of a `.tex` in `doc/`, run
    `make diagrams` and commit both the `.tex` and the `.png`.
 6. The slides match: `make pdfcheck`. After an edit of

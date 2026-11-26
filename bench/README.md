@@ -24,7 +24,7 @@ NICE with other processors.
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
     make words      # the size in words of the benchmark, safe.zig, CoreMark, the float library, and math modules, and of the C library's parts (needs clang)
-    make mathsteps  # the steps of a call of each math function of the C library on the emulator
+    make mathsteps  # the steps of a call of each math function of the C library on the emulator (needs clang)
     make native     # build and run bench.c, float.c, and CoreMark on the host, as a check
     make wasm       # rebuild bench.wasm, float.wasm, dhrystone/dhry.wasm, and coremark/coremark.wasm (needs clang)
 

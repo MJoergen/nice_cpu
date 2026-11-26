@@ -39,6 +39,23 @@ jobs:
       # The example programs of the introduction slides.
       - run: make -C ../doc/intro test
 
+  # The model of the sound against ymfm, which it follows (DEVICES.md
+  # §12.6): make ymfmcheck clones ymfm at the commit that emulator/Makefile
+  # names, builds it with the runner's C++ compiler, and compares every
+  # sample of 20 random logs of writes. A job of its own, as it needs the
+  # network, which make test does not.
+  ymfm:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: emulator
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - run: make ymfmcheck
+
   # The window of --window: zig build -Dwindow fetches SDL and compiles it
   # from source (emulator/README.md). setup-zig keeps the Zig cache, so SDL
   # is compiled again only when the cache is cold. A job of its own, as

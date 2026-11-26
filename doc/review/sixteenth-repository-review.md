@@ -322,6 +322,8 @@ I ran it on the head: 20 logs of 30000 samples, `PASS`, in 70 seconds on one CPU
 
 **Fix:** a job in `ci.yml` for `make ymfmcheck`, or a step of RELEASE.md §5 by hand, as it needs the network. For the two of `bench/`, a line of RELEASE.md step 2.4, and "needs clang" in bench/README.md.
 
+**Resolved.** CI has a job `ymfm`, which runs `make ymfmcheck`: it clones ymfm at the commit of `emulator/Makefile` and compares every sample of 20 random logs, in 70 seconds here. `release.py ci` reads the jobs from `ci.yml`, so a release waits for it. CONTRIBUTING.md, doc/TOOLCHAIN.md, and emulator/README.md say that CI runs it. RELEASE.md step 2.4 names `make -C bench words` and `mathsteps` as the two that no gate runs, and bench/README.md says that `mathsteps` needs clang. The job itself first runs at the next push.
+
 ### 4.5 A WAV file after a signal
 
 emulator/README.md: `--wav FILE` writes the samples "from the start to the halt or the step limit", and "Its header states the sizes once the run ends." A run that a signal ends is not said. `main.zig` dies of the signal before it finishes the files. With `--step-time`, a loop ended by SIGINT after a second leaves a file of 0 bytes. Without it, the reader got 196614 bytes whose header states no samples. A user who stops a long tune with Ctrl-C has no file that a player opens. The console's output is kept in that case: "on SIGINT, SIGTERM, and SIGHUP, which the emulator then dies of", the same README says. The sizes in the header also stop at 4 GiB, some 5.3 hours of the sound, which no document says.

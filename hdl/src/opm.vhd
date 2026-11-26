@@ -39,7 +39,10 @@ library ieee;
 entity opm is
    generic (
       -- The frequency of clk_i in hertz. It sets the rate of the samples.
-      G_CLK_HZ    : natural range 1000000 to 500000000 := 100000000;
+      -- At least 24 MHz, so that a sample's 422 cycles end before the
+      -- next is due, and at most 268 MHz, so that 64 times it, and
+      -- 3579545 more, fit the 34 bits of the accumulator.
+      G_CLK_HZ    : natural range 24000000 to 268000000 := 100000000;
       -- The envelope's counter after reset, for a test (src/opm_engine.vhd).
       G_ENV_START : natural range 0 to 65535 := 0
    );

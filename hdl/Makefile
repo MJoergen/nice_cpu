@@ -101,21 +101,28 @@ $(FPU_RUNS): run/fpu/%:
 # with the envelope's counter at 65521, so that it passes 65536, the
 # wrap of the RTL's 16 bits, and its low bits are not those of 0. wrong
 # replays the vectors of start with one sample changed, and must fail on
-# that sample alone.
+# that sample alone. high runs 2000 samples of start's seed at 268 MHz,
+# the most that G_CLK_HZ may be, with a sample every 4792 cycles: there
+# the sums of the sample clock need all 34 bits of its accumulator, and
+# tb_opm checks the rate of the samples.
 OPM_SEED ?= 1
 OPM_COUNT ?= 20000
-OPM_RUNS = start state wrong
+OPM_RUNS = start state wrong high
 OPTS_OPM_start = --seed $(OPM_SEED)
 OPTS_OPM_state = --seed $(shell expr $(OPM_SEED) + 1) --env-start 65521
 OPTS_OPM_wrong = $(OPTS_OPM_start)
+OPTS_OPM_high = $(OPTS_OPM_start)
 GENERICS_OPM_state = -gG_ENV_START=65521
+OPM_COUNT_high = 2000
+OPM_HZ_high = 268000000
 SED_OPM_wrong = && sed -i 's/^$(shell expr $(OPM_COUNT) - 1) [-0-9]* /$(shell expr $(OPM_COUNT) - 1) 12345 /' vectors
 EXPECT_OPM_wrong = 1
 GREP_OPM_wrong = grep -q "$(OPM_COUNT) samples, 1 failures" $(RUNDIR)/tb_opm.log
 
 $(OPM_RUNS:%=run/opm/%): run/opm/%:
-	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/opm_vectors.py $(OPTS_OPM_$*) --count $(OPM_COUNT) \
-	  -o vectors $(SED_OPM_$*) && $(call sim_run,tb_opm,-gG_VECTORS=vectors -gG_CLK_HZ=32000000 \
+	@($(in_rundir) && $(PYTHON) $(CURDIR)/../emulator/test/opm_vectors.py $(OPTS_OPM_$*) \
+	  --count $(or $(OPM_COUNT_$*),$(OPM_COUNT)) -o vectors $(SED_OPM_$*) && \
+	  $(call sim_run,tb_opm,-gG_VECTORS=vectors -gG_CLK_HZ=$(or $(OPM_HZ_$*),32000000) \
 	  $(GENERICS_OPM_$*)) > tb_opm.log 2>&1); s=$$?; \
 	if [ "$$s" = "$(or $(EXPECT_OPM_$*),0)" ] $(if $(GREP_OPM_$*),&& $(GREP_OPM_$*)); then echo "PASS tb_opm $*"; \
 	else echo "FAIL tb_opm $*"; \

@@ -805,7 +805,11 @@ sound (DEVICES.md §12.3).
 `opm_engine` computes the samples, one step at a time, in the order of
 the model, `emulator/test/opm_model.py`, so that it gives its samples
 bit for bit. It takes at most 422 cycles for a sample, so `G_CLK_HZ` must be
-at least 24 MHz. The header of `src/opm_engine.vhd` explains how. It
+at least 24 MHz. It may be at most 268 MHz, so that 64 times it, and
+3579545 more, fit the 34 bits of the sample clock's accumulator. The
+range of the generic says both, so a clock outside it does not
+elaborate. The header of `src/opm_engine.vhd` explains how the engine
+computes a sample. The engine
 starts from [github.com/MJoergen/ym2151](https://github.com/MJoergen/ym2151)
 (MIT): the registers in a RAM for each range, as its configurator keeps
 them, and the sine and the exponent in ROMs. Its pipeline of one slot in
@@ -1075,7 +1079,13 @@ passes its wrap in the 16 bits of the RTL, and its low bits differ from
 those of a reset: without the generic, 10923 samples differ.
 `run/opm/wrong` replays the vectors of `start` with the last sample
 changed, and must fail. It also checks the status after a reset, that
-the other words read 0, and that a write of the status does nothing.
+the other words read 0, and that a write of the status does nothing,
+and the rate of the samples: from the first to the last, each takes
+64 · `G_CLK_HZ` / 3579545 cycles, and the sum may be off by the 430
+cycles of one sample in the engine. `run/opm/high` runs 2000 samples at
+268 MHz, the most that `G_CLK_HZ` may be, with a sample every 4792
+cycles, where the sums of the sample clock need all 34 bits of its
+accumulator.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and

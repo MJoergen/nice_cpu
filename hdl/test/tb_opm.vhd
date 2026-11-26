@@ -24,7 +24,11 @@
 --
 -- p_check compares each sample with the model's. It reports the first 10
 -- that differ, then how many differ, and stops with status 0 if none, and
--- 1 if any, or if no sample comes for 4 of their periods.
+-- 1 if any, or if no sample comes for 4 of their periods. It also checks
+-- the rate of the samples: from the first to the last, each takes
+-- 64 * G_CLK_HZ / 3579545 cycles, and the sum may be off by the cycles of
+-- one sample in the engine, C_ENGINE, as a sample comes out when the
+-- engine is done with it.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -45,6 +49,10 @@ architecture simulation of tb_opm is
 
    -- The cycles of a sample, rounded up.
    constant C_PERIOD : natural := (64 * (G_CLK_HZ / 1000) + 3579) / 3580;
+
+   -- The most cycles the engine takes for a sample (src/opm_engine.vhd),
+   -- and a few for the sample clock.
+   constant C_ENGINE : natural := 430;
 
    signal clk     : std_logic := '0';
    signal rst     : std_logic := '1';
@@ -204,6 +212,9 @@ begin
       variable left_v  : integer;
       variable right_v : integer;
       variable fails_v : natural := 0;
+      variable first_v : time;
+      variable took_v  : real;
+      variable want_v  : real;
    begin
       file_open(vec_f, G_VECTORS, read_mode);
       loop
@@ -220,6 +231,9 @@ begin
                    integer'image(4 * C_PERIOD) & " cycles"
                severity error;
             stop(1);
+         end if;
+         if n = 0 then
+            first_v := now;
          end if;
          readline(vec_f, l_v);
          read(l_v, n_v);
@@ -238,6 +252,16 @@ begin
          samples <= n + 1;
       end loop;
       file_close(vec_f);
+
+      -- The rate: the cycles from the first sample to the last.
+      took_v := real((now - first_v) / 10 ns);
+      want_v := real(count_v - 1) * 64.0 * real(G_CLK_HZ) / 3579545.0;
+      if abs(took_v - want_v) > real(C_ENGINE) then
+         report "tb_opm: " & integer'image(count_v - 1) & " samples take " &
+                integer'image(integer(took_v)) & " cycles, not " & integer'image(integer(want_v))
+            severity error;
+         fails_v := fails_v + 1;
+      end if;
 
       if waits = 0 then
          report "tb_opm: no write waited for a full FIFO"

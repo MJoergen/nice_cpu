@@ -344,6 +344,8 @@ README.md: "Formal checks cover their ports, five stages of the pipeline, the de
 
 **Fix:** a sentence in §12.3 and §12.7, and the watchdog's bound in the two bullets of MICROARCH.md §8.
 
+**Resolved.** DEVICES.md §12.3 and §12.7 say that a pause and a step of the debug link, and a watchdog of the system, wait for a write that a full FIFO holds, 18 µs for the sound and up to 1 ms for the player, and §12.3 says what a host sees of the sound over the emulator's link. MICROARCH.md §8 has the two units in the bullet of the bus decoder, the pause and the step in the sound's bullet, and the watchdog in the player's, as hdl/README.md has: the player's 100000 cycles are the longest hold of any device.
+
 ### 4.8 Small gaps
 
 - **DEVICES.md §8, Sound:** "NiceMonMEGA65 has no sound." The other bullets cite the board's issue, and this one has MJoergen/NiceMonMEGA65#176, open, filed on 2026-11-26.

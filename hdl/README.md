@@ -850,7 +850,9 @@ It acknowledges each request in the cycle after it accepts it, but a
 write of `PCM_DATA` while the FIFO is full and the rate is not 0. That
 one holds STALL high until a sample takes one from the FIFO, up to one
 sample's time, 100000 cycles at 100 MHz and 1000 Hz. A pause and a step
-of the debug link wait that long. Its reset is that of a start of the
+of the debug link wait that long, and so must a watchdog of the system:
+it is the longest hold of any device, 16 times the FPU's longest
+command. Its reset is that of a start of the
 processor, as for the sound.
 
 `make timing UNIT=pcm` places it alone, out of context ([Timing](#timing)).

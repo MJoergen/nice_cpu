@@ -817,8 +817,9 @@ system built from them must follow these rules:
   forever.
 - **Bus decoder.** The data bus decoder keeps the ACKs in order when
   requests to different slaves are in flight, since the FPU holds an ACK
-  for up to some 6100 cycles while a command runs (DEVICES §11.5), and
-  the math unit for up to 65: a request to one slave waits while a
+  for up to some 6100 cycles while a command runs (DEVICES §11.5), the
+  math unit for up to 65, the sound for up to 1788, and its sample
+  player for up to 100000 (DEVICES §12): a request to one slave waits while a
   request to another is still owed its ACK. `hdl/src/wb_dmux.vhd` does this, and the
   testbench `tb_core` uses it. So a data read may wait on the bus.
 - **I/O.** Only the data bus reaches I/O. The instruction bus returns 0 for
@@ -888,7 +889,8 @@ system built from them must follow these rules:
   the player for all eight, where the sound reads 0 at offsets 2 to 7.
   It takes the reset of a start of the processor,
   which empties its FIFO and silences it. A write to its full FIFO holds
-  its ACK for up to one sample's time, 1788 cycles at 100 MHz. Its
+  its ACK for up to one sample's time, 1788 cycles at 100 MHz, which a
+  pause and a single step wait for. Its
   samples come out on a strobe, for the system's mixer
   ([hdl/README.md](../hdl/README.md#the-sound)).
 - **Sample player.** `hdl/src/pcm.vhd` among the sound's words, at
@@ -896,7 +898,9 @@ system built from them must follow these rules:
   offsets 0 and 1 of the eight, and the player offsets 2 to 7, with
   address bits 2..0. It takes the reset of a start too. A write to its
   full FIFO while it plays holds its ACK for up to one sample's time, at
-  1000 Hz 100000 cycles at 100 MHz. Its samples come out on a strobe of
+  1000 Hz 100000 cycles at 100 MHz, the longest hold of any device: a
+  pause and a single step wait that long, and a watchdog of the system
+  must allow for it. Its samples come out on a strobe of
   their own ([hdl/README.md](../hdl/README.md#the-sample-player)).
 - **SD card controller.** `hdl/src/sd_regs.vhd` at `0xFFFFFFA0`–`0xFFFFFFAF`
   (DEVICES §5): the registers and the buffer, with a port to a protocol

@@ -164,6 +164,8 @@ The other 18 rows equal the logs, `SIN` and `COS` at 5721 and 5798 and `TAN` at 
 
 **Fix:** "by the first 1176 bits of 2/π of its table, all that a binary64 value needs, which `KX` reads 24 at a time", and the comment.
 
+**Resolved.** DEVICES.md §11.3 says "the first 1176 bits of 2/π in its table, all that a binary64 value needs", and the comment of `fpu_model_test.py` has 1176 too.
+
 ### 2.7 The float library has 409 words, not 400
 
 804dd41 added `_sinf`, `_cosf`, and `_tanf` to `runtime/float_fpu.nasm`, 9 words. The file assembles to 409 words on the head, and to 400 on `main`. `_sin`, the first routine of `math.h`, is at word 245, so the float operations are still 245 words, and the functions 164, where they were 155. Four places say 400, and one 155:

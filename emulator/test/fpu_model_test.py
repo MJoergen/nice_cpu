@@ -338,7 +338,7 @@ CASES: List[Case] = [
     ("COS 1e22", [d(1e22)], 0, "COS", [0x3FE0BE2CEF01C8F4], 0, None),
     # 0.544 ulp off, as musl's tan
     ("TAN 1e22", [d(1e22)], 0, "TAN", [0xBFFA0F79C1B6B258], 0, None),
-    # The largest double, whose n takes all 1584 bits of the table
+    # The largest double, whose n takes all 1176 bits of the table
     ("SIN of the largest double", [0x7FEFFFFFFFFFFFFF], 0, "SIN", [0x3F7452FC98B34E97], 0, None),
     # Its fraction of a quarter turn is the smallest of all doubles, so
     # the reduced x is 4.7e-19 (Kahan and McDonald, 1987)

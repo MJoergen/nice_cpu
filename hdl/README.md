@@ -320,21 +320,24 @@ in `timing_budget.py` holds the ranges, and `make timing` says when a
 miss is by less than one of them.
 
 The FPU with `UNIT=fpu`, on 2026-11-26, with the start of a function in
-a register (#194) and the faster steps of #164:
+a register (#194), the faster steps of #164, and X and Y in registers
+(#211):
 
 | MEGA65, 10 ns | FPU | inputs | outputs | budget met |
 |---|---|---|---|---|
-| `default` flow | 0.579, 1.015, 1.140 ns | 9.502 ns in all | 7.958 ns in all | 4 of 7 |
-| `timing` flow | 0.739, 0.878, 1.164 ns | 7.799, 8.091, 8.468 ns | 7.958 ns in all | 3 of 7 |
+| `default` flow | 0.816, 1.018, 1.276 ns | 8.117, 8.466, 8.635 ns | 7.958 ns in all | 4 of 7 |
+| `timing` flow | 0.854, 0.913, 0.999 ns | 6.563, 7.046, 7.523 ns | 7.958, 7.958, 8.012 ns | 0 of 7 |
 
 So the budget of 1.0 ns on the FPU's own paths lies inside the range of
-both flows. The FPU of `V3.0`, which took the start from a decode of the
-function's number, had 0.424, 0.839, and 1.342 ns in the `default` flow,
-and 0.274, 0.494, and 0.934 ns in the `timing` flow: the order of the
-functions moved its slack by nearly a nanosecond. Most of its worst
-paths now start at the top of the stack, `top_r`, which addresses the
-stack's distributed RAM for a read of `FPU_STATUS`, `FPU_REL`, or
-`FPU_X_S` (#211).
+the `default` flow, and just above that of the `timing` flow. The FPU of
+`V3.0`, which took the start from a decode of the function's number, had
+0.424, 0.839, and 1.342 ns in the `default` flow, and 0.274, 0.494, and
+0.934 ns in the `timing` flow: the order of the functions moved its
+slack by nearly a nanosecond. Before #211, the reads of `FPU_STATUS`,
+`FPU_REL`, and `FPU_X_S` addressed the stack's distributed RAM with its
+top, and their paths were the worst, with 0.579 and 0.739 ns at the
+least. Now X and Y are registers that follow each change of the stack,
+and the RAM is read only at addresses from registers.
 
 What a system may add to the core's ports, from `make timing` at 2026-11-25
 (`timing` and `default` flows, one run each, so each figure may be off by a
@@ -754,14 +757,14 @@ after it, which adds some 6 (What the tests check):
 
 `make timing UNIT=fpu` places the FPU alone, out of context
 ([Timing](#timing)). On the MEGA65, with all the functions of
-DEVICES.md §11.3 (#182), it leaves +0.579 ns on its own paths with the
-default flow, less than the budget of 1.0 ns, on the path from the top
-of the stack to its state, and +9.502 ns at its inputs and +7.958 ns at
-its outputs; with the timing flow, it leaves +0.878 ns. One run is no
-measure of the FPU: the medians of `make timing-spread UNIT=fpu` are
-1.015 and 0.878 ns ([Timing](#timing)). It takes 10127 LUTs, 2785
-registers, 5 DSPs, and 5.5 block RAMs, the ROMs of the functions and
-their constants: more LUTs than the pipelined core.
+DEVICES.md §11.3 (#182), it leaves +1.055 ns on its own paths with the
+default flow, and +8.357 ns at its inputs and +7.958 ns at its outputs;
+with the timing flow, it leaves +0.938 ns, less than the budget of
+1.0 ns, on a path from its state. One run is no measure of the FPU: the
+medians of `make timing-spread UNIT=fpu` are 1.018 and 0.913 ns
+([Timing](#timing)). It takes 10155 LUTs, 2911 registers, 5 DSPs, and
+5.5 block RAMs, the ROMs of the functions and their constants: more
+LUTs than the pipelined core.
 
 `tb_fpu_unit` checks the arithmetic unit, and `tb_fpu` the FPU, against
 the model of `emulator/test/fpu_model.py` (What the tests check), and

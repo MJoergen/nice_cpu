@@ -9,8 +9,12 @@
 -- The stack is a ring of 16 values with the index of X and the depth. A
 -- push writes the slot after X, which on a full stack holds the deepest
 -- value, so that the push drops it, as §11.4 asks. A missing operand reads
--- as the canonical NaN. Each cycle writes at most one slot, and reads
--- three, X, Y, and the copy of PICK, so that synthesis can map the ring to
+-- as the canonical NaN. X and Y are registers too, which each cycle sets
+-- from how the stack moves in it: to the value pushed, to X or Y, or to
+-- slots of the ring read at addresses from registers, so that neither
+-- the port nor a command reads the ring for them (#211). Each cycle
+-- writes at most one slot, and reads four, the two below Y, the copy of
+-- PICK, and the slot below it, so that synthesis can map the ring to
 -- distributed RAM.
 --
 -- A command pops its operands into registers, as §11.4 says, computes its
@@ -62,8 +66,8 @@
 -- before it and a stack fault of its steps, as the emulator's
 -- src/fpu.zig does.
 --
--- The class of X, REL, and the views X_LO and X_HI are logic on the stack,
--- read at once. X_S and X_W are operations of the unit: a read of them
+-- The class of X, REL, and the views X_LO and X_HI are logic on the
+-- registers of X and Y, read at once. X_S and X_W are operations of the unit: a read of them
 -- waits for it.
 --
 -- The port is a pipelined Wishbone slave, as src/mpu.vhd is. It takes
@@ -271,28 +275,34 @@ architecture synthesis of fpu is
    signal depth_r : natural range 0 to 16      := 0;
    signal flags_r : std_logic_vector(3 downto 0) := (others => '0');
 
-   -- X, Y, and the copy of PICK, with the canonical NaN for a value that
-   -- is not there.
-   signal x_val : t_word64;
-   signal y_val : t_word64;
-   signal pick  : t_word64;
+   -- X and Y in registers, which follow every change of the stack, so
+   -- that the reads of the port start from a register (#211), and the
+   -- copy of PICK; each the canonical NaN for a value that is not there.
+   signal xs_r : t_word64 := C_QNAN;
+   signal ys_r : t_word64 := C_QNAN;
+   signal pick : t_word64;
 
    -- The port: the request taken in the cycle before, the request that
    -- waits, which is STALL, the head of the two, whether it is served,
-   -- and whether a read of X_S or X_W waits for the unit.
+   -- and whether a read of X_S or X_W waits for the unit. Each request
+   -- carries whether its data is a binary32 value that X_S takes
+   -- directly, found as it is taken (#211).
    signal accept      : std_logic;
    signal in_r        : std_logic := '0';
    signal in_we_r     : std_logic;
    signal in_addr_r   : std_logic_vector(2 downto 0);
    signal in_data_r   : std_logic_vector(31 downto 0);
+   signal in_sd_r     : boolean;
    signal pend_r      : std_logic := '0';
    signal pend_we_r   : std_logic;
    signal pend_addr_r : std_logic_vector(2 downto 0);
    signal pend_data_r : std_logic_vector(31 downto 0);
+   signal pend_sd_r   : boolean;
    signal head_v      : std_logic;
    signal head_we     : std_logic;
    signal head_addr   : std_logic_vector(2 downto 0);
    signal head_data   : std_logic_vector(31 downto 0);
+   signal head_sd     : boolean;
    signal go          : std_logic;
    signal view_r      : std_logic := '0';
 
@@ -649,13 +659,12 @@ begin
    head_we   <= pend_we_r when pend_r = '1' else in_we_r;
    head_addr <= pend_addr_r when pend_r = '1' else in_addr_r;
    head_data <= pend_data_r when pend_r = '1' else in_data_r;
+   head_sd   <= pend_sd_r when pend_r = '1' else in_sd_r;
    go        <= head_v when state_r = IDLE_ST or
                             (head_we = '0' and head_addr = "100" and view_r = '0') else
                 '0';
 
-   x_val <= ram_r(to_integer(top_r)) when depth_r >= 1 else C_QNAN;
-   y_val <= ram_r(to_integer(top_r - 1)) when depth_r >= 2 else C_QNAN;
-   pick  <= ram_r(to_integer(top_r - n_r mod 16)) when n_r < depth_r else C_QNAN;
+   pick <= ram_r(to_integer(top_r - n_r mod 16)) when n_r < depth_r else C_QNAN;
 
    cmd_end <= STEP_ST when seq_r = '1' else IDLE_ST;
 
@@ -959,6 +968,16 @@ begin
       --    state_r <= t_state'high and ret_r <= t_state'high and
       --    (s10_ret_r = SCALE10_ST or s10_ret_r = DSCALE_ST);
       -- psl f_depth_ok : assert always depth_r <= 16 and f_dep <= 16;
+      -- psl f_sd : assert always
+      --    (in_r = '1' -> in_sd_r = short_direct(in_data_r)) and
+      --    (pend_r = '1' -> pend_sd_r = short_direct(pend_data_r));
+      -- X and Y are the slots at the top of the RAM, or the canonical NaN.
+      -- psl f_xs : assert always
+      --    (depth_r >= 1 -> xs_r = ram_r(to_integer(top_r))) and
+      --    (depth_r = 0 -> xs_r = C_QNAN);
+      -- psl f_ys : assert always
+      --    (depth_r >= 2 -> ys_r = ram_r(to_integer(top_r - 1))) and
+      --    (depth_r < 2 -> ys_r = C_QNAN);
       -- The bus: each request accepted is held, acknowledged, or a view
       -- that waits, so that each gets one ACK, in order, and the FPU owes
       -- at most three.
@@ -994,9 +1013,17 @@ begin
 
 
    p_main : process (clk_i)
+      -- How the stack moves in a cycle, and so where X and Y come from.
+      type     t_move is (
+         MV_KEEP, MV_PUSH, MV_POP1, MV_POP2, MV_POPN, MV_HI, MV_PUT,
+         MV_EMPTY
+      );
       variable we_v    : boolean;
       variable waddr_v : unsigned(3 downto 0);
       variable wdata_v : t_word64;
+      variable top_v   : unsigned(3 downto 0);
+      variable depth_v : natural range 0 to 16;
+      variable move_v  : t_move;
       variable info_v  : t_info;
       variable num_v   : std_logic_vector(7 downto 0);
       variable n_v     : natural range 0 to 255;
@@ -1040,11 +1067,12 @@ begin
          we_v    := true;
          waddr_v := top_r + 1;
          wdata_v := v;
-         top_r   <= top_r + 1;
+         top_v   := top_r + 1;
+         move_v  := MV_PUSH;
          if depth_r = 16 then
             flags_r(C_STACK) <= '1';
          else
-            depth_r <= depth_r + 1;
+            depth_v := depth_r + 1;
          end if;
       end procedure push;
 
@@ -1053,11 +1081,19 @@ begin
       begin
          if k > depth_r then
             flags_r(C_STACK) <= '1';
-            top_r            <= top_r - depth_r mod 16;
-            depth_r          <= 0;
+            top_v            := top_r - depth_r mod 16;
+            depth_v          := 0;
+            move_v           := MV_EMPTY;
          else
-            top_r   <= top_r - k mod 16;
-            depth_r <= depth_r - k;
+            top_v   := top_r - k mod 16;
+            depth_v := depth_r - k;
+            case k is
+               when 0 => move_v := MV_KEEP;
+               when 1 => move_v := MV_POP1;
+               when 2 => move_v := MV_POP2;
+               -- Only DROP n pops more, and its n is n_r.
+               when others => move_v := MV_POPN;
+            end case;
          end if;
       end procedure pop;
 
@@ -1077,7 +1113,8 @@ begin
       -- Serves a request: at once, or by starting the unit.
       procedure serve(we   : std_logic;
                       addr : std_logic_vector(2 downto 0);
-                      data : std_logic_vector(31 downto 0)) is
+                      data : std_logic_vector(31 downto 0);
+                      sd   : boolean) is
          variable status_v : std_logic_vector(31 downto 0);
          variable rel_v    : integer;
       begin
@@ -1092,7 +1129,8 @@ begin
                   else
                      we_v    := true;
                      waddr_v := top_r;
-                     wdata_v := data & x_val(31 downto 0);
+                     wdata_v := data & xs_r(31 downto 0);
+                     move_v  := MV_HI;
                   end if;
                when "010" =>
                   -- The unit's inputs are set for any write, so that only
@@ -1103,7 +1141,7 @@ begin
                   u_a     <= X"00000000" & data;
                   u_b     <= C_QNAN;
                   ret_r   <= WPUSH_ST;
-                  if short_direct(data) then
+                  if sd then
                      push(widen(data));
                   else
                      u_start <= '1';
@@ -1130,11 +1168,11 @@ begin
             status_v := (others => '0');
             status_v(4 downto 0)   := std_logic_vector(to_unsigned(depth_r, 5));
             status_v(11 downto 8)  := flags_r;
-            status_v(21 downto 16) := f_class(x_val);
-            rel_v := f_cmp(y_val, x_val);
+            status_v(21 downto 16) := f_class(xs_r);
+            rel_v := f_cmp(ys_r, xs_r);
             case addr is
-               when "000" => wb_data_o <= x_val(31 downto 0);
-               when "001" => wb_data_o <= x_val(63 downto 32);
+               when "000" => wb_data_o <= xs_r(31 downto 0);
+               when "001" => wb_data_o <= xs_r(63 downto 32);
                when "101" => wb_data_o <= status_v;
                when "110" => wb_data_o <= std_logic_vector(to_signed(rel_v, 32));
                when others => wb_data_o <= (others => '0');
@@ -1142,7 +1180,7 @@ begin
             -- The views through the unit: its inputs are set for any read
             -- of X_S or X_W, so that only its start depends on X.
             if addr = "010" or addr = "011" then
-               u_a     <= x_val;
+               u_a     <= xs_r;
                u_b     <= C_QNAN;
                u_rnd   <= RND_EVEN;
                u_short <= '0';
@@ -1153,8 +1191,8 @@ begin
                   u_op <= OP_FTOW;
                end if;
             end if;
-            if addr = "010" and long_direct(x_val) then
-               wb_data_o <= narrow(x_val);
+            if addr = "010" and long_direct(xs_r) then
+               wb_data_o <= narrow(xs_r);
                wb_ack_o  <= '1';
             elsif addr = "010" or addr = "011" then
                -- The ACK waits until the unit ends.
@@ -1172,6 +1210,9 @@ begin
          we_v     := false;
          waddr_v  := (others => '0');
          wdata_v  := (others => '0');
+         top_v    := top_r;
+         depth_v  := depth_r;
+         move_v   := MV_KEEP;
          u_start  <= '0';
          wb_ack_o <= '0';
          -- Positive values compare as their bits do. DNEAR_ST reads it a
@@ -1210,7 +1251,7 @@ begin
          -- at once, unless a view waits for the unit, whose ACK comes
          -- first.
          if go = '1' then
-            serve(head_we, head_addr, head_data);
+            serve(head_we, head_addr, head_data, head_sd);
          end if;
 
          -- The queue: a head that is not served waits, and the request
@@ -1222,6 +1263,7 @@ begin
                pend_we_r   <= in_we_r;
                pend_addr_r <= in_addr_r;
                pend_data_r <= in_data_r;
+               pend_sd_r   <= in_sd_r;
                in_r        <= '0';
             end if;
          else
@@ -1230,11 +1272,13 @@ begin
                pend_we_r   <= in_we_r;
                pend_addr_r <= in_addr_r;
                pend_data_r <= in_data_r;
+               pend_sd_r   <= in_sd_r;
             end if;
             in_r      <= accept;
             in_we_r   <= wb_we_i;
             in_addr_r <= wb_addr_i;
             in_data_r <= wb_data_i;
+            in_sd_r   <= short_direct(wb_data_i);
          end if;
 
          case state_r is
@@ -1287,8 +1331,8 @@ begin
                fn_r   <= seq_pops(num_v) /= 0;
                fn2_r  <= seq_pops(num_v) = 2;
                base_r <= seq_base(num_v);
-               x_r    <= x_val;
-               y_r    <= y_val;
+               x_r    <= xs_r;
+               y_r    <= ys_r;
                noovf_r <= '0';
                state_r <= cmd_end;
                if not info_v.valid or (sbit_r = '1' and not info_v.s_ok) or
@@ -1299,20 +1343,21 @@ begin
                   case num_v is
                      when X"00" => null;
                      when X"01" =>
-                        top_r   <= top_r;
-                        depth_r <= 0;
+                        top_v   := top_r;
+                        depth_v := 0;
+                        move_v  := MV_EMPTY;
                         if n_v = 1 then
                            flags_r <= (others => '0');
                         end if;
                      -- DUP, OVER, and PICK n: a copy, the canonical NaN
                      -- with the stack fault if the value is missing.
                      when X"02" =>
-                        push(x_val);
+                        push(xs_r);
                         if depth_r = 0 then
                            flags_r(C_STACK) <= '1';
                         end if;
                      when X"05" =>
-                        push(y_val);
+                        push(ys_r);
                         if depth_r < 2 then
                            flags_r(C_STACK) <= '1';
                         end if;
@@ -1905,11 +1950,12 @@ begin
                      pop(1);
                      we_v    := true;
                      waddr_v := top_r - 1 - unsigned(step_r(3 downto 0));
-                     wdata_v := x_val;
+                     move_v  := MV_PUT;
+                     wdata_v := xs_r;
                      pc_r    <= pc_r + 1;
                   when C_SEQ_JZ =>
                      pop(1);
-                     if f_zero(x_val) then
+                     if f_zero(xs_r) then
                         pc_r    <= to_integer(unsigned(step_r(16 downto 0)));
                         state_r <= FETCH_ST;
                      else
@@ -1926,9 +1972,9 @@ begin
                      seq_r   <= '0';
                      state_r <= IDLE_ST;
                      flags_r <= fsave_r or (flags_r and "1000");
-                     if f_nan(x_val) then
+                     if f_nan(xs_r) then
                         flags_r(C_INVALID) <= '1';
-                     elsif f_inf(x_val) and finite_r then
+                     elsif f_inf(xs_r) and finite_r then
                         if pole_r = '1' then
                            flags_r(C_DIVZERO) <= '1';
                         else
@@ -1953,10 +1999,76 @@ begin
             ram_r(to_integer(waddr_v)) <= wdata_v;
          end if;
 
+         -- The stack as it is after this cycle, and X and Y from it. The
+         -- RAM is read at addresses from registers only, as the new top
+         -- and the write come late in the cycle: the move chooses among
+         -- X, Y, the value pushed, and the slots below Y and below n.
+         top_r   <= top_v;
+         depth_r <= depth_v;
+         -- Each value is the canonical NaN if the stack is too shallow
+         -- for it after the move, which the depth before the move says.
+         case move_v is
+            when MV_KEEP =>
+               null;
+            when MV_PUSH =>
+               -- Y is X, the canonical NaN on an empty stack.
+               xs_r <= wdata_v;
+               ys_r <= xs_r;
+            when MV_POP1 =>
+               xs_r <= ys_r;
+               ys_r <= ram_r(to_integer(top_r - 2));
+               if depth_r < 3 then
+                  ys_r <= C_QNAN;
+               end if;
+            when MV_POP2 =>
+               xs_r <= ram_r(to_integer(top_r - 2));
+               ys_r <= ram_r(to_integer(top_r - 3));
+               if depth_r < 3 then
+                  xs_r <= C_QNAN;
+               end if;
+               if depth_r < 4 then
+                  ys_r <= C_QNAN;
+               end if;
+            when MV_POPN =>
+               xs_r <= ram_r(to_integer(top_r - n_r mod 16));
+               ys_r <= ram_r(to_integer(top_r - n_r mod 16 - 1));
+               if n_r >= depth_r then
+                  xs_r <= C_QNAN;
+               end if;
+               if n_r + 1 >= depth_r then
+                  ys_r <= C_QNAN;
+               end if;
+            when MV_HI =>
+               -- The write of X_HI, from the request that is served.
+               xs_r(63 downto 32) <= head_data;
+            when MV_PUT =>
+               -- PUT pops X and writes it n below the new top: as X for
+               -- n = 0, and as Y for n = 1.
+               if unsigned(step_r(3 downto 0)) /= 0 then
+                  xs_r <= ys_r;
+               end if;
+               if unsigned(step_r(3 downto 0)) = 1 then
+                  ys_r <= xs_r;
+               else
+                  ys_r <= ram_r(to_integer(top_r - 2));
+               end if;
+               if depth_r < 2 then
+                  xs_r <= C_QNAN;
+               end if;
+               if depth_r < 3 then
+                  ys_r <= C_QNAN;
+               end if;
+            when MV_EMPTY =>
+               xs_r <= C_QNAN;
+               ys_r <= C_QNAN;
+         end case;
+
          if rst_i = '1' then
             state_r  <= IDLE_ST;
             depth_r  <= 0;
             top_r    <= (others => '0');
+            xs_r     <= C_QNAN;
+            ys_r     <= C_QNAN;
             flags_r  <= (others => '0');
             in_r     <= '0';
             pend_r   <= '0';

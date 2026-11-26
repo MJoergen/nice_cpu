@@ -332,7 +332,17 @@ CASES: List[Case] = [
     ("SIN -0: below 2^-26, sin x is x", [NZ], 0, "SIN", [NZ], 0, None),
     ("SIN 2^-30 is itself", [d(2.0**-30)], 0, "SIN", [d(2.0**-30)], 0, None),
     ("SIN inf", [INF], 0, "SIN", [N], INVALID, None),
-    ("SIN 2^21, beyond 2^20 pi/2", [d(2.0**21)], 0, "SIN", [N], INVALID, None),
+    ("SIN 2^21, beyond 2^20 pi/2: the reduction of the 2/pi digits", [d(2.0**21)], 0, "SIN",
+     [0x3FE3F68887A137EF], 0, None),
+    ("SIN 1e22", [d(1e22)], 0, "SIN", [0xBFEB453AB76BF397], 0, None),
+    ("COS 1e22", [d(1e22)], 0, "COS", [0x3FE0BE2CEF01C8F4], 0, None),
+    # 0.544 ulp off, as musl's tan
+    ("TAN 1e22", [d(1e22)], 0, "TAN", [0xBFFA0F79C1B6B258], 0, None),
+    # The largest double, whose n takes all 1584 bits of the table
+    ("SIN of the largest double", [0x7FEFFFFFFFFFFFFF], 0, "SIN", [0x3F7452FC98B34E97], 0, None),
+    # Its fraction of a quarter turn is the smallest of all doubles, so
+    # the reduced x is 4.7e-19 (Kahan and McDonald, 1987)
+    ("COS 6381956970095103 * 2^797", [0x7506AC5B262CA1FF], 0, "COS", [0xBC214AE72E6BA22F], 0, None),
     ("SIN of a quiet NaN", [QN], 0, "SIN", [N], 0, None),
     ("SIN of a signaling NaN", [SN], 0, "SIN", [N], INVALID, None),
     ("SIN of nothing: X is a NaN", [], 0, "SIN", [N], STACK, None),
@@ -1124,8 +1134,9 @@ def exact_function(name: str, ops: List[Fraction], pi: decimal.Decimal) -> decim
 
 def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
     """Random finite operands of the function name, within its domain:
-    for SIN, COS, and TAN up to 2^20 pi/2, some next to a multiple of
-    pi/2 and some next to an odd multiple of pi/4, for ATAN2 also pairs
+    for SIN, COS, and TAN some next to a multiple of pi/2 and some next
+    to an odd multiple of pi/4, up to 2^20 pi/2, and some from there on
+    to the largest double, for ATAN2 also pairs
     whose exponents are far apart, and pairs whose quotient is just
     above a power of two with the result just below it, for the
     logarithms also next to 1, for EXP, POW2, and POW those whose result
@@ -1138,7 +1149,10 @@ def function_operands(name: str, rnd: random.Random, pi: Fraction) -> List[int]:
         return rnd.getrandbits(52) | rnd.randint(lo, hi) << 52 | rnd.getrandbits(1) << 63
 
     if name in ("SIN", "COS", "TAN"):
-        kind = rnd.randrange(4)
+        kind = rnd.randrange(5)
+        if kind == 4:
+            # From 2^20 pi/2 on, the reduction of trig_large.
+            return [binade(1023 + 20, 2046)]
         if kind == 0:
             k = rnd.randint(1, 1 << rnd.randint(1, 20))
             return [(F64.round(k * pi / 2)[0] + rnd.randint(-20, 20)) | rnd.getrandbits(1) << 63]
@@ -1240,9 +1254,12 @@ def function_bounds(rnd: random.Random) -> None:
     """The functions of §11.3 are within their bounds, BOUNDS ulps of the
     exact value: each on its WORST operands and on COUNT random ones,
     against its value in 90 digits. SIN, COS, and TAN reduce by pi/2 to
-    90 digits, which leaves some 75 below 2^20 pi/2."""
+    420 digits, which leaves some 100 for the largest binary64 value,
+    some 1.8 * 10^308."""
     worst: Dict[str, float] = {}
     with decimal.localcontext() as ctx:
+        ctx.prec = 420
+        pi_trig = machin_pi()
         ctx.prec = 90
         pi = machin_pi()
         pi_q = Fraction(pi)
@@ -1256,7 +1273,12 @@ def function_bounds(rnd: random.Random) -> None:
                 if not F64.is_finite(got):
                     fail(f"{name} of {' '.join(f'{a:016X}' for a in ops)}: {got:016X}")
                     continue
-                exact = Fraction(exact_function(name, [F64.value(a) for a in ops], pi))
+                if name in ("SIN", "COS", "TAN"):
+                    with decimal.localcontext() as trig:
+                        trig.prec = 420
+                        exact = Fraction(exact_function(name, [F64.value(a) for a in ops], pi_trig))
+                else:
+                    exact = Fraction(exact_function(name, [F64.value(a) for a in ops], pi))
                 if exact == 0:
                     if got != 0:
                         fail(f"{name} of {' '.join(f'{a:016X}' for a in ops)}: {got:016X}, not 0")

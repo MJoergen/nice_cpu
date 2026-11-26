@@ -513,7 +513,7 @@ words are the
 float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
 clang, a module of the math functions of the C library that are C, in
-double and float, and prints its size, 5723 words, which
+double and float, and prints its size, 880 words, which
 runtime/README.md quotes. The others are routines of the float library.
 Then it prints the sizes of the programs of `libc/` that call `printf`,
 `iprintf`, `sscanf`, and `siscanf` with `%d` alone, built with

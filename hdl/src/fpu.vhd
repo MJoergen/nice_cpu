@@ -56,15 +56,16 @@
 -- step that the ROM gave for pc_r. A step that is a command runs the
 -- states of a command, which go back to STEP_ST at the end in place of
 -- IDLE_ST. K pushes its constant from the second ROM a cycle later,
--- PUT pops X and writes it n below the new top, JZ pops X and jumps if
--- it is zero, JMP jumps, and POLE notes that an infinite result is a
--- pole. The ROM reads ahead: in STEP_ST, pc_r is the address after the
--- step's, so that the next step comes in the next cycle. PUT, POLE, and
--- a JZ that does not jump take one cycle. A jump waits a cycle in
--- FETCH_ST for the ROM, and a command or K holds pc_r until it ends,
--- and then steps it. END sets the flags of the function, those from
--- before it and a stack fault of its steps, as the emulator's
--- src/fpu.zig does.
+-- KX pops X and pushes the entry of a table in that ROM that the low 6
+-- bits of X give, two cycles later, PUT pops X and writes it n below
+-- the new top, JZ pops X and jumps if it is zero, JMP jumps, and POLE
+-- notes that an infinite result is a pole. The ROM reads ahead: in
+-- STEP_ST, pc_r is the address after the step's, so that the next step
+-- comes in the next cycle. PUT, POLE, and a JZ that does not jump take
+-- one cycle. A jump waits a cycle in FETCH_ST for the ROM, and a
+-- command, K, or KX holds pc_r until it ends, and then steps it. END
+-- sets the flags of the function, those from before it and a stack
+-- fault of its steps, as the emulator's src/fpu.zig does.
 --
 -- The class of X, REL, and the views X_LO and X_HI are logic on the
 -- registers of X and Y, read at once. X_S and X_W are operations of the unit: a read of them
@@ -266,7 +267,7 @@ architecture synthesis of fpu is
       S10_FIN_ST, DIGITS_ST, DLOG_ST, DMUL_ST, DEXP_ST, DLOOP_ST, DQP_ST, DQE_ST, DQR_ST, DERR_ST,
       DSCALE_ST, DFRAC_ST, DHALF_ST, DNEAR_ST, DINT_ST,
       BCD_ST, ALIGN_ST, DPUSH_ST, FROMBCD_ST, UTOF_ST, WORD_ST, WORDY_ST, WORDX_ST, IDIV_ST,
-      WORD_END_ST, STEP_ST, FETCH_ST, K_ST
+      WORD_END_ST, STEP_ST, FETCH_ST, K_ST, KX_ST
    );
 
    -- The stack.
@@ -325,6 +326,16 @@ architecture synthesis of fpu is
    signal fn2_r  : boolean;
    signal step_r : std_logic_vector(19 downto 0);
    signal kval_r : t_word64;
+   -- The address of KX's entry: its table's first, which is a multiple
+   -- of 64, ORed with the low 6 bits of X. The ROM reads ahead, so in
+   -- KX_ST step_r is the next step, and the ROM of constants takes kx_r
+   -- while kxon_r is set.
+   signal kx_r   : std_logic_vector(C_SEQ_KBITS - 1 downto 0);
+   signal kxon_r : std_logic := '0';
+   -- The address of the constant that the ROM reads: one address, so
+   -- that synthesis keeps one ROM of the constants, and step_r the
+   -- output register of the ROM of the steps.
+   signal kaddr : std_logic_vector(C_SEQ_KBITS - 1 downto 0);
 
    -- The table of constants is a block RAM, as step_r, which addresses
    -- it, comes from one: in LUTs, the decode of step_r's fan-out takes
@@ -688,6 +699,9 @@ begin
             flags_o  => u_flags
          ); -- i_fpu_unit
 
+      kaddr <= kx_r when kxon_r = '1' else
+               step_r(C_SEQ_KBITS - 1 downto 0);
+
       -- The ROMs of the functions, read in every cycle.
       p_rom : process (clk_i)
       begin
@@ -696,7 +710,7 @@ begin
             if pc_r < C_SEQ_STEPS'length then
                step_r <= C_SEQ_STEPS(pc_r);
             end if;
-            kval_r <= C_SEQ_CONSTS(to_integer(unsigned(step_r(C_SEQ_KBITS - 1 downto 0))));
+            kval_r <= C_SEQ_CONSTS(to_integer(unsigned(kaddr)));
          end if;
       end process p_rom;
 
@@ -1946,6 +1960,12 @@ begin
                      state_r <= CMD_ST;
                   when C_SEQ_K =>
                      state_r <= K_ST;
+                  when C_SEQ_KX =>
+                     pop(1);
+                     kx_r    <= step_r(C_SEQ_KBITS - 1 downto 0) or
+                                std_logic_vector(resize(unsigned(xs_r(5 downto 0)), C_SEQ_KBITS));
+                     kxon_r  <= '1';
+                     state_r <= KX_ST;
                   when C_SEQ_PUT =>
                      pop(1);
                      we_v    := true;
@@ -1987,6 +2007,11 @@ begin
             when FETCH_ST =>
                pc_r    <= pc_r + 1;
                state_r <= STEP_ST;
+
+            -- The ROM reads the entry of KX's table.
+            when KX_ST =>
+               kxon_r  <= '0';
+               state_r <= K_ST;
 
             when K_ST =>
                push(kval_r);
@@ -2074,6 +2099,7 @@ begin
             pend_r   <= '0';
             view_r   <= '0';
             seq_r    <= '0';
+            kxon_r   <= '0';
             wb_ack_o <= '0';
             u_start  <= '0';
          end if;

@@ -25,7 +25,11 @@ operands:
   multiple of pi/2. The scan has them of the values next to k pi/2 for
   the k of HARD_K, of 1 to 9, and of 40 random k, and of 4 random values
   in each binade from 2^-30 to 2^20. In the scan of 2026-11-16 the
-  slowest SIN took 1537 cycles, COS 1552, and TAN 2043.
+  slowest SIN took 1537 cycles, COS 1552, and TAN 2043. From 2^20 pi/2
+  on they reduce by the digits of 2/pi, which takes longer: the scan has
+  them of a random value of each sign in every fourth binade from 2^20
+  on. In that of 2026-11-26 the slowest SIN took 5721 cycles, COS 5798,
+  and TAN 6108.
 - ASIN, ACOS, ATAN, and ATAN2, of 4 random values in each binade from
   2^-70 to 2^70 and of the values next to the bounds where their paths
   part. In the scan of 2026-11-15 the slowest ASIN took 1106 cycles,
@@ -39,9 +43,11 @@ operands:
   (scan_pow). In the scan of 2026-11-15 the slowest POW2 took 1053
   cycles, POW 3018, of a negative Y to a whole X, and HYPOT 542.
 
-The scans ran before the faster steps of #164. On 2026-11-26 the same
-vectors take at most 1175 cycles for SCALE10, 3182 for DIGITS, 1355 for
-SIN, 1368 for COS, 1802 for TAN, 992 for ASIN, 856 for ACOS, 840 for
+The scans ran before the faster steps of #164, but that of the huge
+arguments. On 2026-11-26 the same vectors take at most 1175 cycles for
+SCALE10, 3182 for DIGITS, 5721 for SIN, 5798 for COS, 6108 for TAN,
+below 2^20 pi/2 1355 for SIN, 1368 for COS, and 1802 for TAN, 992 for
+ASIN, 856 for ACOS, 840 for
 ATAN, 1194 for ATAN2, 818 for LN, 1009 for LOG2, 1069 for LOG10, 739
 for EXP, 939 for POW2, 2674 for POW, and 498 for HYPOT.
 
@@ -94,6 +100,9 @@ PI = Fraction(314159265358979323846264338327950288419716939937510582097494, 10**
 
 # The slowest function of the scan: the value and the function.
 SLOW_FUNCTIONS = [
+    (0xD7F6239701762741, "SIN"),
+    (0xE57BAEB4E65A8149, "COS"),
+    (0xDDF2E47D959F3A51, "TAN"),
     (0x4116FF6B1357E177, "SIN"),
     (0xC137C1DC0A55002A, "SIN"),
     (0xC00921FB54442D18, "COS"),
@@ -150,6 +159,7 @@ def scan(g: Generator) -> None:
         values += [v - 2, v - 1, v, v + 1, v + 2]
     for e in range(-30, 21):
         values += [F64.round(Fraction(2) ** e * (1 + Fraction(rnd.random())))[0] for _ in range(4)]
+    values += [rnd.getrandbits(52) | e << 52 for e in range(1023 + 20, 2047, 4)]
     for v in values:
         for name in ("SIN", "COS", "TAN"):
             g.cmd([v], name)

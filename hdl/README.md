@@ -320,16 +320,17 @@ in `timing_budget.py` holds the ranges, and `make timing` says when a
 miss is by less than one of them.
 
 The FPU with `UNIT=fpu`, on 2026-11-26, with the start of a function in
-a register (#194), the faster steps of #164, and X and Y in registers
-(#211):
+a register (#194), the faster steps of #164, X and Y in registers
+(#211), and the reduction of a huge argument of `SIN`, `COS`, and `TAN`
+(#185):
 
 | MEGA65, 10 ns | FPU | inputs | outputs | budget met |
 |---|---|---|---|---|
-| `default` flow | 0.816, 1.018, 1.276 ns | 8.117, 8.466, 8.635 ns | 7.958 ns in all | 4 of 7 |
-| `timing` flow | 0.854, 0.913, 0.999 ns | 6.563, 7.046, 7.523 ns | 7.958, 7.958, 8.012 ns | 0 of 7 |
+| `default` flow | 0.460, 1.026, 1.252 ns | 8.300, 8.476, 8.731 ns | 7.958 ns in all | 4 of 7 |
+| `timing` flow | 0.297, 0.879, 1.103 ns | 6.458, 6.957, 7.520 ns | 7.958 ns in all | 1 of 7 |
 
 So the budget of 1.0 ns on the FPU's own paths lies inside the range of
-the `default` flow, and just above that of the `timing` flow. The FPU of
+both flows. Before #185 the medians were 1.018 and 0.913 ns. The FPU of
 `V3.0`, which took the start from a decode of the function's number, had
 0.424, 0.839, and 1.342 ns in the `default` flow, and 0.274, 0.494, and
 0.934 ns in the `timing` flow: the order of the functions moved its
@@ -709,20 +710,21 @@ operation of the arithmetic unit, and is acknowledged when it ends. The
 header of `src/fpu.vhd` explains the sequences of the commands.
 
 The functions of DEVICES.md §11.3 run on a microcode engine in
-`fpu.vhd`. Their steps are in a ROM, and the constants of their `K`
-steps in a second, both in `src/fpu_seq_pkg.vhd`, which
+`fpu.vhd`. Their steps are in a ROM, and the constants of their `K` and
+`KX` steps in a second, both in `src/fpu_seq_pkg.vhd`, which
 `emulator/test/fpu_seq.py --vhdl` writes from the programs that the model
 and the emulator run. `make test` checks that it is current
 (`make seqcheck`). A step that is a command runs the states of that
 command, so that a function gives the bits of the model by construction
 of its steps. The ROM reads a step ahead, so `PUT`, `POLE`, and a `JZ`
 that does not jump take a cycle, a jump, a `K`, or a command of the stack
-two, and a command that the arithmetic unit computes pushes its result
+two, a `KX` three, as it pops the entry's number first, and a command that the arithmetic unit computes pushes its result
 in the cycle the unit ends (#164).
 
 So the FPU holds a request for as long as a command runs, up to some
-3200 cycles for `DIGITS`, the longest. A pause and a step of the debug
-link wait that long, and so must a watchdog of the system:
+6100 cycles for `TAN` of a huge argument, the longest. A pause and a
+step of the debug link wait that long, and so must a watchdog of the
+system:
 `tb_core`'s waits 10000 cycles for a step. Its reset is that of a start
 of the processor, as `tb_core` gives it, so that a start over the debug
 link empties the stack, clears the flags, and ends a command (DEBUG.md
@@ -740,14 +742,14 @@ after it, which adds some 6 (What the tests check):
 | `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, `ROUND`, `ROUND32`, `FROMBCD`, and `SCALE2` | 32 to 45 |
 | `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 58 to 60 |
 | `XMUL` | 62 |
-| `DIV` and `SQRT` | 83 and 79 |
+| `DIV` and `SQRT` | 82 and 79 |
 | `IDIV` and `MOD` | 93 and 92 |
 | `ISQRT` | 99 |
 | `SCALE10` | 1175 |
 | `FMOD` | 2115 |
 | `DIGITS` | 3182 |
-| `SIN` and `COS` | 1355 and 1368 |
-| `TAN` | 1802 |
+| `SIN` and `COS` | 5721 and 5798 |
+| `TAN` | 6108 |
 | `ASIN` and `ACOS` | 992 and 856 |
 | `ATAN` and `ATAN2` | 840 and 1194 |
 | `LN`, `LOG2`, and `LOG10` | 818, 1009, and 1069 |
@@ -757,12 +759,13 @@ after it, which adds some 6 (What the tests check):
 
 `make timing UNIT=fpu` places the FPU alone, out of context
 ([Timing](#timing)). On the MEGA65, with all the functions of
-DEVICES.md §11.3 (#182), it leaves +1.055 ns on its own paths with the
-default flow, and +8.357 ns at its inputs and +7.958 ns at its outputs;
-with the timing flow, it leaves +0.938 ns, less than the budget of
-1.0 ns, on a path from its state. One run is no measure of the FPU: the
-medians of `make timing-spread UNIT=fpu` are 1.018 and 0.913 ns
-([Timing](#timing)). It takes 10155 LUTs, 2911 registers, 5 DSPs, and
+DEVICES.md §11.3 (#182), it leaves +0.460 ns on its own paths with the
+default flow, less than the budget of 1.0 ns, on a path from the
+command's number to X, and +8.300 ns at its inputs and +7.958 ns at its
+outputs; with the timing flow, it leaves +0.811 ns. One run is no
+measure of the FPU: the medians of `make timing-spread UNIT=fpu` are
+1.026 and 0.879 ns ([Timing](#timing)). It takes 10090 LUTs, 2919
+registers, 5 DSPs, and
 5.5 block RAMs, the ROMs of the functions and their constants: more
 LUTs than the pipelined core.
 

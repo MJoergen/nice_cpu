@@ -1,8 +1,7 @@
 // The math functions of C, in double and float. Most are routines of the
 // float library, on the functions of the FPU (DEVICES.md §11.3), and are
-// declared here as imports from env, at the labels _name (WASM.md). sin,
-// cos, and tan are C, on the FPU's functions, and musl's code for a huge
-// argument. frexp, modf, fmin, and fmax are musl's (src/math/COPYRIGHT),
+// declared here as imports from env, at the labels _name (WASM.md).
+// frexp, modf, fmin, and fmax are musl's (src/math/COPYRIGHT),
 // and so are the classification macros, adapted. There are no long double
 // functions: wasm32's long double is a binary128, which the float library
 // does not support.
@@ -107,6 +106,8 @@ __NICE_FPU(atan) double atan(double);
 __NICE_FPU(atanf) float atanf(float);
 __NICE_FPU(atan2) double atan2(double, double);
 __NICE_FPU(atan2f) float atan2f(float, float);
+__NICE_FPU(cos) double cos(double);
+__NICE_FPU(cosf) float cosf(float);
 __NICE_FPU(exp) double exp(double);
 __NICE_FPU(expf) float expf(float);
 __NICE_FPU(exp2) double exp2(double);
@@ -129,6 +130,10 @@ __NICE_FPU(round) double round(double);
 __NICE_FPU(roundf) float roundf(float);
 __NICE_FPU(scalbn) double scalbn(double, int);
 __NICE_FPU(scalbnf) float scalbnf(float, int);
+__NICE_FPU(sin) double sin(double);
+__NICE_FPU(sinf) float sinf(float);
+__NICE_FPU(tan) double tan(double);
+__NICE_FPU(tanf) float tanf(float);
 #undef __NICE_FPU
 
 // The functions in C.
@@ -136,8 +141,6 @@ double ceil(double);
 float ceilf(float);
 double copysign(double, double);
 float copysignf(float, float);
-double cos(double);
-float cosf(float);
 double fabs(double);
 float fabsf(float);
 double floor(double);
@@ -154,12 +157,8 @@ double nearbyint(double);
 float nearbyintf(float);
 double rint(double);
 float rintf(float);
-double sin(double);
-float sinf(float);
 double sqrt(double);
 float sqrtf(float);
-double tan(double);
-float tanf(float);
 double trunc(double);
 float truncf(float);
 

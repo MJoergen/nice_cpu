@@ -86,15 +86,14 @@ WORDS = {"f": 1, "i": 1, "d": 2, "l": 2}
 # operands, the type of the result, the command). The float version of
 # each has the label with f, and the types with f for d.
 MATH: Dict[str, Tuple[str, str, int]] = {}
-for _name, _cmd in (("_nice_sin", 0x40), ("_nice_cos", 0x41), ("_nice_tan", 0x42), ("_asin", 0x43),
+for _name, _cmd in (("_sin", 0x40), ("_cos", 0x41), ("_tan", 0x42), ("_asin", 0x43),
                     ("_acos", 0x44), ("_atan", 0x45), ("_log", 0x48), ("_log2", 0x49),
                     ("_log10", 0x4A), ("_exp", 0x4C), ("_exp2", 0x4D), ("_round", 0x24),
                     ("_atan2", 0x46), ("_fmod", 0x1D), ("_pow", 0x4E), ("_hypot", 0x4F),
                     ("_ldexp", 0x38), ("_scalbn", 0x38)):
     _args = "di" if _cmd == 0x38 else "dd" if _cmd in (0x46, 0x1D, 0x4E, 0x4F) else "d"
     MATH[_name] = (_args, "d", _cmd)
-    if not _name.startswith("_nice"):
-        MATH[_name + "f"] = (_args.replace("d", "f"), "f", _cmd)
+    MATH[_name + "f"] = (_args.replace("d", "f"), "f", _cmd)
 M32 = 0xFFFFFFFF
 
 # The values that the program keeps on the FPU's stack across the calls,

@@ -944,6 +944,13 @@ class FPU:
             pc += 1
             if step[0] == "K":
                 self.push(prog.constants[step[1]])
+            elif step[0] == "KX":
+                # The entry of the low 6 bits of X, which the steps make
+                # 2^52 + n for entry n.
+                i = self.pop(1)[0] & 63
+                table = fpu_seq.TABLES[step[1]]
+                assert i < len(table), f"KX {step[1]} of entry {i}"
+                self.push(table[i])
             elif step[0] == "PUT":
                 v = self.stack.pop()
                 self.stack[-1 - int(step[1])] = v

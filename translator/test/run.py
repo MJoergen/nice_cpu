@@ -280,9 +280,6 @@ TRAPS = {"reachtrap": "AND[M] R0, W.end-1, 0xFC000000",
          "nofputrap_status": "MOVE @0xFFFFFF8C, 0x101",
          "nofputrap_trunc": "MOVE @0xFFFFFF8C, 0x101",
          "nofputrap_cmp": "MOVE @0xFFFFFF8C, 0x101",
-         "nofputrap_sin": "MOVE @0xFFFFFF8C, 0x101",
-         "nofputrap_cos": "MOVE @0xFFFFFF8C, 0x101",
-         "nofputrap_tan": "MOVE @0xFFFFFF8C, 0x101",
          "growtrap": "MOVE R1, 65536",
          "trunc_big": "MOVE R1, 0x4F000000",
          "trunc_small": "MOVE R2, 0x41E00000",
@@ -2967,9 +2964,7 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     # library (mathimport). So does a module whose only float instruction
     # is a conversion to an integer, i32.trunc_f32_s of 1, or a
     # comparison, 1 < 2, which is a call of the library or, with
-    # --inline-fpu, inline; and one whose only use of the FPU is the
-    # FPU's SIN, COS, or TAN, which the C library's sin, cos, and tan
-    # import as nice_sin, nice_cos, and nice_tan.
+    # --inline-fpu, inline.
     ("nofputrap", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
      "", 9),
     ("nofputrap_rom", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x92) + I32_REINTERPRET_F32),
@@ -2977,9 +2972,6 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
     ("nofputrap_math", math_import(), "", 9),
     ("nofputrap_trunc", main_of(f32(0x3F800000) + fop(0xA8)), "", 9),
     ("nofputrap_cmp", main_of(f32(0x3F800000) + f32(0x40000000) + fop(0x5D)), "", 9),
-    ("nofputrap_sin", math_import("nice_sin", F64), "", 9),
-    ("nofputrap_cos", math_import("nice_cos", F64), "", 9),
-    ("nofputrap_tan", math_import("nice_tan", F64), "", 9),
     ("mathimport", math_import(), "", 0x40800000),
     # The check writes 0 to FPU_STATUS before it reads it, as a system
     # without the FPU may have memory there that holds the value of the
@@ -3734,7 +3726,7 @@ SHAPES["trust_win"] = (r"^ +SHR +R\d+, R\d+, 2$|AND\[M\] +R0, R\d+, 3$|@___wasm_
 # a case is not kept for make programs, as a core has the FPU.
 EMULATOR = {name: ["--no-fpu"] for name in (
     "nofputrap", "nofputrap_rom", "nofputrap_math", "nofputrap_trunc", "nofputrap_cmp",
-    "nofputrap_sin", "nofputrap_cos", "nofputrap_tan", "nofputrap_status")}
+    "nofputrap_status")}
 
 # The steps after which niceemu stops a program that runs away. The
 # longest case, recursion, takes some 285000 steps.

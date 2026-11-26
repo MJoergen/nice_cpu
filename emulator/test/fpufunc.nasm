@@ -11,8 +11,8 @@
 ;          pi/4, the double below 1, of pi
 ;          divided by 4, which is exact             0xFFFFFFFF 0x3FEFFFFF
 ;   0x206  STATUS: depth 1, no flag, X fits         0x00200001
-;   0x207  CLEAR 1, SIN 2^21, beyond 2^20 pi/2:
-;          the canonical NaN, invalid (bit 8),
+;   0x207  CLEAR 1, ASIN 2, beyond 1: the
+;          canonical NaN, invalid (bit 8),
 ;          depth 1, X a NaN (bit 19)                0x00080101
 ;   0x208  CLEAR 1, 15 down to 1 pushed, then 0:
 ;          16 values. SIN 0 is 0, but its frame
@@ -63,8 +63,8 @@ FPU_STATUS      .EQU    0xFFFFFF8D
                 MOVE    @R6++, @FPU_X_HI
                 MOVE    @R6++, @FPU_STATUS
                 MOVE    @FPU_CMD, 0x0101  ; CLEAR 1
-                MOVE    @FPU_X_W, 0x200000  ; 2^21
-                MOVE    @FPU_CMD, 0x40  ; SIN
+                MOVE    @FPU_X_W, 2
+                MOVE    @FPU_CMD, 0x43  ; ASIN
                 MOVE    @R6++, @FPU_STATUS
                 MOVE    @FPU_CMD, 0x0101  ; CLEAR 1
                 MOVE    R7, 15

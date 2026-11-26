@@ -213,17 +213,20 @@ STEP_OPERANDS: Dict[str, List[List[int]]] = {
     # rem_pio2, which the three inline: an X of each sign in its ranges
     # for n = 3 and n = 4; next to an odd multiple of pi/4, where it
     # corrects fn by -1 and by +1; the high words that it leaves to its
-    # medium case; and an |X| from pi to 5 pi/4.
+    # medium case; and an |X| from pi to 5 pi/4. Then for trig_large an
+    # X from 2^20 pi/2 on, which runs the steps that the special values
+    # leave out, found by a search.
     "SIN": [[0x4012D97D00000000], [0xC01196EE32DF51DA], [0x40165CC3CE764361], [0xC0192429B3D39DDF],
             [0xC02AB41B09886FEA], [0xC1361738372F2277], [0xBFF921FB00000000], [0x4012D97CFDD2CB40],
-            [0x401921FB34528476], [0x400C000010000001]],
+            [0x401921FB34528476], [0x400C000010000001], [0xDB085015596A4F89]],
     "COS": [[0x40139710A595C57C], [0xC01196EE32DF51DA], [0x4016A2454D0B42A6], [0xC0192429B3D39DDF],
             [0xC02AB41B09886FEA], [0xC1361738372F2277], [0xBFF921FBE5F31BED], [0x4012D97C00000000],
-            [0x401921FBFFFFFFFF], [0xC00A20593AE436F6]],
-    # And tan_k for an X from -0.6744 to -pi/4.
+            [0x401921FBFFFFFFFF], [0xC00A20593AE436F6], [0xD381D38E0B774414]],
+    # And tan_k for an X from -0.6744 to -pi/4, and two for trig_large.
     "TAN": [[0x40158F9852255CBE], [0xC01196EE32DF51DA], [0x4016A2454D0B42A6], [0xC0192429B3D39DDF],
             [0xC02AB41B09886FEA], [0xC1361738372F2277], [0x3FF921FB54442D18], [0x400921FB54442D18],
-            [0xC012D97CC407E2A9], [0xC01921FB00000001], [0x400921FC00000000], [0xBFE66827758397C4]],
+            [0xC012D97CC407E2A9], [0xC01921FB00000001], [0x400921FC00000000], [0xBFE66827758397C4],
+            [0x7901681DB58D2F09], [0xC7EB8AF6E8651CEF]],
     # A negative X from 0.5 to 0.975 in size.
     "ASIN": [[0xBFEF3332FFFFFFFF]],
     # A reduced X from the fraction 0x6147A on, with k = 0 and with

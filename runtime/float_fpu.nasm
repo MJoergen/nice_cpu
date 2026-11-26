@@ -274,15 +274,13 @@ ___truncdfsf2
 ; (DEVICES §11.5): POW uses 15 values, so a caller keeps at most one
 ; value on the stack across these. The float versions compute in
 ; binary64, and the read of X_S rounds the result to binary32 once.
-; sin, cos, and tan are the C library's, which calls these for an
-; argument below 2^20 * pi/2, where SIN, COS, and TAN are defined.
-_nice_sin
+_sin
                 MOVE    R5, 0x40        ; SIN
                 JMP     __fpu.op1_64
-_nice_cos
+_cos
                 MOVE    R5, 0x41        ; COS
                 JMP     __fpu.op1_64
-_nice_tan
+_tan
                 MOVE    R5, 0x42        ; TAN
                 JMP     __fpu.op1_64
 _asin
@@ -362,6 +360,15 @@ _scalbn
                 JMP     __fpu.cmd64
 
 ; The float versions.
+_sinf
+                MOVE    R5, 0x40        ; SIN
+                JMP     __fpu.op1_32
+_cosf
+                MOVE    R5, 0x41        ; COS
+                JMP     __fpu.op1_32
+_tanf
+                MOVE    R5, 0x42        ; TAN
+                JMP     __fpu.op1_32
 _asinf
                 MOVE    R5, 0x43        ; ASIN
                 JMP     __fpu.op1_32

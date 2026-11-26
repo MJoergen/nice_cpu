@@ -177,10 +177,9 @@ FLOAT_OPS.update({
 # The functions of math.h that are routines of the float library, which
 # uses the FPU (runtime/float_fpu.nasm): a module that imports one from
 # env uses the FPU, even with no float operation.
-MATH_IMPORTS = {name + suffix for name in ("acos", "asin", "atan", "atan2", "exp", "exp2", "fmod",
+MATH_IMPORTS = {name + suffix for name in ("acos", "asin", "atan", "atan2", "cos", "exp", "exp2", "fmod",
                                            "hypot", "ldexp", "log", "log10", "log2", "pow", "round",
-                                           "scalbn") for suffix in ("", "f")} \
-    | {"nice_sin", "nice_cos", "nice_tan"}
+                                           "scalbn", "sin", "tan") for suffix in ("", "f")}
 
 # The conversions from float to integer. Those of the library saturate and
 # give 0 for a NaN, as trunc_sat does. trunc must trap instead (WASM.md), if

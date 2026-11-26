@@ -294,11 +294,9 @@ The code and the documents are under the [MIT license](LICENSE),
 - **SDL 3**, which a build with `-Dwindow` compiles in, is under the zlib
   license.
 - **Math functions of the C library**, in `runtime/libc/src/math/`:
-  `frexp`, `modf`, `fmin`, and `fmax`, the reduction of a huge argument,
-  and the kernels of `sin`, `cos`, and `tan` are musl's, under musl's
-  MIT license and the notices in their files, collected in `COPYRIGHT`
-  there. `sin.c`, `cos.c`, and `tan.c`, which call them, are this
-  library's own (runtime/README.md, Math functions). The C library's
+  `frexp`, `modf`, `fmin`, and `fmax` are musl's, under musl's MIT
+  license, in `COPYRIGHT` there (runtime/README.md, Math functions). The
+  C library's
   `floatscan.c` and the float conversions of its `printf.c` are musl's
   too, both changed.
 - **The sequences of the FPU's functions**, `emulator/test/fpu_seq.py`

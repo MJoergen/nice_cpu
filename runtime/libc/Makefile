@@ -14,13 +14,9 @@ SRCS = $(wildcard src/*.c)
 OBJS = $(SRCS:src/%.c=build/%.o)
 
 # The math functions of math.h that are C (README.md, Math functions):
-# sin, cos, and tan, on the FPU's functions and musl's reduction of a
-# huge argument, and musl's frexp, modf, fmin, and fmax, but for libm.h,
-# features.h, and builtin.c (src/math/COPYRIGHT). They include their own
-# headers with angle brackets, as in musl. -Os keeps clang from unrolling
-# the loops of __rem_pio2_large, which saves 2200 words and no step on
-# other arguments.
-MATH_CFLAGS = $(filter-out -O2,$(CFLAGS)) -Os -I src/math
+# musl's frexp, modf, fmin, and fmax, and builtin.c, with libm.h in place
+# of musl's internal header (src/math/COPYRIGHT).
+MATH_CFLAGS = $(CFLAGS) -I src/math
 MATH_SRCS = $(wildcard src/math/*.c)
 MATH_OBJS = $(MATH_SRCS:src/math/%.c=build/math/%.o)
 

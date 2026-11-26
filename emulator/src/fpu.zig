@@ -716,6 +716,8 @@ pub const Fpu = struct {
             switch (s.op) {
                 .cmd => self.command(s.n),
                 .k => self.push(seq.constants[s.n]),
+                // Entry n of a table, from n in the low 6 bits of X.
+                .kx => self.push(seq.constants[s.n + @as(usize, @intCast(self.pop() & 63))]),
                 .put => {
                     const v = self.pop();
                     self.stack[self.depth - 1 - s.n] = v;

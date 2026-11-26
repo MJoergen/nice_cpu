@@ -16,6 +16,9 @@ one of the steps that only the sequences have:
     JMP label   jumps to label
     POLE        an infinite result of finite operands is a division by
                 zero, not an overflow
+    KX table    pops X, and pushes entry n of the table of TABLES, where
+                n is the low 6 bits of the bits of X: the program pushes
+                2^52 + n, whose low bits are n
     label:      a place to jump to
 
 The program's values live on the FPU's stack, in a frame above the
@@ -34,8 +37,9 @@ and else; return; + - * / and unary -; comparisons, also as values,
 -1 for true and 0 for false, as CMP gives them; and, or, and not in a
 test; and the calls abs, sqrt, nearest, trunc, getexp, getmant, chop,
 itof, band (the command AND), scale2 (SCALE2), fmax and fmin (MAX and
-MIN), xmul (XMUL), whose two results go to a tuple, and nan(), the
-canonical NaN, and pole(), the step POLE.
+MIN), xmul (XMUL), whose two results go to a tuple, nan(), the
+canonical NaN, pole(), the step POLE, and the name of a table of TABLES,
+the step KX, whose argument is 2^52 + n for entry n.
 A name that is not a variable is a constant, and H(0x...) is the value
 whose high word that is and whose low word is 0, so that a test of
 fdlibm's high word ix, such as ix < 0x3e500000, is the test of the value
@@ -46,15 +50,16 @@ which gives the same bits as the operation.
 # The sources. The programs of SOURCE follow C code of others, operation
 # by operation and with its constants, as their comments say: fdlibm's
 # e_log.c and e_exp.c; FreeBSD's e_log2.c, k_log.h, and e_pow.c; and
-# musl's __sin.c, __cos.c, __tan.c, __rem_pio2.c, sin.c, cos.c, tan.c,
-# atan.c, asin.c, acos.c, atan2.c, log10.c, and hypot.c, of musl 1.2.5.
+# musl's __sin.c, __cos.c, __tan.c, __rem_pio2.c, __rem_pio2_large.c,
+# sin.c, cos.c, tan.c, atan.c, asin.c, acos.c, atan2.c, log10.c, and
+# hypot.c, of musl 1.2.5.
 # The two tables that this file writes, emulator/src/fpu_seq.zig and
 # hdl/src/fpu_seq_pkg.vhd, are these programs as steps, and point here.
 # The notices of that code follow.
 #
 # fdlibm's e_log.c, FreeBSD's e_log2.c and k_log.h, and musl's __sin.c,
-# __cos.c, __rem_pio2.c, asin.c, acos.c, atan2.c, and log10.c, which
-# musl has from FreeBSD:
+# __cos.c, __rem_pio2.c, __rem_pio2_large.c, asin.c, acos.c, atan2.c, and
+# log10.c, which musl has from FreeBSD:
 #
 #     ====================================================
 #     Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
@@ -284,6 +289,26 @@ assert CONSTANTS["cp"] == 0x3FEEC709DC3A03FD
 assert CONSTANTS["cp_h"] == 0x3FEEC709E0000000
 assert CONSTANTS["cp_l"] == 0xBE3E2FE0145B01F5
 
+# The tables of the step KX, by name: their entries, each a binary64
+# value. ipio2 is the first 49 entries of musl's ipio2 of
+# __rem_pio2_large.c, the bits of 2/pi 24 at a time, with two zeros
+# before them, so that entry jv + k is musl's f[k] for the jv of an
+# argument and jx = 2: the bits of 2/pi that the reduction of the largest
+# binary64 value needs, 24 * (41 + 9) of them after the point.
+TABLES: Dict[str, List[int]] = {
+    "ipio2": [bits(float(d)) for d in [0, 0] + [
+        0xA2F983, 0x6E4E44, 0x1529FC, 0x2757D1, 0xF534DD, 0xC0DB62,
+        0x95993C, 0x439041, 0xFE5163, 0xABDEBB, 0xC561B7, 0x246E3A,
+        0x424DD2, 0xE00649, 0x2EEA09, 0xD1921C, 0xFE1DEB, 0x1CB129,
+        0xA73EE8, 0x8235F5, 0x2EBB44, 0x84E99C, 0x7026B4, 0x5F7E41,
+        0x3991D6, 0x398353, 0x39F49C, 0x845F8B, 0xBDF928, 0x3B1FF8,
+        0x97FFDE, 0x05980F, 0xEF2F11, 0x8B5A0A, 0x6D1F6D, 0x367ECF,
+        0x27CB09, 0xB74F46, 0x3F669E, 0x5FEA2D, 0x7527BA, 0xC7EBE5,
+        0xF17B3D, 0x0739F7, 0x8A5292, 0xEA6BFB, 0x5FB11F, 0x8D5D08,
+        0x560330,
+    ]],
+}
+
 # The programs. The names of the functions of §11.3 are in capitals; the
 # others are the helpers they call.
 SOURCE = '''
@@ -339,6 +364,116 @@ def tan_k(x, y, odd):
     y = -1.0/w
     s = chop(y)
     return s + y*(1.0 + s*z + s*v)
+
+
+def trig_large(x, f):
+    # SIN, COS, and TAN for f = 0, 1, and 2 of a finite |x| from 2^20 pi/2
+    # on: musl's __rem_pio2.c and __rem_pio2_large.c, with jk = 7 and so
+    # without its recomputation, for the whole number n and y0 + y1 =
+    # x - n pi/2, and then the kernels as sin.c, cos.c, and tan.c call
+    # them. x is t0 + t1 2^-24 + t2 2^-48 times 2^e0; musl's q[k] is
+    # t0 f[k+2] + t1 f[k+1] + t2 f[k], with f[k] the entry jv + k of
+    # ipio2. Its digits iq[0] to iq[6] are p0, p1, and p2, each two
+    # digits, and d6; and in place of musl's PIo2 and its sums, the
+    # fraction they make is added up exactly as a pair, s + e, which
+    # XMUL then multiplies by pi/2
+    e0 = getexp(x) - 23.0
+    z = scale2(abs(x), -e0)
+    t0 = trunc(z)
+    z = (z - t0)*16777216.0
+    t1 = trunc(z)
+    t2 = (z - t1)*16777216.0
+    b = fmax(trunc((e0 - 3.0)/24.0), 0.0) + 4503599627370496.0
+    z = t0*ipio2(b + 9.0) + t1*ipio2(b + 8.0) + t2*ipio2(b + 7.0)
+    d0 = z - 16777216.0*trunc(z*5.9604644775390625e-08)
+    z = t0*ipio2(b + 8.0) + t1*ipio2(b + 7.0) + t2*ipio2(b + 6.0) + trunc(z*5.9604644775390625e-08)
+    p0 = d0 + 16777216.0*(z - 16777216.0*trunc(z*5.9604644775390625e-08))
+    z = t0*ipio2(b + 7.0) + t1*ipio2(b + 6.0) + t2*ipio2(b + 5.0) + trunc(z*5.9604644775390625e-08)
+    d2 = z - 16777216.0*trunc(z*5.9604644775390625e-08)
+    z = t0*ipio2(b + 6.0) + t1*ipio2(b + 5.0) + t2*ipio2(b + 4.0) + trunc(z*5.9604644775390625e-08)
+    p1 = d2 + 16777216.0*(z - 16777216.0*trunc(z*5.9604644775390625e-08))
+    z = t0*ipio2(b + 5.0) + t1*ipio2(b + 4.0) + t2*ipio2(b + 3.0) + trunc(z*5.9604644775390625e-08)
+    d4 = z - 16777216.0*trunc(z*5.9604644775390625e-08)
+    z = t0*ipio2(b + 4.0) + t1*ipio2(b + 3.0) + t2*ipio2(b + 2.0) + trunc(z*5.9604644775390625e-08)
+    p2 = d4 + 16777216.0*(z - 16777216.0*trunc(z*5.9604644775390625e-08))
+    z = t0*ipio2(b + 3.0) + t1*ipio2(b + 2.0) + t2*ipio2(b + 1.0) + trunc(z*5.9604644775390625e-08)
+    d6 = z - 16777216.0*trunc(z*5.9604644775390625e-08)
+    z = t0*ipio2(b + 2.0) + t1*ipio2(b + 1.0) + t2*ipio2(b) + trunc(z*5.9604644775390625e-08)
+    q0 = getexp(x) - 23.0 - 24.0*(b - 4503599627370496.0) - 24.0
+    z = scale2(z, q0)
+    z = z - 8.0*trunc(z*0.125)
+    n = trunc(z)
+    z = z - n
+    # musl's case of q0 = 0 is that of q0 > 0, as d6 is below 2^24
+    ih = 0.0
+    if q0 >= 0.0:
+        n = n + trunc(scale2(d6, q0 - 24.0))
+        d6 = d6 - scale2(trunc(scale2(d6, q0 - 24.0)), 24.0 - q0)
+        ih = trunc(scale2(d6, q0 - 23.0))
+    elif z >= 0.5:
+        ih = 2.0
+    # musl's 1 - the fraction, in its digits without a branch: each part
+    # from the lowest is its complement, 2^48 - 1 - itself, and the carry
+    # k from below, which is 1 while the parts below are all 0. So the
+    # last k is 1 only for a fraction of 0, and 1 - k is musl's carry.
+    k = 0.0
+    if ih > 0.0:
+        n = n + 1.0
+        p0 = 281474976710656.0 - p0
+        k = trunc(p0*3.552713678800501e-15)
+        p0 = p0 - 281474976710656.0*k
+        p1 = (281474976710656.0 - p1) - (1.0 - k)
+        k = trunc(p1*3.552713678800501e-15)
+        p1 = p1 - 281474976710656.0*k
+        p2 = (281474976710656.0 - p2) - (1.0 - k)
+        k = trunc(p2*3.552713678800501e-15)
+        p2 = p2 - 281474976710656.0*k
+        d6 = (16777216.0 - d6) - (1.0 - k)
+        k = trunc(d6*5.9604644775390625e-08)
+        d6 = d6 - 16777216.0*k
+        # musl's masks of the bits of n for q0 = 1 and 2
+        if q0 > 0.0:
+            d6 = d6 - scale2(trunc(scale2(d6, q0 - 24.0)), 24.0 - q0)
+        if ih == 2.0:
+            z = (1.0 - z) - scale2(1.0 - k, q0)
+    lo = scale2(p0, q0 - 168.0)
+    a = scale2(p1, q0 - 120.0)
+    s = a + lo
+    e = lo - (s - a)
+    a = scale2(p2, q0 - 72.0)
+    w = a + s
+    e = e + (s - (w - a))
+    a = scale2(d6, q0 - 24.0)
+    s = a + w
+    e = e + (w - (s - a))
+    w = z + s
+    e = e + (s - (w - z))
+    s = w + e
+    e = e - (s - w)
+    if ih > 0.0:
+        s = -s
+        e = -e
+    if x < 0.0:
+        n = -n
+        s = -s
+        e = -e
+    hi, lo = xmul(s, pio2_hi)
+    lo = lo + (s*pio2_lo + e*pio2_hi)
+    y0 = hi + lo
+    y1 = lo - (y0 - hi)
+    if f == 2.0:
+        return tan_k(y0, y1, band(n, 1.0))
+    # The switch of sin.c and cos.c, with each kernel once: cos of n is
+    # sin of n + 1, an odd n takes cos_k, and n from 2 negates
+    n = n + f
+    r = 0.0
+    if band(n, 1.0) == 0.0:
+        r = sin_k(y0, y1, 1)
+    else:
+        r = cos_k(y0, y1)
+    if band(n, 2.0) != 0.0:
+        return -r
+    return r
 
 
 def rem_pio2(x):
@@ -408,13 +543,15 @@ def rem_pio2(x):
 
 
 def SIN(x):
-    # musl's sin.c; beyond 2^20 pi/2 the canonical NaN
+    # musl's sin.c
     if abs(x) < H(0x3fe921fc):
         if abs(x) < H(0x3e500000):
             return x
         return sin_k(x, 0.0, 0)
-    if abs(x) >= H(0x413921fb):
+    if abs(x) >= H(0x7ff00000):
         return nan()
+    if abs(x) >= H(0x413921fb):
+        return trig_large(x, 0.0)
     n, y0, y1 = rem_pio2(x)
     n = band(n, 3.0)
     if n == 0.0:
@@ -427,13 +564,15 @@ def SIN(x):
 
 
 def COS(x):
-    # musl's cos.c; beyond 2^20 pi/2 the canonical NaN
+    # musl's cos.c
     if abs(x) < H(0x3fe921fc):
         if abs(x) < H(0x3e46a09e):
             return 1.0
         return cos_k(x, 0.0)
-    if abs(x) >= H(0x413921fb):
+    if abs(x) >= H(0x7ff00000):
         return nan()
+    if abs(x) >= H(0x413921fb):
+        return trig_large(x, 1.0)
     n, y0, y1 = rem_pio2(x)
     n = band(n, 3.0)
     if n == 0.0:
@@ -446,13 +585,15 @@ def COS(x):
 
 
 def TAN(x):
-    # musl's tan.c; beyond 2^20 pi/2 the canonical NaN
+    # musl's tan.c
     if abs(x) < H(0x3fe921fc):
         if abs(x) < H(0x3e400000):
             return x
         return tan_k(x, 0.0, 0)
-    if abs(x) >= H(0x413921fb):
+    if abs(x) >= H(0x7ff00000):
         return nan()
+    if abs(x) >= H(0x413921fb):
+        return trig_large(x, 2.0)
     n, y0, y1 = rem_pio2(x)
     n = band(n, 1.0)
     return tan_k(y0, y1, n)
@@ -1260,6 +1401,12 @@ class Compiler:
             if name in self.defs:
                 self.call(node, frame, None)
                 return
+            if name in TABLES:
+                if len(node.args) != 1:
+                    raise CompileError(f"{name} takes 1")
+                self.expr(node.args[0], frame)
+                self.emit("KX " + name, 0)
+                return
         raise CompileError(f"cannot compile {ast.dump(node)}")
 
     def static(self, node: ast.expr, frame: Frame) -> Optional[bool]:
@@ -1532,6 +1679,11 @@ def constants_used(steps: List[str], compiler: Compiler) -> Dict[str, int]:
     for s in steps:
         if s.startswith("K "):
             out[s[2:]] = compiler.constants[s[2:]]
+        elif s.startswith("KX "):
+            # The whole table, in order, so that its entries follow
+            # each other in the table of constants.
+            for i, b in enumerate(TABLES[s[3:]]):
+                out[f"{s[3:]}[{i}]"] = b
     return out
 
 
@@ -1576,9 +1728,15 @@ def listing() -> str:
 
 def constant_names() -> Tuple[List[str], Dict[str, int]]:
     """The names of the constants of every program, in the order they are
-    first used, and their bits."""
+    first used, and their bits. The tables come first, each from a
+    multiple of 64, so that src/fpu.vhd indexes one with the 6 bits of
+    KX in the low bits of the address, with no sum."""
     names: List[str] = []
     used: Dict[str, int] = {}
+    for t, entries in TABLES.items():
+        assert len(names) % 64 == 0 and len(entries) <= 64, f"table {t} at {len(names)}"
+        names.extend(f"{t}[{i}]" for i in range(len(entries)))
+        used.update({f"{t}[{i}]": b for i, b in enumerate(entries)})
     for prog in PROGRAMS.values():
         names.extend(n for n in prog.constants if n not in names)
         used.update(prog.constants)
@@ -1589,7 +1747,8 @@ def zig() -> str:
     """src/fpu_seq.zig: the steps of each function, and the constants, as
     the emulator runs them. A step is an operation and a number: the
     command word for a command, the index of the constant for K, n for
-    PUT, and the index of the step for JZ and JMP."""
+    PUT, the index of the step for JZ and JMP, and the index of the
+    table's first entry for KX."""
     names, used = constant_names()
     out = [
         "// The sequences of the FPU's functions, DEVICES.md §11.3. Written by",
@@ -1599,7 +1758,7 @@ def zig() -> str:
         "// The programs follow C code of fdlibm, FreeBSD, and musl, whose notices",
         "// are in the header of test/fpu_seq.py.",
         "",
-        "pub const Op = enum { cmd, k, put, jz, jmp, pole };",
+        "pub const Op = enum { cmd, k, put, jz, jmp, pole, kx };",
         "pub const Step = struct { op: Op, n: u32 };",
         "pub const Program = struct { num: u8, pops: u2, steps: []const Step };",
         "",
@@ -1616,6 +1775,8 @@ def zig() -> str:
             parts = step.split()
             if parts[0] == "K":
                 out.append(f"    .{{ .op = .k, .n = {names.index(parts[1])} }}, // {parts[1]}")
+            elif parts[0] == "KX":
+                out.append(f"    .{{ .op = .kx, .n = {names.index(parts[1] + '[0]')} }}, // {parts[1]}")
             elif parts[0] == "PUT":
                 out.append(f"    .{{ .op = .put, .n = {parts[1]} }},")
             elif parts[0] in ("JZ", "JMP"):
@@ -1636,7 +1797,7 @@ def zig() -> str:
 
 
 # The operations of a step in src/fpu_seq_pkg.vhd, bits 19..17.
-VHDL_OPS = {"cmd": 0, "K": 1, "PUT": 2, "JZ": 3, "JMP": 4, "POLE": 5, "END": 6}
+VHDL_OPS = {"cmd": 0, "K": 1, "PUT": 2, "JZ": 3, "JMP": 4, "POLE": 5, "END": 6, "KX": 7}
 
 
 def vhdl(rotate: int = 0) -> str:
@@ -1644,11 +1805,12 @@ def vhdl(rotate: int = 0) -> str:
     each program followed by END, and the constants, as src/fpu.vhd runs
     them. A step is its operation in bits 19..17 and a number in bits
     16..0: the command word for a command, the index of the constant for
-    K, n for PUT, and the address of the step for JZ and JMP. The table
-    of constants has a power of two of entries, so that the low bits of
-    any step index it. rotate moves the first that many programs to the
-    end of the ROM, which changes the addresses and nothing that the FPU
-    does: the variants of make timing-spread UNIT=fpu."""
+    K, n for PUT, the address of the step for JZ and JMP, and the index
+    of the table's first entry for KX. The table of constants has a power
+    of two of entries, so that the low bits of any step index it. rotate
+    moves the first that many programs to the end of the ROM, which
+    changes the addresses and nothing that the FPU does: the variants of
+    make timing-spread UNIT=fpu."""
     from fpu_model import NUMBERS  # here, as the model imports this module
 
     names, used = constant_names()
@@ -1665,6 +1827,8 @@ def vhdl(rotate: int = 0) -> str:
             parts = step.split()
             if parts[0] == "K":
                 op, n = "K", names.index(parts[1])
+            elif parts[0] == "KX":
+                op, n = "KX", names.index(parts[1] + "[0]")
             elif parts[0] == "PUT":
                 op, n = "PUT", int(parts[1])
             elif parts[0] in ("JZ", "JMP"):
@@ -1691,9 +1855,10 @@ def vhdl(rotate: int = 0) -> str:
         "--",
         "-- A step is its operation in bits 19..17 and a number in bits 16..0:",
         "-- the command word for a command, the index of the constant for K,",
-        "-- n for PUT, and the address of the step for JZ and JMP. END ends",
-        "-- the program. The table of constants has 2^C_SEQ_KBITS entries, so",
-        "-- that the low bits of any step index it.",
+        "-- n for PUT, the address of the step for JZ and JMP, and the index",
+        "-- of the table's first entry for KX. END ends the program. The table",
+        "-- of constants has 2^C_SEQ_KBITS entries, so that the low bits of",
+        "-- any step index it.",
         "",
         "library ieee;",
         "   use ieee.std_logic_1164.all;",

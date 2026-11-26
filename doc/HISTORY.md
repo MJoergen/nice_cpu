@@ -326,7 +326,14 @@ the library module `float`, 6844 words joined to a program, of which
 routines of `float_fpu.nasm` on the FPU's functions, in place of
 musl's code, but for the reduction of a huge argument of `sin`, `cos`,
 and `tan`. A program that used all of them had 23413 words of them,
-and then 7268, and 5723 since a call is one word (#192). musl's `exp(1)` was the double nearest e; the FPU's
+and then 7268, and 5723 since a call is one word (#192). Until
+2026-11-26, the FPU's `SIN`, `COS`, and `TAN` gave a NaN from
+2²⁰·π/2 on, and the C library's `sin.c`, `cos.c`, and `tan.c` called
+musl's `__rem_pio2_large` and kernels there. Then the FPU reduced any
+finite argument by the digits of 2/π, which the step `KX` reads from a
+table, and `sin`, `cos`, and `tan` became routines of the float library
+as the others, which left 880 words of C, musl's `frexp`, `modf`,
+`fmin`, and `fmax` (#185). musl's `exp(1)` was the double nearest e; the FPU's
 is the double above, as fdlibm's. musl's `acosf(-1)`, `acosf(0)`, and
 `atanf` of an infinity were the float below π or π/2; they are now the
 nearest. On the emulator, `sin` took some 670 steps and `pow` 1500, and

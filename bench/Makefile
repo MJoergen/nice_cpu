@@ -278,7 +278,7 @@ profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/float.bin $(BUILD)/bench.
 # and the words each of those math functions brings into a program: those
 # of a module of libc/mathbase.c with the function exported too, less
 # those of the module of libc/mathbase.c alone.
-MATH_FUNCS = ceil copysign cos fabs floor fmax fmin frexp modf nearbyint rint sin sqrt tan trunc
+MATH_FUNCS = ceil copysign fabs floor fmax fmin frexp modf nearbyint rint sqrt trunc
 LIBC_SIZES = printf iprintf sscanf siscanf
 MATH_CLANG = $(CLANG) --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry
 words:

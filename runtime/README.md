@@ -296,12 +296,10 @@ exact arithmetic (Test, below).
 
 The library also holds most functions of the C library's `math.h`, at
 the labels `_name`, which the C library declares as imports from `env`
-(Math functions, below): `_acos`, `_asin`, `_atan`, `_atan2`, `_exp`,
-`_exp2`, `_fmod`, `_hypot`, `_ldexp`, `_log`, `_log10`, `_log2`, `_pow`,
-`_round`, and `_scalbn`, and their float versions with `f`, such as
-`_asinf`; and `_nice_sin`, `_nice_cos`, and
-`_nice_tan`, the FPU's `SIN`, `COS`, and `TAN`, which the C library's
-`sin`, `cos`, and `tan` call. Each pushes its operands and runs one
+(Math functions, below): `_sin`, `_cos`, `_tan`, `_acos`, `_asin`,
+`_atan`, `_atan2`, `_exp`, `_exp2`, `_fmod`, `_hypot`, `_ldexp`, `_log`,
+`_log10`, `_log2`, `_pow`, `_round`, and `_scalbn`, and their float
+versions with `f`, such as `_asinf`. Each pushes its operands and runs one
 command of DEVICES.md §11.3, but `_pow` and `_hypot`, which first give
 C's results where the FPU's NaN rule differs: `pow` of a zero exponent
 or of 1 is 1, and `hypot` of an infinity is +∞, with a NaN as the other
@@ -478,9 +476,10 @@ The preferred way is `nice.zig` or `nice.rs`, below.
 ### Math functions
 
 Most functions of `math.h` are routines of the float library (Floating
-point, above), on the functions of the FPU (DEVICES.md §11.3): `acos`,
-`asin`, `atan`, `atan2`, `exp`, `exp2`, `fmod`, `hypot`, `ldexp`, `log`,
-`log10`, `log2`, `pow`, `round`, and `scalbn`, and their float versions.
+point, above), on the functions of the FPU (DEVICES.md §11.3): `sin`,
+`cos`, `tan`, `acos`, `asin`, `atan`, `atan2`, `exp`, `exp2`, `fmod`,
+`hypot`, `ldexp`, `log`, `log10`, `log2`, `pow`, `round`, and `scalbn`,
+and their float versions.
 `math.h` declares each as an import from `env`, so a call is a call of
 its label, `_pow` for `pow`, and a program that calls one is joined with
 the float library, as `nicebuild.py` does. A float version pushes its
@@ -489,25 +488,11 @@ result through `FPU_X_S`, which rounds it once to binary32.
 
 The others are C, in `libc/src/math/`:
 
-- `sin.c`, `cos.c`, and `tan.c` are this library's own. Below 2²⁰·π/2,
-  and for an infinity or a NaN, `sin` is the float library's
-  `_nice_sin`, the FPU's `SIN`. From there on, where `SIN` gives a NaN,
-  it is musl's code: `__rem_pio2` and `__rem_pio2_large`, the reduction
-  of a huge argument, and the kernels `__sin`, `__cos`, and `__tan`, as
-  the reduced argument is a pair of doubles. `cos` and `tan` are the
-  same. `sinf`, `cosf`, and `tanf` are the double functions rounded to
-  float.
 - `frexp`, `modf`, `fmin`, and `fmax` and their float versions are
-  musl's, from musl 1.2.5, unchanged, and so are the files of the huge
-  reduction above. They are under musl's MIT license and the notices in
-  their files, which `libc/src/math/COPYRIGHT` collects.
-- `libm.h` and `features.h` stand in for musl's internal headers, and
-  `builtin.c` holds the functions that `math.h` maps to clang's
-  built-ins.
-
-The library compiles them with `-Os`, which keeps clang from unrolling
-the loops of `__rem_pio2_large`. That saves 2200 words and costs no step
-on other arguments.
+  musl's, from musl 1.2.5, unchanged, under musl's MIT license, which
+  `libc/src/math/COPYRIGHT` holds.
+- `libm.h` stands in for musl's internal header, and `builtin.c` holds
+  the functions that `math.h` maps to clang's built-ins.
 
 - **Accuracy.** Each result is within 1 ulp of the true value, but
   those of `hypot`, within 1.1, and of `atan2`, within 1.6. Both follow
@@ -524,7 +509,8 @@ on other arguments.
 - **The bits.** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`,
   `log10`, and `hypot` follow musl's code, so their results are musl's,
   bit for bit, on a host with IEEE 754 doubles and no fused
-  multiply-add. `log`, `log2`, `exp`, `exp2`, and `pow` follow fdlibm's
+  multiply-add, but for a few results of `sin`, `cos`, and `tan` from
+  2²⁰·π/2 on, which are 1 ulp apart (DEVICES.md §11.3). `log`, `log2`, `exp`, `exp2`, and `pow` follow fdlibm's
   and FreeBSD's code, where musl has newer code with other results:
   `exp(1)` is the double above e, 0.67 ulp off, where musl gives the
   nearest.
@@ -558,30 +544,26 @@ of `nice_instructions` with nothing between them, which come before and
 after the loop. `make mathsteps` in `bench/` prints them, from
 `bench/libc/mathsteps.c`. A float
 function passes one word for each operand, so it takes fewer steps than
-the double one, but for `sinf`, `cosf`, and `tanf`, which call the
-double function. `fmin` and `fmax` look at the signs first: for two
+the double one. `fmin` and `fmax` look at the signs first: for two
 arguments of one sign they take 74 and 72 steps, and 51 and 50 in float,
 and for two of different signs 57, and 36 in float. The table has half
 of each. A write of a function's command to `FPU_CMD` is one step, and
 the processor then waits for the FPU: on the FPGA, up to the cycles of
-hdl/README.md (The floating-point unit), such as 1368 for `COS` and 2674
-for `POW`. The emulator counts no such wait. Each function in C also
+hdl/README.md (The floating-point unit), such as 2674 for `POW` and
+6108 for `TAN` of a huge argument. The emulator counts no such wait. Each function in C also
 brings the words below into the program: its own and those of the
 routines it calls, the float library not counted, which has the others.
 `make words` in `bench/` prints them: the words of a module of
 `bench/libc/mathbase.c`, a function that uses the float library, with
 the function exported too, less those of that module alone. A program
-that uses all of them gets 5723 words, as `make words` prints too,
-almost all of them the reduction of a huge argument, which costs `sin`
-up to some 5900 steps and `sinf` up to 5300. `frexp` and `modf` are 164
-and 220 words, and their float versions 155 and 153.
+that uses all of them gets 880 words, as `make words` prints too.
+`frexp` and `modf` are 177 and 220 words, and their float versions 167
+and 153.
 
 | Function | Steps, double | Steps, float | Words, double | Words, float |
 |---|---|---|---|---|
-| `sin`, `cos` | 42 | 56 | 4380 | 4383 |
-| `tan` | 43 | 57 | 4412 | 4415 |
-| `asin`, `acos`, `atan`, `exp`, `log`, `log10`, `log2` | 20 | 17 | 0 | 0 |
-| `exp2` | 19 | 16 | 0 | 0 |
+| `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `log10`, `log2` | 20 | 17 | 0 | 0 |
+| `sin`, `cos`, `exp2` | 19 | 16 | 0 | 0 |
 | `atan2`, `fmod` | 32 | 25 | 0 | 0 |
 | `pow` | 37 | 28 | 0 | 0 |
 | `hypot` | 40 | 31 | 0 | 0 |
@@ -593,7 +575,7 @@ and 220 words, and their float versions 155 and 153.
 `libc/test/math.c` checks each function and macro on the cases whose
 results C17 Annex F gives, on exact results, on a few known values, on
 huge arguments of `sin`, `cos`, and `tan`, and on two routines of the
-float library called through a pointer, 285 checks in all.
+float library called through a pointer, 286 checks in all.
 `libc/test/fuzz_math.py` (Test, below) checks them on random arguments.
 
 ## Zig and Rust

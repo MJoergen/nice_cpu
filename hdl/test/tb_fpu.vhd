@@ -65,7 +65,7 @@ architecture simulation of tb_fpu is
    -- gives no time, some twice what they take. DIGITS, which §11.5 gives up
    -- to some 3200, takes at most 3182 on the slowest values that a scan
    -- found (test/fpu_slow_vectors.py), and its bound is 20% above that,
-   -- as are those of SIN and COS, at most 1368, TAN, at most 1802, ASIN,
+   -- as are those of SIN and COS, at most 5798, TAN, at most 6108, ASIN,
    -- 992, ACOS, 856, ATAN, 840, ATAN2, 1194, LN, 818, LOG2, 1009, LOG10,
    -- 1069, EXP, 739, POW2, 939, POW, 2674, and HYPOT, 498.
    -- A command of the stack, and a number that is not a command, takes a
@@ -82,8 +82,8 @@ architecture simulation of tb_fpu is
          when 16#17# to 16#19# | 16#1B# | 16#1C# | 16#20# to 16#24# | 16#28# to 16#2B# | 16#38# |
               16#3B# to 16#3D# | 16#60# to 16#65# => return 120;
          when 16#66# | 16#67# => return 200;
-         when 16#40# | 16#41# => return 1650;
-         when 16#42# => return 2200;
+         when 16#40# | 16#41# => return 7000;
+         when 16#42# => return 7350;
          when 16#43# => return 1200;
          when 16#44# => return 1050;
          when 16#45# => return 1050;

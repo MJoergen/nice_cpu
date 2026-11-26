@@ -401,9 +401,9 @@ and a fetch from its words reads 0, a `NOP`. `--no-fpu` makes its eight
 words ordinary memory, as on a system without the unit.
 
 A function of DEVICES.md §11.3, `SIN` to `HYPOT`, runs as a sequence of
-steps on the unit's own stack: commands of the unit, and the five steps
-that only a sequence has, which push a constant, write a value of the
-stack, jump, and mark a pole. It runs when `CMD` is written, at once,
+steps on the unit's own stack: commands of the unit, and the six steps
+that only a sequence has, which push a constant, push an entry of a
+table of constants, write a value of the stack, jump, and mark a pole. It runs when `CMD` is written, at once,
 as a command does. The steps and the constants are the tables of
 `src/fpu_seq.zig`.
 `test/fpu_seq.py` writes that file from its programs, one for each

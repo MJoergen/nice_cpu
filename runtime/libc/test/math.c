@@ -139,16 +139,17 @@ static void trig(void)
     CD(tan(-zero), N0);
     CD(tan(inf), NANBITS);
     CD(tan(p / 4), 0x3FEFFFFFFFFFFFFFull);
-    // From 2^20 * pi/2 on, the high word 0x413921FB, the reduction is
-    // musl's __rem_pio2_large, and below it the FPU's SIN. The results are
-    // the correctly rounded ones, glibc's, but that of tan(1e22), which is
-    // 0.54 ulp off, as musl's tan gives it.
+    // From 2^20 * pi/2 on, the high word 0x413921FB, the FPU reduces by
+    // the digits of 2/pi, and below it as musl's __rem_pio2 does. The
+    // results are the correctly rounded ones, glibc's, but that of
+    // tan(1e22), which is 0.54 ulp off, as musl's tan gives it. The
+    // largest double takes the last digits of 2/pi.
     CD(sin(1e22 * one), 0xBFEB453AB76BF397ull);
     CD(cos(1e22 * one), 0x3FE0BE2CEF01C8F4ull);
     CD(tan(1e22 * one), 0xBFFA0F79C1B6B258ull);
+    CD(sin(D(0x7FEFFFFFFFFFFFFFull)), 0x3F7452FC98B34E97ull);
     CD(sin(D(0x413921FB00000000ull)), 0xBFD4B02E5BE91E9Eull);
     CD(sin(D(0x413921FAFFFFFFFFull)), 0xBFD4B02E5C25AF00ull);
-    // cos.c and tan.c each compare with the limit by themselves.
     CD(cos(D(0x413921FB00000000ull)), 0x3FEE4831257A62DAull);
     CD(cos(D(0x413921FAFFFFFFFFull)), 0x3FEE483125700AC3ull);
     CD(tan(D(0x413921FB00000000ull)), 0xBFD5DCA6BD170C6Full);

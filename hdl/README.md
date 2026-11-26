@@ -751,8 +751,8 @@ after it, which adds some 6 (What the tests check):
 | `ITOF`, `UTOF`, `FTOI`, `FTOU`, `GETEXP`, and `GETMANT` | 21 to 26 |
 | `ADD`, `SUB`, and `MUL` | 32 |
 | `FLOOR`, `CEIL`, `TRUNC`, `NEAREST`, `ROUND`, `ROUND32`, `FROMBCD`, and `SCALE2` | 32 to 45 |
-| `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 58 to 60 |
-| `XMUL` | 62 |
+| `AND`, `OR`, `XOR`, `NOT`, `SHL`, and `SHR` | 56 to 60 |
+| `XMUL` | 68 |
 | `DIV` and `SQRT` | 82 and 79 |
 | `IDIV` and `MOD` | 93 and 92 |
 | `ISQRT` | 99 |

@@ -156,6 +156,8 @@ The other 18 rows equal the logs, `SIN` and `COS` at 5721 and 5798 and `TAN` at 
 
 **Fix:** 68, and 56 to 60. DEVICES.md §11.5 says "`XMUL` … takes some 60 cycles", which still holds for most operands.
 
+**Resolved.** The table says 56 to 60 for the bit commands and 68 for `XMUL`, as the logs of the eight shares do.
+
 ### 2.6 DEVICES.md §11.3: the table of 2/π has 1176 bits, not 1584
 
 "they reduce any finite X as musl's `__rem_pio2_large` does, by the 1584 bits of 2/π in its table, which `KX` reads 24 at a time". musl's table has 66 entries of 24 bits, 1584 bits. The FPU's table, which `KX` reads, has the first 49 of them, 1176 bits, behind two zeros: `emulator/test/fpu_seq.py` says "the first 49 entries of musl's ipio2 … the bits of 2/pi that the reduction of the largest binary64 value needs", and `TABLES['ipio2']` has 51 entries, 49 of them not 0. A comment of `emulator/test/fpu_model_test.py` says the same: "The largest double, whose n takes all 1584 bits of the table".

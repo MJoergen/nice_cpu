@@ -60,6 +60,8 @@ The other rows are right: the board's `V2.3.1` to `V2.6` are in the table.
 
 **Fix:** `V3.0` in the row of `V3.0`.
 
+**Resolved.** The row of `V3.0` says `V3.0`, which `git ls-tree V3.0 nice_cpu` in the board's repository shows at ea1f485, and the table has the row of `V3.1`, "none yet", as RELEASE.md step 2.8 asks. `release.py preflight` names no missing tag now.
+
 ### 1.3 `emulator/build.zig.zon` says `3.0.0`
 
 RELEASE.md step 2.9: the version is the new tag's, `3.1.0`, set before `release.py check`, as a change to it after the stamp makes the stamp stale. `release.py tag` and the release workflow refuse the tag otherwise.

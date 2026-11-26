@@ -2,8 +2,8 @@
 # measures it: synthesis, placement, and routing of the unit alone, for
 # the part of a board, with a 10 ns clock, and the worst
 # register-to-register paths. The unit is the pipelined core, pipeline,
-# the FPU of DEVICES.md §11, fpu, or the sound of DEVICES.md §12, opm,
-# which the system builds beside the core. Run it with "make timing" in hdl/, which runs it in the directory
+# the FPU of DEVICES.md §11, fpu, the sound of DEVICES.md §12, opm, or
+# its sample player, pcm, which the system builds beside the core. Run it with "make timing" in hdl/, which runs it in the directory
 # of the reports and prints the worst path of each and the groups.
 #
 # The arguments, all optional, are the part, the flow, the period in ns,
@@ -76,8 +76,11 @@ if {$unit eq "pipeline"} {
 } elseif {$unit eq "opm"} {
   read_vhdl -vhdl2008 [list $src/opm_tables_pkg.vhd $src/opm_engine.vhd $src/opm.vhd]
   synth_design -top opm -part $part -mode out_of_context {*}$d_synth
+} elseif {$unit eq "pcm"} {
+  read_vhdl -vhdl2008 [list $src/pcm.vhd]
+  synth_design -top pcm -part $part -mode out_of_context {*}$d_synth
 } else {
-  error "unknown unit $unit, not pipeline, fpu, or opm"
+  error "unknown unit $unit, not pipeline, fpu, opm, or pcm"
 }
 create_clock -period $period -name clk [get_ports clk_i]
 set_input_delay -clock clk 0 [get_ports -filter {DIRECTION == IN && NAME != clk_i}]

@@ -252,6 +252,8 @@ def test_timing_budget() -> None:
             fpu.mkdir(parents=True)
             opm = release.timing_dir("mega65", "opm")
             opm.mkdir(parents=True)
+            pcm = release.timing_dir("mega65", "pcm")
+            pcm.mkdir(parents=True)
             r = release.timing_budgets()
             check(r["status"] == "error", "the FPU without a budget.json makes the whole an error")
             units = r["units"]
@@ -264,7 +266,7 @@ def test_timing_budget() -> None:
 
             def run_all(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
                 for d, text in ((release.timing_dir("mega65"), '{"status": "met"}'), (fpu, written),
-                                (opm, '{"status": "met"}')):
+                                (opm, '{"status": "met"}'), (pcm, '{"status": "met"}')):
                     d.joinpath("budget.json").write_text(text)
                 return subprocess.CompletedProcess([], 0)
 

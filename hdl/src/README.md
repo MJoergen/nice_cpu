@@ -21,6 +21,7 @@ The synthesizable VHDL: the two cores, their shared packages, and the devices. [
 | [opm.vhd](opm.vhd) | The sound of DEVICES.md §12, a Wishbone slave: the FIFO of writes, the status, and the sample clock, around `opm_engine.vhd`, with a strobe of stereo samples. |
 | [opm_engine.vhd](opm_engine.vhd) | The FM synthesizer of the sound, whose registers are the YM2151's: a write, if any, and the next sample, one step at a time, as `emulator/test/opm_model.py` computes them. |
 | [opm_tables_pkg.vhd](opm_tables_pkg.vhd) | The tables of the sound, written by `emulator/test/opm_tables.py --vhdl`. |
+| [pcm.vhd](pcm.vhd) | The sample player of DEVICES.md §12.7, a Wishbone slave: a FIFO of 4096 stereo samples in a block RAM, the rate, and the status, with a strobe of stereo samples. |
 | [perf.vhd](perf.vhd) | The performance counters of DEVICES.md §3, a Wishbone slave. |
 | [tod.vhd](tod.vhd) | The clock of the time of day of DEVICES.md §10, a Wishbone slave that its own reset, the system's, alone sets to 0. |
 | [sd_regs.vhd](sd_regs.vhd) | The registers and the buffer of the SD card controller of DEVICES.md §5, a Wishbone slave with a port to a protocol engine. |

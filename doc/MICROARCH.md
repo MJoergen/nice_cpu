@@ -882,6 +882,13 @@ system built from them must follow these rules:
   its ACK for up to one sample's time, 1788 cycles at 100 MHz. Its
   samples come out on a strobe, for the system's mixer
   ([hdl/README.md](../hdl/README.md#the-sound)).
+- **Sample player.** `hdl/src/pcm.vhd` among the sound's words, at
+  `0xFFFFFF0A`–`0xFFFFFF0C` (DEVICES §12.7): the decoder gives the sound
+  offsets 0 and 1 of the eight, and the player offsets 2 to 7, with
+  address bits 2..0. It takes the reset of a start too. A write to its
+  full FIFO while it plays holds its ACK for up to one sample's time, at
+  1000 Hz 100000 cycles at 100 MHz. Its samples come out on a strobe of
+  their own ([hdl/README.md](../hdl/README.md#the-sample-player)).
 - **SD card controller.** `hdl/src/sd_regs.vhd` at `0xFFFFFFA0`–`0xFFFFFFAF`
   (DEVICES §5): the registers and the buffer, with a port to a protocol
   engine that the board adds. With `G_HOLD_ACK`, as in simulation, the ACK

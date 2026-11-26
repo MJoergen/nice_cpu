@@ -3,9 +3,9 @@ ASM = $(PYTHON) ../assembler/niceasm.py
 EMU = ../emulator/zig-out/bin/niceemu
 BUILD = build
 
-SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/opm_tables_pkg.vhd src/opm_engine.vhd src/opm.vhd src/perf.vhd src/tod.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
+SOURCES = src/nice_pkg.vhd src/trace_pkg.vhd src/pipe_pkg.vhd src/multicycle.vhd src/pipe_fetch.vhd src/pipe_decode.vhd src/pipe_prepare.vhd src/pipe_dbus.vhd src/pipe_write.vhd src/pipeline.vhd src/mpu.vhd src/fpu_pkg.vhd src/fpu_seq_pkg.vhd src/fpu_unit.vhd src/fpu.vhd src/opm_tables_pkg.vhd src/opm_engine.vhd src/opm.vhd src/pcm.vhd src/perf.vhd src/tod.vhd src/fetch_stats.vhd src/wb_dmux.vhd src/debug_link.vhd src/sd_regs.vhd src/net_regs.vhd src/eth_regs.vhd
 SIM_SOURCES = sim/wb_mem.vhd sim/trace.vhd sim/sd_sim.vhd sim/eth_sim.vhd
-TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_opm.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
+TEST_SOURCES = test/tb_mem.vhd test/tb_shift.vhd test/tb_mpu.vhd test/tb_fpu_unit.vhd test/tb_fpu.vhd test/tb_opm.vhd test/tb_pcm.vhd test/tb_perf.vhd test/tb_perf_hz.vhd test/tb_tod.vhd test/tb_fetch_stats.vhd test/tb_wb_dmux.vhd test/tb_debug_link.vhd test/tb_sd_regs.vhd test/tb_net_regs.vhd test/tb_eth_regs.vhd test/tb_link.vhd \
   test/tb_trace.vhd test/tb_core.vhd
 
 # The runs of make test and make random go in parallel: each
@@ -44,7 +44,7 @@ $(BUILD)/%.nasm: test/%_prog.py
 # tb_tod the clock of the time of day, tb_fetch_stats the fetch statistics, tb_wb_dmux
 # the data bus decoder, tb_sd_regs the SD card controller, tb_net_regs
 # the network station, and tb_eth_regs the port for Ethernet frames.
-UNITS = tb_mem tb_shift tb_mpu tb_perf tb_perf_hz tb_tod tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs tb_eth_regs
+UNITS = tb_mem tb_shift tb_mpu tb_pcm tb_perf tb_perf_hz tb_tod tb_fetch_stats tb_wb_dmux tb_debug_link tb_sd_regs tb_net_regs tb_eth_regs
 GENERICS_tb_mem = -gG_BIN_FILE=$(abspath test/mem.bin) -gG_INPUT_FILE=$(abspath test/mem.input)
 
 $(UNITS:%=run/unit/%): run/unit/%:
@@ -617,7 +617,7 @@ analyze-nvc:
 # day, the fetch statistics, the data bus decoder, the debug link, the SD
 # card controller, the network station, and the port for Ethernet frames,
 # with the generics in SYNTH_GENERICS_unit.
-SYNTH = multicycle pipeline mpu fpu_unit fpu opm perf tod fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
+SYNTH = multicycle pipeline mpu fpu_unit fpu opm pcm perf tod fetch_stats wb_dmux debug_link sd_regs net_regs eth_regs
 SYNTH_GENERICS_wb_dmux = -gG_SLAVES=4
 
 define check_synth
@@ -668,8 +668,8 @@ emulator:
 	$(if $(PREBUILT),,$(MAKE) -C ../emulator build)
 
 # The out-of-context timing of UNIT in Vivado, which timing.tcl
-# describes: the pipelined core, pipeline, by default, the FPU, fpu, or
-# the sound, opm.
+# describes: the pipelined core, pipeline, by default, the FPU, fpu, the
+# sound, opm, or its sample player, pcm.
 # For the part of BOARD (mega65 or nexys4ddr) with the directives of FLOW
 # (default, or timing as NiceMonMEGA65 builds), a clock of PERIOD ns, and
 # for the core BREAKS breakpoints and WATCHES watchpoints, or for the FPU
@@ -677,8 +677,8 @@ emulator:
 # (emulator/test/fpu_seq.py --vhdl --rotate). The reports go to
 # build/timing/BOARD-FLOW-BREAKS-WATCHES/ for the core, and to
 # build/timing/fpu-BOARD-FLOW/ for the FPU, with -rROTATE after it for a
-# rotation other than 0, and to build/timing/opm-BOARD-FLOW/ for the
-# sound: the worst
+# rotation other than 0, to build/timing/opm-BOARD-FLOW/ for the sound,
+# and to build/timing/pcm-BOARD-FLOW/ for the sample player: the worst
 # register-to-register paths to timing.rpt, the worst from an input to
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
@@ -699,11 +699,12 @@ PART_nexys4ddr = xc7a100tcsg324-1
 TIMING_DIR_pipeline = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)-$(WATCHES)
 TIMING_DIR_fpu      = $(BUILD)/timing/fpu-$(BOARD)-$(FLOW)$(if $(filter-out 0,$(ROTATE)),-r$(ROTATE))
 TIMING_DIR_opm      = $(BUILD)/timing/opm-$(BOARD)-$(FLOW)
+TIMING_DIR_pcm      = $(BUILD)/timing/pcm-$(BOARD)-$(FLOW)
 TIMING_DIR = $(TIMING_DIR_$(UNIT))
 SEQ_PKG = $(if $(filter-out 0,$(ROTATE)),$(abspath $(TIMING_DIR))/fpu_seq_pkg.vhd,$(CURDIR)/src/fpu_seq_pkg.vhd)
 
 timing:
-	@test -n "$(TIMING_DIR)" || { echo "unknown UNIT $(UNIT), not pipeline, fpu, or opm"; exit 1; }
+	@test -n "$(TIMING_DIR)" || { echo "unknown UNIT $(UNIT), not pipeline, fpu, opm, or pcm"; exit 1; }
 	@test -n "$(PART_$(BOARD))" || { echo "unknown BOARD $(BOARD)"; exit 1; }
 	@mkdir -p $(TIMING_DIR)
 	@test "$(ROTATE)" = 0 || $(PYTHON) ../emulator/test/fpu_seq.py --vhdl --rotate $(ROTATE) > $(SEQ_PKG)

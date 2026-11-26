@@ -340,9 +340,9 @@ def make_step(name: str, args: list[str], log: Path) -> dict[str, object]:
 # the directory make -n names.
 TIMING_BREAKS = 4
 TIMING_WATCHES = 4
-# The units that make -C hdl timing builds: the pipelined core, the FPU, and
-# the sound.
-TIMING_UNITS = ("pipeline", "fpu", "opm")
+# The units that make -C hdl timing builds: the pipelined core, the FPU, the
+# sound, and its sample player.
+TIMING_UNITS = ("pipeline", "fpu", "opm", "pcm")
 
 
 def timing_args(board: str, unit: str = "pipeline") -> list[str]:

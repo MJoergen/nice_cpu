@@ -6,8 +6,8 @@
                                                       of each slack over several runs
     timing_budget.py --test                           the self-test of make test
 
-The unit is the pipelined core, pipeline, the default, the FPU, fpu, or
-the sound, opm.
+The unit is the pipelined core, pipeline, the default, the FPU, fpu,
+the sound, opm, or its sample player, pcm.
 The budget is the least slack at a 10 ns clock, in ns, of the worst
 register-to-register path (the unit alone), of the worst path from an
 input, and of the worst path to an output. The last two are the time left
@@ -54,10 +54,15 @@ from typing import Optional
 # port is the FPU's, so it has the FPU's budget. On the MEGA65 on 2026-11-26,
 # in the default flow, it has 2.271 ns, the inputs 6.599, and the outputs
 # 7.958.
+#
+# The sample player's (#216): beside the sound, with the same port, and the
+# same budget. On the MEGA65 on 2026-11-26, in the default flow, it has
+# 3.701 ns, the inputs 5.868, and the outputs 5.185.
 BUDGET: dict[tuple[str, str], tuple[float, float, float, float]] = {
     ("pipeline", "mega65"): (10.0, 0.0, 1.5, 2.2),
     ("fpu", "mega65"): (10.0, 1.0, 1.5, 2.2),
     ("opm", "mega65"): (10.0, 1.0, 1.5, 2.2),
+    ("pcm", "mega65"): (10.0, 1.0, 1.5, 2.2),
 }
 
 # (unit, board, flow): the range, most less least, of the slack of the unit,

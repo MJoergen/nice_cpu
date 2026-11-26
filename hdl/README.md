@@ -37,6 +37,7 @@ and `make timing` found in the release stamp
 - [The math unit](#the-math-unit)
 - [The floating-point unit](#the-floating-point-unit)
 - [The sound](#the-sound)
+- [The sample player](#the-sample-player)
 - [The performance counters](#the-performance-counters)
 - [The clock of the time of day](#the-clock-of-the-time-of-day)
 - [The fetch statistics](#the-fetch-statistics)
@@ -98,7 +99,7 @@ for `SIM`.
 
 `make test` builds the emulator, analyzes the VHDL, checks that GHDL can
 synthesize both cores, the math unit, the FPU and its arithmetic unit,
-the sound, the performance counters, the clock of the time of day, the fetch
+the sound and its sample player, the performance counters, the clock of the time of day, the fetch
 statistics, the data bus decoder, the debug link, the SD card
 controller, the network station, and the port for Ethernet frames
 (`ghdl --synth`), and runs the tests, those of the cores once for each
@@ -289,7 +290,9 @@ to the system's read mux and to the core's stall. It has no
 ([src/opm.vhd](src/opm.vhd) with [src/opm_engine.vhd](src/opm_engine.vhd)),
 which a system builds beside the core too, with the reports in
 `build/timing/opm-BOARD-FLOW/`. Its ports are those of the FPU, and its
-outputs the samples too. It has no `timing-spread`.
+outputs the samples too. It has no `timing-spread`. `UNIT=pcm` runs the
+same on the sample player of DEVICES.md §12.7 ([src/pcm.vhd](src/pcm.vhd)),
+with the reports in `build/timing/pcm-BOARD-FLOW/`.
 
 At the end it judges the slacks against the budget of the unit and the
 board in [test/timing_budget.py](test/timing_budget.py), at a 10 ns clock:
@@ -298,7 +301,7 @@ leave the system 1.5 and 2.2 ns (`mega65` only). The two come from the
 slack of the ports inside NiceMonMEGA65 at `V1.0`, and keep about 0.2 ns of
 it. The FPU must leave 1.0 ns on its own paths, as the system took 0.5 to
 1 ns of them in NiceMonMEGA65's build, and the same 1.5 and 2.2 ns at its
-ports. The sound has the FPU's budget. It prints the result, writes `budget.json` beside the
+ports. The sound and the sample player have the FPU's budget. It prints the result, writes `budget.json` beside the
 reports, and says `MISSED` on a miss, but exits 0. `release.py check` puts
 the result in its stamp, and no release waits for it.
 
@@ -827,6 +830,36 @@ RAM, 769 registers, and no DSP or block RAM.
 
 `tb_opm` checks it against the vectors of the model (What the tests check).
 
+## The sample player
+
+`pcm` is the sample player of DEVICES.md §12.7, a FIFO of 4096 stereo
+samples in a block RAM, played at the rate that a program sets. Offset 2
+is `PCM_DATA`, offset 3 `PCM_RATE`, offset 4 `PCM_STATUS`, and the other
+offsets read 0. It is a pipelined Wishbone slave with a 3-bit address,
+as the sound is: the bus decoder selects the sound for offsets 0 and 1
+of `0xFFFFFF08`–`0xFFFFFF0F`, and the player for offsets 2 to 7. The
+generic `G_CLK_HZ`, from 1 to 268 MHz, is the frequency of its clock.
+While the rate is not 0, it adds the rate to an accumulator in each
+cycle, and plays a sample each time the sum reaches `G_CLK_HZ`. The
+sample comes out a cycle later on `sample_valid_o`, high for one cycle,
+with `sample_left_o` and `sample_right_o`, signed, an underrun's 0
+included. The mixer and the conversion to an output's rate are the
+system's.
+
+It acknowledges each request in the cycle after it accepts it, but a
+write of `PCM_DATA` while the FIFO is full and the rate is not 0. That
+one holds STALL high until a sample takes one from the FIFO, up to one
+sample's time, 100000 cycles at 100 MHz and 1000 Hz. A pause and a step
+of the debug link wait that long. Its reset is that of a start of the
+processor, as for the sound.
+
+`make timing UNIT=pcm` places it alone, out of context ([Timing](#timing)).
+On the MEGA65 with the default flow, on 2026-11-26, it leaves +3.701 ns
+on its own paths, +5.868 ns at its inputs, and +5.185 ns at its outputs.
+It takes 183 LUTs, 137 registers, and 4 block RAMs of 36 Kb.
+
+`tb_pcm` checks it (What the tests check).
+
 ## The performance counters
 
 `perf` holds the performance counters of DEVICES.md §3: `CYCLE_LO` and
@@ -1087,6 +1120,15 @@ cycles of one sample in the engine. `run/opm/high` runs 2000 samples at
 268 MHz, the most that `G_CLK_HZ` may be, with a sample every 4792
 cycles, where the sums of the sample clock need all 34 bits of its
 accumulator.
+
+`tb_pcm` runs the sample player at 1 MHz, so that a cycle is a
+microsecond, as a step is in the emulator with `--step-time`, and a
+sample at 40000 Hz is due once in exactly 25 cycles. It checks the
+status, the rate, and the other words after a reset, the limits of the
+rate, that the rate 0 plays nothing, the order of the samples and their
+distance, the 0s of an underrun and its flag, a write to the full FIFO
+dropped while stopped and held for up to a sample's time while playing,
+4096 samples played in order behind it, and a reset.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and

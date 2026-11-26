@@ -93,7 +93,8 @@ the commit message, and for a small change the medians of
 `make -C hdl timing-spread UNIT=fpu`. The sound of DEVICES.md §12 is
 built beside the core as well, and a change under `hdl/src/opm*` needs
 `make -C hdl timing UNIT=opm` before and after, with both figures in
-the commit message. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
+the commit message, and so does a change of its sample player,
+`hdl/src/pcm.vhd`, with `UNIT=pcm`. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
 `make -C hdl lint` checks.
 
 **Python** uses the standard library only and is `mypy --strict` clean.

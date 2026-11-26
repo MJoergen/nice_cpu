@@ -252,6 +252,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** as said at each.
 
+**Resolved.** DEVICES.md §11.3 has the 420 digits of `SIN`, `COS`, and `TAN`, §11.5 `TAN` beside `POW`, and §3 the microseconds of a write to a full FIFO, with a pointer to §12.3, as emulator/README.md has under the counters. The README says that `make test` changes one sample in the file of the vectors. TOOLCHAIN.md's row has the WAV files and the frames sent. `tb_opm.vhd` says 572 and some 150 cycles, and the two comments of `hdl/Makefile` name the sample player.
+
 ## 3. What the documents say that is not so, older than `V3.1`
 
 - **ASSUMPTIONS.md, item 1:** the wait in PREPARE costs a cycle "for a sum on a register just written, which neither benchmark has (MICROARCH.md §5.6)". `make -C bench hazards` counts the sums that PREPARE forms on a register from the previous instruction: no source in mode 001 or 011, but a store in mode 011, 101, or 111 2458 times in `bench.c`, 0.1%, and 5549 times in `hand.nasm`, 1.1%. The cycle model waits for both (`--sum-wait`, bench/README.md). So the benchmarks have such sums, in stores. And the table of §5.6 has no row for either.

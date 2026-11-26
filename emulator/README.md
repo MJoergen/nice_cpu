@@ -403,7 +403,9 @@ the same count each time. The cycle counter and the microsecond counter
 have no fixed ratio: a program that divides one by the other gets the
 host's rate of steps, which varies. `--step-time` makes the counter count
 one microsecond per step instead, for tests whose output is worked out by
-hand.
+hand. Both counters then also count the microseconds that a write to a
+full FIFO of the sound or of its sample player waits (Sound below),
+which are no steps.
 
 A read of a low word takes a snapshot of
 its counter, and a read of the high word returns the snapshot's high word.
@@ -890,8 +892,8 @@ period, its rules of writes, and its DAC on hand-checked
 values. The other formulas rest on `make ymfmcheck`. `test/opm_vectors.py` writes random logs of writes from a seed,
 and with the model's samples, the vectors. `make test` writes 20000
 samples of them to `test/opm.vectors.out`, and the unit test of
-`src/opm.zig` replays them, then must fail on a copy with one wrong
-sample. `make ymfmcheck` clones ymfm
+`src/opm.zig` replays them. `make test` then changes one sample in the
+file, and the unit test must fail. `make ymfmcheck` clones ymfm
 at `YMFM_COMMIT` into `build/ymfm`, or takes a checkout in `YMFM`,
 builds `test/opm_ymfm.cpp` against it, and compares every sample of
 `SEEDS` random logs, 20 by default, of 30000 samples each, through

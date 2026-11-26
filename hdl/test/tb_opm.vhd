@@ -4,15 +4,15 @@
 -- THEORY OF OPERATION
 -- G_VECTORS is a log of writes, each with the number of the sample
 -- before which it lands, at most one in a sample, then "end N", then the
--- N samples of the model, left and right. G_CLK_HZ is low, so that a
--- sample is due once in some 700 cycles, and not 1788.
+-- N samples of the model, left and right. G_CLK_HZ is low, 32 MHz in
+-- make test, so that a sample is due once in 572 cycles, and not 1788.
 --
 -- p_drive writes the log over the bus, as a master of pipelined
 -- Wishbone. A write must go into the FIFO behind the writes of the
 -- samples before it, and be the only one there when its own sample
 -- starts. So a write whose sample follows that of the write before it
 -- goes in at once, behind it, and one after a gap waits until the sample
--- before its own has come out: the next is then some 250 cycles away. A
+-- before its own has come out: the next is then some 150 cycles away. A
 -- run of more than 64 writes, such as the 228 that set up the channels
 -- at the start of a log, fills the FIFO, and each write after that waits
 -- for its ACK until a sample takes a write: p_drive counts those waits,

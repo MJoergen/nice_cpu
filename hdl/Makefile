@@ -40,7 +40,8 @@ $(BUILD)/%.nasm: test/%_prog.py
 	@$(PYTHON) $< $@
 
 # tb_mem checks the memory model itself, tb_shift the ALU and the shifter of
-# src/nice_pkg.vhd, tb_mpu the math unit, tb_perf the performance counters,
+# src/nice_pkg.vhd, tb_mpu the math unit, tb_pcm the sample player of the
+# sound, tb_perf the performance counters,
 # tb_tod the clock of the time of day, tb_fetch_stats the fetch statistics, tb_wb_dmux
 # the data bus decoder, tb_sd_regs the SD card controller, tb_net_regs
 # the network station, and tb_eth_regs the port for Ethernet frames.
@@ -613,7 +614,8 @@ analyze-nvc:
 	$(if $(PREBUILT),,$(NVC) $(NVCOPTS) -a $(SOURCES) $(SIM_SOURCES) $(TEST_SOURCES))
 
 # Checks that GHDL can synthesize both cores, the math unit, the FPU and
-# its arithmetic unit, the sound, the performance counters, the clock of the time of
+# its arithmetic unit, the sound, its sample player, the performance
+# counters, the clock of the time of
 # day, the fetch statistics, the data bus decoder, the debug link, the SD
 # card controller, the network station, and the port for Ethernet frames,
 # with the generics in SYNTH_GENERICS_unit.

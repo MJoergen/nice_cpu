@@ -8,7 +8,7 @@ is joined into every program. Each follows one part of
 |---|---|---|---|---|---|
 | `niceasm`, the assembler | [assembler/niceasm.py](../assembler/niceasm.py) | Python 3, standard library only | `.nasm` | `.bin`, and `.sym` with `--symbols` | ISA.md §10 |
 | `nicedis`, the disassembler | [assembler/nicedis.py](../assembler/nicedis.py) | Python 3, standard library only | `.bin` and `.sym` | `.nasm` | ISA.md §10 |
-| `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` and `.sym` | Console output, the registers, memory dumps, and a trace | ISA.md §1–8, DEVICES.md, DEBUG.md |
+| `niceemu`, the emulator | [emulator/](../emulator/) | Zig 0.17 | `.bin` and `.sym` | Console output, the registers, memory dumps, a trace, the WAV files of the sound, and the frames sent | ISA.md §1–8, DEVICES.md, DEBUG.md |
 | `nicetap`, the TAP bridge | [emulator/tools/nicetap.py](../emulator/tools/nicetap.py) | Python 3, standard library only | Frames from a TAP device and niceemu's UDP socket | The same frames, the other way | DEVICES.md §7 |
 | `nicedbg`, the debugger | [debugger/nicedbg.py](../debugger/nicedbg.py) | Python 3, standard library only | `.bin` and `.sym` | Commands to a system on the debug link | DEBUG.md |
 | The runtime library | [runtime/](../runtime/) | NICE assembly | | | ABI.md and WASM.md |

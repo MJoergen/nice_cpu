@@ -122,6 +122,7 @@ goes through these steps on a small program, and a
 | `--no-fpu` | Make the floating-point unit, `0xFFFFFF88`–`0xFFFFFF8F`, ordinary memory, as on a system without one (see Floating-point unit below). |
 | `--no-sound` | Make the sound, `0xFFFFFF08`–`0xFFFFFF0F`, ordinary memory, as on a system without one (see Sound below). |
 | `--wav FILE` | Write the samples of the sound to FILE, a WAV file of 16-bit stereo at 55930 Hz, from the start to the halt or the step limit (see Sound below). An error with `--link`, `--window`, or `--no-sound`. |
+| `--pcm-wav FILE` | Write the samples of the sample player to FILE, as `--wav`, at the rate of its first sample (see Sound below). An error with `--link`, `--window`, or `--no-sound`. |
 | `--no-font` | Make the font RAM and the character ROM, `0xFFFE0000`–`0xFFFE3FFF`, ordinary memory, so that a program that reaches them runs as on an FPGA core with none (see Window below). |
 | `--no-screen-mode` | Make the screen's mode word, `0xFFFFFF87`, ordinary memory, so that a program that reaches it runs as on an FPGA core with none (DEVICES.md §1.10). The window shows the chunky mode while the word is 1. |
 | `--step-time` | Count one microsecond per step in the microsecond counter, and in the clock of the time of day from 0 with "set" 0, rather than the host's time, so that a run counts the same each time, and make a write of N to `TIME_SKIP`, `0xFFFFFF5F`, skip N wait steps (see Performance counters and Skipping time below). |
@@ -313,7 +314,7 @@ address twice and a file with no words are errors.
 | `0xFFFFFF00` | 1 | Console. A write prints bits 7..0 on stdout. A read returns the next input byte plus `0x100`, or `0x200` after the end of the input. |
 | `0xFFFFFF01` | 1 | Read counter. A data read returns the number of data reads of it since the last write, and a write sets that number. |
 | `0xFFFFFF02`–`0xFFFFFF07` | 6 | Reserved for I/O (ISA.md §8.3, DEVICES.md §1.9 and §4). Ordinary memory for data accesses. Instruction fetches read 0. |
-| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (DEVICES.md §12): the FM synthesizer, its write word and its status. With `--no-sound`, ordinary memory. |
+| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (DEVICES.md §12): the FM synthesizer, its write word and its status, and the sample player's three words. With `--no-sound`, ordinary memory. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O, like `0xFFFFFF02`–`0xFFFFFF07`. |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (DEVICES.md §2). Multiplies and divides A and B and counts the bits of A, and divides C and D and takes the square root of C. |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (DEVICES.md §3). Cycles, instructions, microseconds, data reads, stores, skips, and jumps, 64 bits each, and `0xFFFFFF52`–`0xFFFFFF5E`, which read 0. The clock of the time of day, at `0xFFFFFF46`–`0xFFFFFF49` (DEVICES.md §10). `TIME_SKIP` at `0xFFFFFF5F`, for `--step-time`. The fetch statistics of the FPGA core, at `0xFFFFFF60`–`0xFFFFFF7F`, read 0. |
@@ -519,6 +520,21 @@ example of DEVICES.md §12.5 with `--wav`, and compares every sample with
 the model's, for the writes at the samples that their steps give. Then
 it plays the note without `--wav` and skips 9.5 hours, which must take
 no time, as no sample is computed.
+
+The sample player of DEVICES.md §12.7, in `src/pcm.zig`, is at
+`0xFFFFFF0A`–`0xFFFFFF0C`, among the sound's words, with its FIFO of
+4096 samples. It counts the time as the synthesizer does, and a write
+to its full FIFO while it plays waits for its next sample in the same
+way. Without
+`--pcm-wav` and a window, nobody hears its samples, so the time takes
+them from the FIFO all at once. `--pcm-wav FILE` writes them as
+`--wav` does, at the rate of the first sample, an underrun's 0s
+included. The header has one rate: if a later sample comes at another
+rate, niceemu says so at the end. `test/pcm.nasm` checks the words, the
+status, the rate, an underrun, and a full FIFO, stopped and playing,
+with `--step-time`, and `pcm_mem` runs it again with `--no-sound`.
+`test/wav.py` checks every sample of `--pcm-wav`, the underrun's
+included, and the warning of a change of rate.
 
 ### SD card
 

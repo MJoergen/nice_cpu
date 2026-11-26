@@ -6,6 +6,7 @@ const font = @import("font.zig");
 const eth_zig = @import("eth.zig");
 const fpu_zig = @import("fpu.zig");
 const opm_zig = @import("opm.zig");
+const pcm_zig = @import("pcm.zig");
 
 /// SR bit numbers (§1.3). F1 and F0, bits 31 and 30, are storage that
 /// software reads and writes, with no meaning to the processor.
@@ -857,6 +858,8 @@ pub const Cpu = struct {
     fpu_enabled: bool,
     /// The sound at `opm_zig.base` (DEVICES §12).
     sound: opm_zig.Sound,
+    /// The sample player among the sound's words (DEVICES §12.7).
+    pcm: pcm_zig.Player,
     /// When false, the eight words of the sound are ordinary memory
     /// (`--no-sound`).
     sound_enabled: bool,
@@ -927,6 +930,7 @@ pub const Cpu = struct {
             .fpu = .{},
             .fpu_enabled = true,
             .sound = .{},
+            .pcm = .{},
             .sound_enabled = true,
             .sound_io = null,
             .sound_start_ns = 0,
@@ -977,6 +981,7 @@ pub const Cpu = struct {
         self.fpu = .{};
         self.perf = .{};
         self.sound.reset();
+        self.pcm.reset();
         self.sound_us = self.soundNow();
         self.sp_first = null;
         self.sp_low = 0;
@@ -1005,11 +1010,23 @@ pub const Cpu = struct {
         return if (ns > 0) @intCast(@divFloor(ns, std.time.ns_per_us)) else 0;
     }
 
-    /// Compute the samples of the sound up to now (DEVICES §12.3).
+    /// Compute the samples of the sound, and play those of the sample
+    /// player, up to now (DEVICES §12.3, §12.7).
     pub fn syncSound(self: *Cpu) void {
         const now = self.soundNow();
-        if (now > self.sound_us) self.sound.advance(now - self.sound_us);
+        if (now > self.sound_us) {
+            self.sound.advance(now - self.sound_us);
+            self.pcm.advance(now - self.sound_us);
+        }
         self.sound_us = now;
+    }
+
+    /// With the steps' time, `k` microseconds of wait steps, as those of a
+    /// skip of `TIME_SKIP` (§3).
+    fn waitSteps(self: *Cpu, k: u64) void {
+        self.perf.cycles +%= k;
+        self.perf.micros +%= k;
+        self.tod.tick(k);
     }
 
     /// A write to the sound's FIFO when it is full waits for the next
@@ -1019,14 +1036,27 @@ pub const Cpu = struct {
     fn waitForSound(self: *Cpu) void {
         self.syncSound();
         while (self.sound.full()) {
-            if (self.sound_io == null) {
-                const k = self.sound.microsToSample();
-                self.perf.cycles +%= k;
-                self.perf.micros +%= k;
-                self.tod.tick(k);
-            }
+            if (self.sound_io == null) self.waitSteps(self.sound.microsToSample());
             self.syncSound();
         }
+    }
+
+    /// The same for the sample player's FIFO, while it plays (DEVICES
+    /// §12.7). A write to its full FIFO while it is stopped is dropped.
+    fn waitForPcm(self: *Cpu) void {
+        self.syncSound();
+        while (self.pcm.holds()) {
+            if (self.sound_io == null) self.waitSteps(self.pcm.microsToSample());
+            self.syncSound();
+        }
+    }
+
+    /// The sound's word `i`, read: the synthesizer's or the player's.
+    fn readSound(self: *const Cpu, i: u3) u32 {
+        return switch (i) {
+            2...4 => self.pcm.read(@intCast(i - 2)),
+            else => self.sound.read(i),
+        };
     }
 
     /// The word of the sound that `addr` names, if it names one and the
@@ -1076,7 +1106,7 @@ pub const Cpu = struct {
         if (self.fpuDevice(addr)) |i| return self.fpu.read(i);
         if (self.soundDevice(addr)) |i| {
             self.syncSound();
-            return self.sound.read(i);
+            return self.readSound(i);
         }
         if (self.todDevice(addr)) |i| return self.tod.read(i);
         if (self.perfDevice(addr)) |i| {
@@ -1123,7 +1153,7 @@ pub const Cpu = struct {
         // A read of the FPU has no side effect, so it is its own peek.
         if (self.fpuDevice(addr)) |i| return self.fpu.read(i);
         // The sound as far as it has computed: a peek takes no time.
-        if (self.soundDevice(addr)) |i| return self.sound.read(i);
+        if (self.soundDevice(addr)) |i| return self.readSound(i);
         if (self.todDevice(addr)) |i| return self.tod.peek(i);
         if (self.perfDevice(addr)) |i| {
             var p = self.perf;
@@ -1153,8 +1183,19 @@ pub const Cpu = struct {
         } else if (self.fpuDevice(addr)) |i| {
             self.fpu.write(i, value);
         } else if (self.soundDevice(addr)) |i| {
-            if (i == 0) self.waitForSound();
-            self.sound.write(i, value);
+            // The time up to the write passes at the rate before it.
+            self.syncSound();
+            switch (i) {
+                0 => {
+                    self.waitForSound();
+                    self.sound.write(i, value);
+                },
+                2...4 => {
+                    if (i == 2) self.waitForPcm();
+                    self.pcm.write(@intCast(i - 2), value);
+                },
+                else => self.sound.write(i, value),
+            }
         } else if (self.todDevice(addr)) |i| {
             self.tod.write(i, value);
         } else if (self.perfDevice(addr)) |i| {
@@ -3073,4 +3114,31 @@ test "with --no-sound, the sound's words are ordinary memory" {
     for (0..8) |i| try cpu.write(opm_zig.base + @as(u32, @intCast(i)), 0x100 + @as(u32, @intCast(i)));
     for (0..8) |i| try testing.expectEqual(0x100 + @as(u32, @intCast(i)), cpu.read(opm_zig.base + @as(u32, @intCast(i))));
     try testing.expectEqual(0, cpu.sound.count);
+}
+
+test "the sample player's words, and a write to its full FIFO waits for a sample" {
+    var cpu = Cpu.init(testing.allocator);
+    defer cpu.deinit();
+    const data = pcm_zig.base;
+    const status = pcm_zig.base + 2;
+    try testing.expectEqual(0x1000_0000, cpu.read(status));
+    for (0..pcm_zig.depth) |i| try cpu.write(data, @intCast(i));
+    try testing.expectEqual(0x1000_1000, cpu.read(status));
+    // Stopped, a write to the full FIFO is dropped at once.
+    try cpu.write(data, 0xDEAD);
+    try testing.expectEqual(0, cpu.perf.micros);
+    // At 48000 Hz, a write waits 21 microseconds for the first sample.
+    try cpu.write(pcm_zig.base + 1, 48000);
+    try testing.expectEqual(48000, cpu.read(pcm_zig.base + 1));
+    try cpu.write(data, 0xBEEF);
+    try testing.expectEqual(21, cpu.perf.micros);
+    try testing.expectEqual(21, cpu.perf.cycles);
+    try testing.expectEqual(0x1000_1000, cpu.read(status));
+    try testing.expectEqual(1, cpu.pcm.fifo[cpu.pcm.head]);
+    // The synthesizer's words are its own.
+    try testing.expectEqual(0x2151_0000, cpu.read(opm_zig.base + 1));
+    try testing.expectEqual(0, cpu.read(pcm_zig.base + 3));
+    cpu.reset();
+    try testing.expectEqual(0x1000_0000, cpu.read(status));
+    try testing.expectEqual(0, cpu.read(pcm_zig.base + 1));
 }

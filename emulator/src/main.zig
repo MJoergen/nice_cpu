@@ -11,6 +11,7 @@ const Link = @import("link.zig").Link;
 const frame = @import("frame.zig");
 const eth = @import("eth.zig");
 const opm = @import("opm.zig");
+const pcm = @import("pcm.zig");
 const build_options = @import("build_options");
 const Window = if (build_options.window) @import("window.zig").Window else void;
 
@@ -67,6 +68,9 @@ const usage =
     \\      --wav FILE       Write the sound's samples to FILE, a WAV file of
     \\                       16-bit stereo at 55930 Hz, until the halt or the
     \\                       step limit. Not with --link or --window.
+    \\      --pcm-wav FILE   Write the samples of the sample player to FILE,
+    \\                       a WAV file of 16-bit stereo at the rate of its
+    \\                       first sample, as --wav.
     \\      --no-font        Make the font RAM and the character ROM,
     \\                       0xFFFE0000-0xFFFE3FFF, ordinary memory, for
     \\                       comparing traces with an FPGA core.
@@ -123,6 +127,8 @@ const Options = struct {
     sound: bool = true,
     /// The WAV file of the sound's samples, or "" for none.
     wav: []const u8 = "",
+    /// The WAV file of the sample player's samples, or "" for none.
+    pcm_wav: []const u8 = "",
     fonts: bool = true,
     screen_mode_word: bool = true,
     /// Count one microsecond per step rather than the host's time.
@@ -395,7 +401,7 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--sd0", "--sd1", "--eth-in", "--eth-out", "--wav", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
+        const takes_value = for ([_][]const u8{ "-d", "--dump", "-n", "--max-steps", "-i", "--input", "--sd0", "--sd1", "--eth-in", "--eth-out", "--wav", "--pcm-wav", "--eth-udp", "--eth-peer", "--symbols", "--link", "--speed" }) |o| {
             if (std.mem.eql(u8, arg, o)) break true;
         } else false;
         const value = if (takes_value) blk: {
@@ -441,6 +447,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
             opts.eth_out = value;
         } else if (std.mem.eql(u8, arg, "--wav")) {
             opts.wav = value;
+        } else if (std.mem.eql(u8, arg, "--pcm-wav")) {
+            opts.pcm_wav = value;
         } else if (std.mem.eql(u8, arg, "--eth-udp")) {
             opts.eth_udp = try parseLink(arg, value);
         } else if (std.mem.eql(u8, arg, "--eth-peer")) {
@@ -480,6 +488,8 @@ fn parseArgs(arena: std.mem.Allocator, args: []const [:0]const u8) !Options {
     if (speed_given and !opts.window) return fail("--speed needs --window", .{});
     if (opts.wav.len != 0 and (opts.link != null or opts.window)) return fail("--wav cannot be given with --link or --window", .{});
     if (opts.wav.len != 0 and !opts.sound) return fail("--wav cannot be given with --no-sound", .{});
+    if (opts.pcm_wav.len != 0 and (opts.link != null or opts.window)) return fail("--pcm-wav cannot be given with --link or --window", .{});
+    if (opts.pcm_wav.len != 0 and !opts.sound) return fail("--pcm-wav cannot be given with --no-sound", .{});
     if ((opts.eth_udp == null) != (opts.eth_peer == null)) return fail("--eth-udp and --eth-peer go together", .{});
     if (opts.window and !build_options.window) return fail("--window needs a build with -Dwindow (emulator/README.md)", .{});
     if (opts.path.len == 0 and opts.link == null) return fail("no program given\n\n{s}", .{usage});
@@ -544,25 +554,30 @@ fn openImage(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load
 }
 
 /// The file of --wav: a WAV file of 16-bit stereo PCM at the sound's
-/// rate (doc/DEVICES.md §12.3). Its header states the sizes, which `finish`
-/// writes once the samples are known.
+/// rate (doc/DEVICES.md §12.3), or of --pcm-wav, at the rate of the sample
+/// player's first sample (§12.7). Its header states the sizes and the
+/// rate, which `finish` writes once the samples are known.
 const WavFile = struct {
     io: std.Io,
+    path: []const u8,
     file: std.Io.File,
     w: std.Io.File.Writer,
     buf: [64 * 1024]u8,
+    rate: u32,
     samples: u64 = 0,
+    /// Whether a sample of the player came at another rate than the first.
+    rate_changed: bool = false,
     failed: bool = false,
 
     const header_len = 44;
 
-    fn open(arena: std.mem.Allocator, io: std.Io, path: []const u8) error{ Load, OutOfMemory }!*WavFile {
+    fn open(arena: std.mem.Allocator, io: std.Io, path: []const u8, rate: u32) error{ Load, OutOfMemory }!*WavFile {
         const file = std.Io.Dir.cwd().createFile(io, path, .{}) catch |err| {
             std.debug.print("niceemu: cannot write {s}: {s}\n", .{ path, @errorName(err) });
             return error.Load;
         };
         const self = try arena.create(WavFile);
-        self.* = .{ .io = io, .file = file, .w = undefined, .buf = undefined };
+        self.* = .{ .io = io, .path = path, .file = file, .w = undefined, .buf = undefined, .rate = rate };
         self.w = file.writer(io, &self.buf);
         self.header(0) catch {
             std.debug.print("niceemu: cannot write {s}\n", .{path});
@@ -581,8 +596,8 @@ const WavFile = struct {
         try w.writeInt(u32, 16, .little);
         try w.writeInt(u16, 1, .little); // PCM
         try w.writeInt(u16, 2, .little); // stereo
-        try w.writeInt(u32, opm.sample_rate, .little);
-        try w.writeInt(u32, opm.sample_rate * 4, .little);
+        try w.writeInt(u32, self.rate, .little);
+        try w.writeInt(u32, self.rate * 4, .little);
         try w.writeInt(u16, 4, .little);
         try w.writeInt(u16, 16, .little);
         try w.writeAll("data");
@@ -601,6 +616,18 @@ const WavFile = struct {
         self.samples += 1;
     }
 
+    /// A sample of the sample player, at `rate`: the first sets the rate
+    /// of the file.
+    fn putPcm(ctx: *anyopaque, sm: pcm.Sample, rate: u32) void {
+        const self: *WavFile = @ptrCast(@alignCast(ctx));
+        if (self.samples == 0) {
+            self.rate = rate;
+        } else if (rate != self.rate) {
+            self.rate_changed = true;
+        }
+        put(ctx, sm);
+    }
+
     /// Write the rest, and the sizes into the header.
     fn finish(self: *WavFile) !void {
         try self.w.interface.flush();
@@ -609,6 +636,7 @@ const WavFile = struct {
         try self.header(self.samples);
         try self.w.interface.flush();
         self.file.close(self.io);
+        if (self.rate_changed) std.debug.print("niceemu: {s}: the rate changed after the first sample, and the file states {d} Hz\n", .{ self.path, self.rate });
     }
 };
 
@@ -780,8 +808,10 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     cpu.sound_enabled = opts.sound;
     cpu.mem.fonts = opts.fonts;
     cpu.mem.screen_mode_word = opts.screen_mode_word;
-    const wav: ?*WavFile = if (opts.wav.len != 0) try WavFile.open(arena, io, opts.wav) else null;
+    const wav: ?*WavFile = if (opts.wav.len != 0) try WavFile.open(arena, io, opts.wav, opm.sample_rate) else null;
     if (wav) |f| cpu.sound.sink = .{ .ctx = f, .put_fn = WavFile.put };
+    const pcm_wav: ?*WavFile = if (opts.pcm_wav.len != 0) try WavFile.open(arena, io, opts.pcm_wav, pcm.max_rate) else null;
+    if (pcm_wav) |f| cpu.pcm.sink = .{ .ctx = f, .put_fn = WavFile.putPcm };
     // The clock counts from here, as a board's from its reset. A halt
     // stops it, the step limit does not (doc/DEVICES.md §3).
     var clock: Clock = .{ .io = io };
@@ -842,8 +872,8 @@ fn run(arena: std.mem.Allocator, io: std.Io, args: []const [:0]const u8, close_a
     if (sig != 0) dieOfSignal(out, sig);
     // The samples up to the halt or the step limit.
     cpu.syncSound();
-    if (wav) |f| f.finish() catch |err| {
-        std.debug.print("niceemu: cannot write {s}: {s}\n", .{ opts.wav, @errorName(err) });
+    for ([_]?*WavFile{ wav, pcm_wav }) |file| if (file) |f| f.finish() catch |err| {
+        std.debug.print("niceemu: cannot write {s}: {s}\n", .{ f.path, @errorName(err) });
         return error.Load;
     };
     return report(out, opts, syms, &cpu, steps, stop);
@@ -1398,6 +1428,7 @@ test {
     _ = @import("cpu.zig");
     _ = @import("fpu.zig");
     _ = @import("opm.zig");
+    _ = @import("pcm.zig");
     _ = @import("eth.zig");
     _ = @import("link.zig");
     _ = @import("frame.zig");

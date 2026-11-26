@@ -24,7 +24,7 @@ OPTS_wrap      = -d 0xffffffff:1
 PROBES = logic dest carry r15 cond rotate selfmod addr cputest console screen screencolor screeninvert iofetch \
   reads reserved mpu mpu64 mpubits perf events input r15modes r0dest r14mem skipconst carryin shiftc \
   wrapmem smcown scrbound time trapsym sd font net eth bytewin skip clock clockhost stack \
-  fpu fpustack fpudec fpufunc chunky short shortfar sound
+  fpu fpustack fpudec fpufunc chunky short shortfar sound pcm
 OPTS_dest    = -d 0x200:1 -d 0x211:1 -d 0x221:1
 OPTS_selfmod = -d 4:1
 OPTS_addr    = -d 0:1 -d 0x1fffff:1
@@ -89,6 +89,9 @@ OPTS_fpustack = -d 0x200:18 -d 0xffffff88:8
 OPTS_sound    = --step-time -d 0x200:9
 # sound again, with its words ordinary memory.
 OPTS_sound_mem = --step-time --no-sound -d 0x200:9
+OPTS_pcm      = --step-time -d 0x200:13
+# pcm again, with its words ordinary memory.
+OPTS_pcm_mem  = --step-time --no-sound -d 0x200:13
 OPTS_fpufunc = -d 0x200:22
 OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 
@@ -152,6 +155,7 @@ programs:
 	$(call check,clock_mem,test/clock.bin)
 	$(call check,fpu_mem,test/fpu.bin)
 	$(call check,sound_mem,test/sound.bin)
+	$(call check,pcm_mem,test/pcm.bin)
 	$(call check,skip_off,test/skip.bin)
 	$(call check,skip_limit,test/skip.bin)
 	$(call check,skip_mem,test/skip.bin)

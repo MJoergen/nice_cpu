@@ -282,6 +282,8 @@ This is a reading of the licenses, as the review of #209 said of its own, and no
 
 **Fix:** `make dist` copies the notices into `licenses/` of both archives: ymfm's, Spleen's, and those of the header of `fpu_seq.py`. A file with ymfm's notice beside the model, as `LICENSE.spleen` is beside the font, gives it something to copy. The emulator's README, under Download, says what `licenses/` holds.
 
+**Resolved.** `make dist` now puts three files into `licenses/` of both archives: `spleen.txt`, a copy of `font/LICENSE.spleen`, and `ymfm.txt` and `fpu_seq.txt`, which it writes from the headers of `opm_tables.py` and `fpu_seq.py`, so that each notice stays in one place. It fails if one of them lacks its copyright line. The emulator's README, under Download, and the License section of README.md say what `licenses/` holds. A run of `make dist` in a copy of the tree passed, and both archives have the three files. The notice of Zig's standard library, which both builds have too, is issue #218, labeled `question`.
+
 ### 4.2 doc/review/decisions.md has nothing of #209 and #216
 
 The branch added entries for #171, #164's `K` and `PICK`, and #210. The two issues of the sound weighed and dropped more, and each choice is in a closed issue alone:

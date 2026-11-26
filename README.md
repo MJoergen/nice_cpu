@@ -315,3 +315,8 @@ The code and the documents are under the [MIT license](LICENSE),
   `emulator/src/opm_tables.zig` and `hdl/src/opm_tables_pkg.vhd` are
   written from the tables. What they have of ymfm is under its BSD
   3-Clause license, which the header of `opm_tables.py` gives.
+
+The archives of a release have the notices of the font, of the FPU's
+sequences, and of the sound's model in `licenses/`, beside niceemu,
+which has all three, and those of SDL with the window
+([emulator/README.md](emulator/README.md#download)).

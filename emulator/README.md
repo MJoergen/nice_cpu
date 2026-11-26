@@ -16,11 +16,13 @@ files of V3.1 are:
 | File | What it is |
 |---|---|
 | `niceemu-V3.1-x86_64-linux.tar.gz` | Without the window. Static, so it runs on any distribution. |
-| `niceemu-window-V3.1-x86_64-linux.tar.gz` | With the window of `--window`, which plays the sound. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/`. |
+| `niceemu-window-V3.1-x86_64-linux.tar.gz` | With the window of `--window`, which plays the sound. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/` too. |
 | `SHA256SUMS` | The SHA-256 of both. |
 
-Each archive holds one directory, with `niceemu`, this README, and the
-license:
+Each archive holds one directory, with `niceemu`, this README, the
+license, and in `licenses/` the notices of the code of others that
+niceemu has: ymfm's for the sound, Sun's and musl's for the functions of
+the FPU, and Spleen's for the character ROM. To check and unpack one:
 
     $ sha256sum -c --ignore-missing SHA256SUMS
     $ tar xzf niceemu-V3.1-x86_64-linux.tar.gz

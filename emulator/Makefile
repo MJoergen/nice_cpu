@@ -194,7 +194,12 @@ window-test: window
 # The release files of README.md, Download: niceemu for x86_64 Linux,
 # without the window (static, musl) and with it (glibc 2.31 or later, as
 # SDL loads X11 or Wayland at run time), each packed with the README, the
-# license, and, with the window, the licenses of SDL. A named target
+# license, the notices of the code of others that niceemu has, in
+# licenses/, and, with the window, the licenses of SDL there. The notices
+# are Spleen's, for the character ROM, and those in the headers of
+# test/opm_tables.py, for the sound, and of test/fpu_seq.py, for the FPU's
+# functions: notice prints the comment of the script $(1) from the line
+# that starts with $(2) to its end, without the comment signs. A named target
 # builds for the baseline x86_64 CPU, not the CPU of this machine. The
 # FPU's vectors are replayed on the target and the optimization of the
 # first, and each build runs the programs of make test, and errors.py or,
@@ -203,6 +208,7 @@ window-test: window
 VERSION := $(shell sed -n 's/^ *\.version = "\(.*\)",$$/\1/p' build.zig.zon)
 TAG ?= V$(word 1,$(subst ., ,$(VERSION))).$(word 2,$(subst ., ,$(VERSION)))
 DIST = dist
+notice = awk '/^. $(2)/ { on = 1 } on && !/^./ { exit } on { sub(/^. ?/, ""); print }' $(1)
 PLAIN = niceemu-$(TAG)-x86_64-linux
 WINDOW = niceemu-window-$(TAG)-x86_64-linux
 
@@ -219,7 +225,13 @@ dist: bincheck
 	@NICEEMU=$(abspath $(DIST)/$(WINDOW)/bin/niceemu) $(PYTHON) test/window.py
 	for d in $(PLAIN) $(WINDOW); do \
 	  mv $(DIST)/$$d/bin/niceemu $(DIST)/$$d/ && rmdir $(DIST)/$$d/bin && \
-	  cp README.md ../LICENSE $(DIST)/$$d/ || exit 1; \
+	  cp README.md ../LICENSE $(DIST)/$$d/ && mkdir -p $(DIST)/$$d/licenses && \
+	  cp font/LICENSE.spleen $(DIST)/$$d/licenses/spleen.txt && \
+	  $(call notice,test/opm_tables.py,The data tables follow ymfm) > $(DIST)/$$d/licenses/ymfm.txt && \
+	  $(call notice,test/fpu_seq.py,The sources) > $(DIST)/$$d/licenses/fpu_seq.txt && \
+	  grep -q 'Copyright (c) 2021, Aaron Giles' $(DIST)/$$d/licenses/ymfm.txt && \
+	  grep -q 'Sun Microsystems' $(DIST)/$$d/licenses/fpu_seq.txt && \
+	  grep -q 'Rich Felker' $(DIST)/$$d/licenses/fpu_seq.txt || exit 1; \
 	done
 	for p in zig-pkg/sdl-* zig-pkg/sdl_linux_deps-*; do \
 	  n=$$(basename $$p | cut -d- -f1); mkdir -p $(DIST)/$(WINDOW)/licenses/$$n && \

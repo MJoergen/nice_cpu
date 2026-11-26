@@ -28,6 +28,14 @@ No finding is in the behavior of a core. Three are at the edge of a tool's: the 
 
 Nothing is fixed, committed, or filed: this file and its line in REFERENCES.md are the only changes to the tree.
 
+**Every finding but one is closed** on `dev-V3.1`, with a commit for each, and a **Resolved** paragraph under each. The release steps are done: the notes of `V3.1` (§1.1), the table of board tags (§1.2), and the version (§1.3). The sound is in the six lists of devices (§2.1), in the License section (§2.2), and in the archives of a release, with the notices of Spleen and of the FPU's sequences (§4.1). Its resources, its place on the bus, and the four units of `make timing` are as measured (§2.3, §2.4, §2.9). The figures that the FPU's changes left behind are right (§2.5 to §2.7, §2.12), and `make words` measures the float library itself. What no document said is said: what the sound's two issues decided against (§4.2), the rule for the I/O range (§4.3), that the sound has no formal check (§4.6), the pause and the watchdog at a full FIFO (§4.7), and the smaller gaps (§4.8). Two fixes are outside the documents: niceemu leaves a whole WAV file after a signal, with a test that fails on the emulator from before (§4.5), and CI checks the model against ymfm (§4.4). The older errors are fixed too (§3).
+
+Three issues came of the fixes: #217, the measurement of an MP3 decoder that #216 left open; #218, the notice of Zig's standard library in the archives; and #219, the formal checks of the sound's ports. §1.4 is open: #164 stays in the milestone `V3.1` until the user moves it.
+
+On the result `make test` passes, with 1609 lines of `PASS`, and so do every `make typecheck`, `make -C hdl lint`, `make -C doc/intro pdfcheck`, `make ymfmcheck`, and `make slow` in nvc, after which `release.py figures` passes too. `make -C emulator window-test` passes its 14 tests, and `make -C emulator dist` passed in a copy of the tree.
+
+What is left is the release's: #164's milestone, the push of `dev-V3.1`, a green CI run on the new head, where the job `ymfm` runs for the first time, `release.py check`, and the date of the `V3.1` section, which is set at the tag. A code review of the four commits of the sample player is the user's call (§1.5). The board follows in MJoergen/NiceMonMEGA65#176.
+
 ## 1. The release
 
 ### 1.1 RELEASE_NOTES.md has no section for `V3.1`
@@ -77,6 +85,8 @@ RELEASE.md step 2.9: the version is the new tag's, `3.1.0`, set before `release.
 RELEASE.md step 1.2: the milestone of the release has no open issue left. #164, "nicehdl: a faster arithmetic unit for the FPU", is open there. Two of its parts are done (5436324, dbfa2bf), one is decided against (1a2a381), and its last comment says that it "stays open for the barrel shifter and two quotient bits a cycle for `DIV`". The other 13 issues of the milestone are closed. #210 is closed with no milestone, and decisions.md has its entry.
 
 **Fix:** move #164 to the next milestone, or take the milestone off it, and close the milestone at the tag.
+
+**Open.** No milestone follows `V3.1` yet, so there is none to move #164 to, and which one it is, or none, is the user's choice. It is the one step of the release that the fixes leave.
 
 ### 1.5 CI, and the code review
 

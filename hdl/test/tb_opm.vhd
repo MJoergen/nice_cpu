@@ -142,8 +142,8 @@ begin
          variable s_v : std_logic_vector(31 downto 0);
       begin
          read_word(1, s_v);
-         assert s_v(31 downto 16) = X"2151" and unsigned(s_v(15 downto 8)) <= 64 and s_v(6 downto 0) = "0000000"
-                and (s_v(7) = '1') = (s_v(15 downto 8) /= X"00")
+         assert s_v(31 downto 16) = X"2151" and unsigned(s_v(15 downto 8)) <= 64
+                and s_v(6 downto 0) = "0000000" and (s_v(7) = '1') = (s_v(15 downto 8) /= X"00")
             report "tb_opm: the status is " & to_hstring(s_v)
             severity failure;
       end procedure check_status;
@@ -216,7 +216,8 @@ begin
       for n in 0 to count_v - 1 loop
          wait until rising_edge(clk) and valid = '1' for 4 * C_PERIOD * 10 ns;
          if valid /= '1' then
-            report "tb_opm: no sample " & integer'image(n) & " after " & integer'image(4 * C_PERIOD) & " cycles"
+            report "tb_opm: no sample " & integer'image(n) & " after " &
+                   integer'image(4 * C_PERIOD) & " cycles"
                severity error;
             stop(1);
          end if;
@@ -228,7 +229,8 @@ begin
             fails_v := fails_v + 1;
             if fails_v <= 10 then
                report "tb_opm: sample " & integer'image(n) & " is " &
-                      integer'image(to_integer(signed(left))) & " " & integer'image(to_integer(signed(right))) &
+                      integer'image(to_integer(signed(left))) & " " &
+                      integer'image(to_integer(signed(right))) &
                       ", not " & integer'image(left_v) & " " & integer'image(right_v)
                   severity error;
             end if;
@@ -242,7 +244,8 @@ begin
             severity error;
          fails_v := fails_v + 1;
       end if;
-      report "tb_opm: " & integer'image(count_v) & " samples, " & integer'image(fails_v) & " failures, " &
+      report "tb_opm: " & integer'image(count_v) & " samples, " &
+             integer'image(fails_v) & " failures, " &
              integer'image(waits) & " writes waited for a full FIFO";
       running <= false;
       if fails_v = 0 then

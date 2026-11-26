@@ -127,6 +127,8 @@ The three block RAMs are the tables of the sine, the exponential, and the phase 
 
 **Fix:** "1453 LUTs, 172 of them distributed RAM, 773 registers, 3 block RAMs of 18 Kb, and 1 DSP", from the report.
 
+**Resolved.** hdl/README.md has the figures of the report: 1453 LUTs, 172 of them distributed RAM, 773 registers, 3 block RAMs of 18 Kb, and 1 DSP, and what they hold. The slacks stand.
+
 ### 2.4 The sound's place on the bus, said two ways
 
 Since the sample player (1be8e50), the decoder gives the sound offsets 0 and 1 of the eight words, and the player offsets 2 to 7. hdl/README.md, "The sample player", MICROARCH.md §8, **Sample player**, and the header of `pcm.vhd` say so. Three places still have the sound alone on the eight words:

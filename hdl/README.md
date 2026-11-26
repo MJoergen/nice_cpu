@@ -825,8 +825,10 @@ which `emulator/test/opm_tables.py --vhdl` writes from the model's, and
 `make timing UNIT=opm` places the sound alone, out of context
 ([Timing](#timing)). On the MEGA65 with the default flow, on 2026-11-26,
 it leaves +2.271 ns on its own paths, +6.599 ns at its inputs, and
-+7.958 ns at its outputs. It takes 1432 LUTs, 172 of them distributed
-RAM, 769 registers, and no DSP or block RAM.
++7.958 ns at its outputs. It takes 1453 LUTs, 172 of them distributed
+RAM, 773 registers, 3 block RAMs of 18 Kb, and 1 DSP: the ROMs of the
+sine, of the exponential, and of the phase steps, and the multiplier of
+the phase step.
 
 `tb_opm` checks it against the vectors of the model (What the tests check).
 

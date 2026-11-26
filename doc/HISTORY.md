@@ -1028,3 +1028,26 @@ and 2341190 after, 0.4% fewer, and `hand.nasm` 1252613 and 1247655,
 after, and CoreMark 1078661 cycles an iteration before and 1068822
 after. The 2002 cycles that reads of `hand.nasm` waited for an older
 micro-operation went to 0.
+
+## The FPU's timing
+
+Until 2026-11-26, one run of `make timing UNIT=fpu` was the measure of
+the FPU's own paths, and the FPU took the start of a function from a
+decode of the function's number. `make timing-spread UNIT=fpu` then
+built the FPU of `V3.0` with its functions in seven orders in the ROM,
+which changes nothing that it does. The least, the median, and the most
+of its slack on the MEGA65 were 0.424, 0.839, and 1.342 ns in the
+`default` flow, and 0.274, 0.494, and 0.934 ns in the `timing` flow: the
+order of the functions alone moved the slack by nearly a nanosecond, and
+the order that `make timing` builds was the worst of the seven in the
+`default` flow. With the start in a register (#194), the three were
+0.565, 0.827, and 1.029 ns, and 0.573, 0.935, and 1.114 ns.
+
+The worst paths were then the reads of `FPU_STATUS`, `FPU_REL`, and
+`FPU_X_S`, which addressed the stack's distributed RAM with its top.
+After the faster steps of #164 they left 0.579 and 0.739 ns at the
+least, with medians of 1.015 and 0.878 ns. X and Y then became registers
+that follow each change of the stack (#211), with 0.816 and 0.854 ns at
+the least and medians of 1.018 and 0.913 ns. The reduction of a huge
+argument of `SIN`, `COS`, and `TAN` (#185) left the medians at 1.026 and
+0.879 ns, the figures of hdl/README.md.

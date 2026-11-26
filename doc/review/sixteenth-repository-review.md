@@ -222,6 +222,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** move the three sentences to a section of HISTORY.md on the FPU's timing, and "by 430 cycles, a little more than the 422 of one sample in the engine".
 
+**Resolved.** The three sentences are gone from hdl/README.md, which says what is so now, and doc/HISTORY.md has a section "The FPU's timing" with the figures before and after #194, #164, #211, and #185, from the commits. "What the tests check" says "by 430 cycles, a little more than the 422 of one sample in the engine".
+
 ### 2.12 runtime/README.md: 36 routines, and two lists that run together
 
 - **Tests:** "A second program calls the 33 routines of `math.h` the same way". `make -C runtime test` prints "PASS float_fpu (41080 calls of 52 routines, and inline, and 14128 of the 36 routines of math.h)": `sin`, `cos`, and `tan` have float versions in the library since 804dd41.

@@ -341,15 +341,11 @@ a register (#194), the faster steps of #164, X and Y in registers
 | `timing` flow | 0.297, 0.879, 1.103 ns | 6.458, 6.957, 7.520 ns | 7.958 ns in all | 1 of 7 |
 
 So the budget of 1.0 ns on the FPU's own paths lies inside the range of
-both flows. Before #185 the medians were 1.018 and 0.913 ns. The FPU of
-`V3.0`, which took the start from a decode of the function's number, had
-0.424, 0.839, and 1.342 ns in the `default` flow, and 0.274, 0.494, and
-0.934 ns in the `timing` flow: the order of the functions moved its
-slack by nearly a nanosecond. Before #211, the reads of `FPU_STATUS`,
-`FPU_REL`, and `FPU_X_S` addressed the stack's distributed RAM with its
-top, and their paths were the worst, with 0.579 and 0.739 ns at the
-least. Now X and Y are registers that follow each change of the stack,
-and the RAM is read only at addresses from registers.
+both flows. The start of a function comes from a register, so the order
+of the functions does not decide the slack. X and Y are registers that
+follow each change of the stack, and the stack's RAM is read only at
+addresses from registers. doc/HISTORY.md has the figures of the FPU
+before each of these.
 
 What a system may add to the core's ports, from `make timing` at 2026-11-25
 (`timing` and `default` flows, one run each, so each figure may be off by a
@@ -1119,8 +1115,8 @@ those of a reset: without the generic, 10923 samples differ.
 changed, and must fail. It also checks the status after a reset, that
 the other words read 0, and that a write of the status does nothing,
 and the rate of the samples: from the first to the last, each takes
-64 · `G_CLK_HZ` / 3579545 cycles, and the sum may be off by the 430
-cycles of one sample in the engine. `run/opm/high` runs 2000 samples at
+64 · `G_CLK_HZ` / 3579545 cycles, and the sum may be off by 430
+cycles, a little more than the 422 of one sample in the engine. `run/opm/high` runs 2000 samples at
 268 MHz, the most that `G_CLK_HZ` may be, with a sample every 4792
 cycles, where the sums of the sample clock need all 34 bits of its
 accumulator.

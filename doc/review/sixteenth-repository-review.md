@@ -231,6 +231,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** 36, and a sentence between the lists, such as "These hold for all of them:".
 
+**Resolved.** runtime/README.md says 36 routines, as the test prints, and a sentence between the two lists says that the properties hold for all the functions, those of the FPU and those in C.
+
 ### 2.13 bench/README.md: the model's rules lack the read after an I/O store
 
 4cefe99 gave the model a rule: PREPARE loads no read in the cycle a store into the I/O range leaves WRITE, so a read after one loads a cycle later, counted as the data bus's (#206). The header of `pipecycles.py`, MICROARCH.md §5.3, and HISTORY.md have it. The list of what the model has, in bench/README.md, has "a store that is on the bus from DBUS's store register a cycle after WRITE, and that FETCH waits for", and not this rule. The README's figures are those of the new model.

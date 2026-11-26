@@ -495,6 +495,8 @@ The others are C, in `libc/src/math/`:
 - `libm.h` stands in for musl's internal header, and `builtin.c` holds
   the functions that `math.h` maps to clang's built-ins.
 
+These hold for the functions, those of the FPU and those in C:
+
 - **Accuracy.** Each result is within 1 ulp of the true value, but
   those of `hypot`, within 1.1, and of `atan2`, within 1.6. Both follow
   musl's code, as the FPU's functions do, and round before their last
@@ -791,7 +793,7 @@ option. A comparison there gives 0 or 1, which must be the test of the
 routine's result. Each run pushes 14 values onto the FPU's stack before
 the calls, as a caller may keep values there across a call. After the
 calls the depth must be 14, with no stack fault, and the values must be
-those it pushed. A second program calls the 33 routines of `math.h` the
+those it pushed. A second program calls the 36 routines of `math.h` the
 same way, on 100 random operands each, with one value kept, as they use
 up to 15. Their results must be those of `fpu_model.py`'s FPU, which
 runs the same commands, with C's special cases of `pow` and `hypot`.

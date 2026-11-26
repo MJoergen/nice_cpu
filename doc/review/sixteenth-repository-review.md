@@ -239,6 +239,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** the rule in the list, after the store's.
 
+**Resolved.** The list of what the model has, in bench/README.md, has the rule after the store's: a read after a store into the I/O range, which PREPARE loads a cycle later.
+
 ### 2.14 Small points
 
 - **DEVICES.md §11.3, the bounds:** "against the exact value to 90 digits". `SIN`, `COS`, and `TAN` are checked at 420 digits, which a huge argument needs (`fpu_model_test.py`, "reduce by pi/2 to 420 digits").

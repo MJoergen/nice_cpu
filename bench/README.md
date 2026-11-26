@@ -308,6 +308,8 @@ MICROARCH.md §3 to §5:
   cycle after PREPARE loads it;
 - a store that is on the bus from DBUS's store register a cycle after
   WRITE, and that FETCH waits for;
+- a read after a store into the I/O range, which PREPARE loads a cycle
+  later, as it loads no read in the cycle the store leaves WRITE;
 - a cycle more for an access to another slave of the bus than the one
   before;
 - read data that reaches WRITE a cycle after its ACK, unless it only goes

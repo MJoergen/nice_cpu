@@ -88,7 +88,8 @@ than a small change: a difference smaller than the range of `SPREAD` in
 §11 is built beside the core, and must keep 100 MHz too: a change under
 `hdl/src/fpu*` that touches the paths of its `timing_groups.rpt` needs
 `make -C hdl timing UNIT=fpu` before and after, with both figures in
-the commit message. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
+the commit message, and for a small change the medians of
+`make -C hdl timing-spread UNIT=fpu`. VHDL follows [hdl/CODING_STYLE.md](hdl/CODING_STYLE.md), which
 `make -C hdl lint` checks.
 
 **Python** uses the standard library only and is `mypy --strict` clean.

@@ -629,9 +629,12 @@ emulator:
 # describes: the pipelined core, pipeline, by default, or the FPU, fpu.
 # For the part of BOARD (mega65 or nexys4ddr) with the directives of FLOW
 # (default, or timing as NiceMonMEGA65 builds), a clock of PERIOD ns, and
-# for the core BREAKS breakpoints and WATCHES watchpoints. The reports go
-# to build/timing/BOARD-FLOW-BREAKS-WATCHES/ for the core, and to
-# build/timing/fpu-BOARD-FLOW/ for the FPU: the worst
+# for the core BREAKS breakpoints and WATCHES watchpoints, or for the FPU
+# its functions in the ROM in the order rotated by ROTATE, 0 by default
+# (emulator/test/fpu_seq.py --vhdl --rotate). The reports go to
+# build/timing/BOARD-FLOW-BREAKS-WATCHES/ for the core, and to
+# build/timing/fpu-BOARD-FLOW/ for the FPU, with -rROTATE after it for a
+# rotation other than 0: the worst
 # register-to-register paths to timing.rpt, the worst from an input to
 # timing_in.rpt, the worst to an output to timing_out.rpt, and the endpoints
 # with less than 1 ns of slack, by group, to timing_groups.rpt. The worst of
@@ -646,18 +649,21 @@ FLOW   ?= default
 PERIOD ?= 10.0
 BREAKS ?= 4
 WATCHES ?= 4
+ROTATE ?= 0
 PART_mega65    = xc7a200tfbg484-2
 PART_nexys4ddr = xc7a100tcsg324-1
 TIMING_DIR_pipeline = $(BUILD)/timing/$(BOARD)-$(FLOW)-$(BREAKS)-$(WATCHES)
-TIMING_DIR_fpu      = $(BUILD)/timing/fpu-$(BOARD)-$(FLOW)
+TIMING_DIR_fpu      = $(BUILD)/timing/fpu-$(BOARD)-$(FLOW)$(if $(filter-out 0,$(ROTATE)),-r$(ROTATE))
 TIMING_DIR = $(TIMING_DIR_$(UNIT))
+SEQ_PKG = $(if $(filter-out 0,$(ROTATE)),$(abspath $(TIMING_DIR))/fpu_seq_pkg.vhd,$(CURDIR)/src/fpu_seq_pkg.vhd)
 
 timing:
 	@test -n "$(TIMING_DIR)" || { echo "unknown UNIT $(UNIT), not pipeline or fpu"; exit 1; }
 	@test -n "$(PART_$(BOARD))" || { echo "unknown BOARD $(BOARD)"; exit 1; }
 	@mkdir -p $(TIMING_DIR)
+	@test "$(ROTATE)" = 0 || $(PYTHON) ../emulator/test/fpu_seq.py --vhdl --rotate $(ROTATE) > $(SEQ_PKG)
 	@cd $(TIMING_DIR) && $(VIVADO) -mode batch -nolog -nojournal -source $(CURDIR)/timing.tcl \
-	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) $(BREAKS) $(WATCHES) $(UNIT) > timing.log 2>&1 || \
+	  -tclargs $(PART_$(BOARD)) $(FLOW) $(PERIOD) $(BREAKS) $(WATCHES) $(UNIT) $(SEQ_PKG) > timing.log 2>&1 || \
 	  { tail -20 timing.log; exit 1; }
 	@for r in timing timing_in timing_out; do \
 	  echo "$$r.rpt:"; grep -m1 -E "^Slack" $(TIMING_DIR)/$$r.rpt; \
@@ -666,23 +672,31 @@ timing:
 	@$(PYTHON) test/timing_budget.py $(TIMING_DIR) $(BOARD) $(PERIOD) $(FLOW) $(UNIT)
 
 # One run of make timing cannot show a change of a few tenths of a ns: a
-# change elsewhere moves the placement, and the slacks with it (#151). This
-# runs make timing for BOARD and FLOW with the seven counts of breakpoints
-# and watchpoints of SPREAD_VARIANTS, all at once, and prints the least,
-# median, and most of each slack. About 11 minutes with the default flow
-# and 40 with the timing flow, on 20 CPUs. The FPU has no such variants.
-SPREAD_VARIANTS = 4-0 4-1 4-2 4-3 4-4 2-0 2-4
-SPREAD_DIRS = $(foreach v,$(SPREAD_VARIANTS),$(BUILD)/timing/$(BOARD)-$(FLOW)-$(v))
+# change elsewhere moves the placement, and the slacks with it (#151, #194).
+# This runs make timing for UNIT, BOARD, and FLOW in seven variants, all at
+# once, and prints the least, median, and most of each slack: for the core
+# the counts of breakpoints and watchpoints of SPREAD_pipeline, and for the
+# FPU the rotations of its functions in the ROM of SPREAD_fpu. About 11
+# minutes for the core with the default flow and 40 with the timing flow,
+# and 4 and 5 for the FPU, on 20 CPUs.
+SPREAD_pipeline = 4-0 4-1 4-2 4-3 4-4 2-0 2-4
+SPREAD_fpu      = 0 2 4 6 8 10 12
+SPREAD_DIRS_pipeline = $(foreach v,$(SPREAD_pipeline),$(BUILD)/timing/$(BOARD)-$(FLOW)-$(v))
+SPREAD_DIRS_fpu      = $(BUILD)/timing/fpu-$(BOARD)-$(FLOW) \
+  $(foreach v,$(filter-out 0,$(SPREAD_fpu)),$(BUILD)/timing/fpu-$(BOARD)-$(FLOW)-r$(v))
 
 timing-spread:
-	@test "$(UNIT)" = pipeline || { echo "make timing-spread is for UNIT=pipeline"; exit 1; }
-	@$(MAKE) --no-print-directory -j $(words $(SPREAD_VARIANTS)) \
-	  $(addprefix timing-spread/,$(SPREAD_VARIANTS))
-	@$(PYTHON) test/timing_budget.py --spread $(SPREAD_DIRS)
+	@test -n "$(SPREAD_$(UNIT))" || { echo "unknown UNIT $(UNIT), not pipeline or fpu"; exit 1; }
+	@$(MAKE) --no-print-directory -j $(words $(SPREAD_$(UNIT))) \
+	  $(addprefix timing-spread-$(UNIT)/,$(SPREAD_$(UNIT)))
+	@$(PYTHON) test/timing_budget.py --spread $(SPREAD_DIRS_$(UNIT))
 
-timing-spread/%:
+timing-spread-pipeline/%:
 	@$(MAKE) --no-print-directory timing UNIT=pipeline BREAKS=$(word 1,$(subst -, ,$*)) \
 	  WATCHES=$(word 2,$(subst -, ,$*)) > /dev/null
+
+timing-spread-fpu/%:
+	@$(MAKE) --no-print-directory timing UNIT=fpu ROTATE=$* > /dev/null
 
 # Checks the style of every VHDL file against CODING_STYLE.md. Long lines are
 # only warnings.

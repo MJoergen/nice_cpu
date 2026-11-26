@@ -114,7 +114,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd hdl && make lint              # vsg style check (pip install vsg)
     cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, WRITE's halt and pause, the shared functions, the devices, and the debug link
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, UNIT=fpu for the FPU's, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
-    cd hdl && make timing-spread     # make timing with seven counts of breakpoints and watchpoints at once, and the median of each slack (4 minutes, 9 with FLOW=timing)
+    cd hdl && make timing-spread     # make timing in seven variants at once, and the median of each slack: counts of breakpoints and watchpoints, or UNIT=fpu orders of the FPU's functions (4 minutes, 9 with FLOW=timing; the FPU 4 and 5)
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)
     cd hdl && make random-sweep      # random programs, seeds 1 to RANDOM_LAST (1000), on each core of CORES (an hour or more)
     cd doc/intro && make test        # run the slides' example programs, and check the README's worked examples

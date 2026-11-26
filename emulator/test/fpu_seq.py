@@ -1639,14 +1639,16 @@ def zig() -> str:
 VHDL_OPS = {"cmd": 0, "K": 1, "PUT": 2, "JZ": 3, "JMP": 4, "POLE": 5, "END": 6}
 
 
-def vhdl() -> str:
+def vhdl(rotate: int = 0) -> str:
     """hdl/src/fpu_seq_pkg.vhd: the steps of every function in one ROM,
     each program followed by END, and the constants, as src/fpu.vhd runs
     them. A step is its operation in bits 19..17 and a number in bits
     16..0: the command word for a command, the index of the constant for
     K, n for PUT, and the address of the step for JZ and JMP. The table
     of constants has a power of two of entries, so that the low bits of
-    any step index it."""
+    any step index it. rotate moves the first that many programs to the
+    end of the ROM, which changes the addresses and nothing that the FPU
+    does: the variants of make timing-spread UNIT=fpu."""
     from fpu_model import NUMBERS  # here, as the model imports this module
 
     names, used = constant_names()
@@ -1654,7 +1656,9 @@ def vhdl() -> str:
     bases: Dict[str, int] = {}
     steps: List[str] = []
     base = 0
-    for name, prog in PROGRAMS.items():
+    order = list(PROGRAMS.items())
+    k = rotate % len(order)
+    for name, prog in order[k:] + order[:k]:
         bases[name] = base
         num, _ = FUNCTIONS[name]
         for i, step in enumerate(prog.code):
@@ -1761,5 +1765,7 @@ if __name__ == "__main__":
         print(zig(), end="")
     elif sys.argv[1:] == ["--vhdl"]:
         print(vhdl(), end="")
+    elif sys.argv[1:2] == ["--vhdl"] and sys.argv[2:3] == ["--rotate"] and len(sys.argv) == 4:
+        print(vhdl(int(sys.argv[3])), end="")
     else:
         print(listing(), end="")

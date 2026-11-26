@@ -8,8 +8,9 @@
 #
 # The arguments, all optional, are the part, the flow, the period in ns,
 # the number of breakpoints, G_BREAKS, and of watchpoints, G_WATCHES
-# (doc/DEBUG.md §6), 4 of each by default, and the unit, pipeline by
-# default. The FPU has no breakpoints or watchpoints. The flows:
+# (doc/DEBUG.md §6), 4 of each by default, the unit, pipeline by
+# default, and for the FPU the file of its sequences, src/fpu_seq_pkg.vhd
+# by default. The FPU has no breakpoints or watchpoints. The flows:
 #   default  the directives of Vivado's defaults
 #   timing   the directives that NiceMonMEGA65 builds with: synthesis
 #            PerformanceOptimized with retiming, Explore, ExtraTimingOpt,
@@ -31,14 +32,16 @@
 # at, with the worst slack of each group. A run of the core takes about 3
 # minutes with the default flow. A change elsewhere in the design moves
 # the placement, and with it the slacks, by up to 1.4 ns on the MEGA65, so
-# "make timing-spread" runs seven variants of the core
-# (test/timing_budget.py, SPREAD).
+# "make timing-spread" runs seven variants of the core, or of the FPU
+# with its functions in other orders in the ROM (test/timing_budget.py,
+# SPREAD).
 set part   [expr {$argc > 0 ? [lindex $argv 0] : "xc7a200tfbg484-2"}]
 set flow   [expr {$argc > 1 ? [lindex $argv 1] : "default"}]
 set period [expr {$argc > 2 ? [lindex $argv 2] : 10.0}]
 set breaks [expr {$argc > 3 ? [lindex $argv 3] : 4}]
 set watches [expr {$argc > 4 ? [lindex $argv 4] : 4}]
 set unit   [expr {$argc > 5 ? [lindex $argv 5] : "pipeline"}]
+set seqpkg [expr {$argc > 6 ? [lindex $argv 6] : ""}]
 set margin 1.0
 
 if {$flow eq "default"} {
@@ -65,7 +68,10 @@ if {$unit eq "pipeline"} {
   synth_design -top pipeline -part $part -mode out_of_context -generic G_BREAKS=$breaks \
     -generic G_WATCHES=$watches {*}$d_synth
 } elseif {$unit eq "fpu"} {
-  read_vhdl -vhdl2008 [list $src/fpu_pkg.vhd $src/fpu_seq_pkg.vhd $src/fpu_unit.vhd $src/fpu.vhd]
+  if {$seqpkg eq ""} {
+    set seqpkg $src/fpu_seq_pkg.vhd
+  }
+  read_vhdl -vhdl2008 [list $src/fpu_pkg.vhd $seqpkg $src/fpu_unit.vhd $src/fpu.vhd]
   synth_design -top fpu -part $part -mode out_of_context {*}$d_synth
 } else {
   error "unknown unit $unit, not pipeline or fpu"

@@ -20,7 +20,7 @@ period without a budget is "none".
 One run cannot tell a small change from noise. Vivado gives the same result
 for the same input, but a change elsewhere in the design moves the
 placement, and with it the slacks, by more than the margin of the budget
-(#151). SPREAD has the range seen over the seven variants of "make
+(#151, #194). SPREAD has the range seen over the seven variants of "make
 timing-spread", and a miss by less than it says so. --spread judges those
 variants: a change counts if it moves the median by more than the range.
 """
@@ -53,17 +53,22 @@ BUDGET: dict[tuple[str, str], tuple[float, float, float, float]] = {
     ("fpu", "mega65"): (10.0, 1.0, 1.5, 2.2),
 }
 
-# (board, flow): the range, most less least, of the slack of the core, the
-# inputs, and the outputs over the seven variants of make timing-spread, in
-# ns. The MEGA65's from V3.0, on 2026-11-25: in the default flow the core has
-# -0.005 to 0.434, the inputs 1.741 to 2.996, and the outputs 0.709 to 2.597;
-# in the timing flow 0.079 to 0.551, 1.463 to 2.735, and 1.290 to 2.770.
-# So the budget of the outputs lies inside the range of both flows, and the
-# core's inside that of the default flow. The FPU has no such variants, and
-# no range.
-SPREAD: dict[tuple[str, str], tuple[float, float, float]] = {
-    ("mega65", "default"): (0.44, 1.26, 1.89),
-    ("mega65", "timing"): (0.47, 1.27, 1.48),
+# (unit, board, flow): the range, most less least, of the slack of the unit,
+# the inputs, and the outputs over the seven variants of make timing-spread,
+# in ns. The core's on the MEGA65 from V3.0, on 2026-11-25: in the default
+# flow the core has -0.005 to 0.434, the inputs 1.741 to 2.996, and the
+# outputs 0.709 to 2.597; in the timing flow 0.079 to 0.551, 1.463 to 2.735,
+# and 1.290 to 2.770. So the budget of the outputs lies inside the range of
+# both flows, and the core's inside that of the default flow. The FPU's on
+# the MEGA65 from V3.0, on 2026-11-26, with its functions in seven orders in
+# the ROM: in the default flow the FPU has 0.424 to 1.342, the inputs 9.502,
+# and the outputs 7.958; in the timing flow 0.274 to 0.934, 7.997 to 8.414,
+# and 7.958. So the budget of the FPU lies inside the range of both flows.
+SPREAD: dict[tuple[str, str, str], tuple[float, float, float]] = {
+    ("pipeline", "mega65", "default"): (0.44, 1.26, 1.89),
+    ("pipeline", "mega65", "timing"): (0.47, 1.27, 1.48),
+    ("fpu", "mega65", "default"): (0.92, 0.0, 0.0),
+    ("fpu", "mega65", "timing"): (0.66, 0.42, 0.0),
 }
 
 SLACK = re.compile(r"^Slack \((?:MET|VIOLATED)\)\s*:\s*(-?\d+\.\d+)ns", re.M)
@@ -93,8 +98,8 @@ def judge(d: Path, board: str, period: float, flow: str = "default",
         out["status"] = "missed"
     else:
         out["status"] = "met" if reg >= reg_min and p_in >= in_min and p_out >= out_min else "missed"
-        spread = SPREAD.get((board, flow))
-        if out["status"] == "missed" and spread is not None and unit == "pipeline":
+        spread = SPREAD.get((unit, board, flow))
+        if out["status"] == "missed" and spread is not None:
             out["within_spread"] = all(s >= m - w for s, m, w in
                                        zip((reg, p_in, p_out), (reg_min, in_min, out_min), spread))
     return out
@@ -198,7 +203,12 @@ def self_test() -> None:
         fake(d, "0.900", "2.254", "2.456")
         assert judge(d, "mega65", 10.0)["status"] == "met"
         assert judge(d, "mega65", 10.0, "default", "fpu")["status"] == "missed"
-        assert "within_spread" not in judge(d, "mega65", 10.0, "default", "fpu")
+        assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is True
+        fake(d, "0.200", "2.254", "2.456")
+        assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is True
+        assert judge(d, "mega65", 10.0, "timing", "fpu")["within_spread"] is False
+        assert "within_spread" not in judge(d, "nexys4ddr", 10.0, "default", "fpu")
+        fake(d, "0.900", "2.254", "2.456")
         assert "fpu 0.9 ns (>= 1.0)" in describe(judge(d, "mega65", 10.0, "default", "fpu"))
         fake(d, "1.000", "1.500", "2.200")
         assert judge(d, "mega65", 10.0, "timing", "fpu")["status"] == "met"

@@ -189,7 +189,7 @@ for the ports is a margin, not a promise. The two figures keep about 0.2
 ns of the slack that NiceMonMEGA65 measured inside its system at `V1.0`.
 One run varies with placement by more than that margin, and a miss by
 less than one run varies says so: then `make -C hdl timing-spread`, the
-median of seven runs, tells noise from a real loss
+median of seven runs, with `UNIT=fpu` for the FPU, tells noise from a real loss
 ([hdl/README.md](../hdl/README.md#timing)).
 Skip the run with `--skip-timing`.
 

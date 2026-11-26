@@ -340,6 +340,8 @@ README.md: "Formal checks cover their ports, five stages of the pipeline, the de
 
 **Fix:** a job for the port of each, with the checker. Or a sentence under "The formal checks" that the two have test benches alone, and "the devices but the sound" in README.md and CLAUDE.md.
 
+**Resolved.** The sentence, not the jobs, before a release. hdl/README.md says under "The formal checks" that `opm.vhd` and `pcm.vhd` have no job, and that their test benches alone check their ports; README.md and CLAUDE.md say "the devices but the sound"; and the two lines on `formal/` say "each unit that is checked". The jobs are issue #219, labeled `enhancement`, with what each would prove.
+
 ### 4.7 A pause, a step, and a watchdog while a write waits
 
 - **DEVICES.md §12** does not say that a pause and a step of the debug link wait for a write to a full FIFO. hdl/README.md says it of both units: "A pause and a step of the debug link wait that long", up to 100000 cycles, 1 ms, for the player at 1000 Hz. §11.5 says it of the FPU's commands.

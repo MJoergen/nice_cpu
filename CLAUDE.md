@@ -113,7 +113,7 @@ The rules a change follows, and the tests, are in CONTRIBUTING.md:
     cd hdl && make test              # synth check, unit tests, tb_trace, then both cores diffed against niceemu
     cd hdl && make typecheck         # mypy --strict
     cd hdl && make lint              # vsg style check (pip install vsg)
-    cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, WRITE's halt and pause, the shared functions, the devices, and the debug link
+    cd hdl && make formal            # SymbiYosys: the ports of both cores and wb_dmux; proofs of FETCH, DECODE, PREPARE, DBUS, WRITE's halt and pause, the shared functions, the devices but the sound, and the debug link
     cd hdl && make timing            # the pipelined core's worst paths out of context in Vivado, UNIT=fpu for the FPU's, UNIT=opm for the sound's, UNIT=pcm for its sample player's, BOARD=mega65 or nexys4ddr, FLOW=default or timing (3 minutes)
     cd hdl && make timing-spread     # make timing in seven variants at once, and the median of each slack: counts of breakpoints and watchpoints, or UNIT=fpu orders of the FPU's functions (4 minutes, 9 with FLOW=timing; the FPU 4 and 5)
     cd hdl && make programs          # the runtime and translator programs on CORE, or its share SHARD=I/N, SIM=ghdl or nvc (minutes)

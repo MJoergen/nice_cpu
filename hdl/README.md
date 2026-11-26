@@ -60,7 +60,7 @@ and `make timing` found in the release stamp
 | [src/](src/README.md) | The synthesizable VHDL: the two cores, their shared packages, and the devices. |
 | [sim/](sim/README.md) | The trace writer, the memory model, and the SD card engine, for simulation only. |
 | [test/](test/README.md) | The testbenches, the test programs, and the scripts that run them. |
-| [formal/](formal/README.md) | The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job for each unit. |
+| [formal/](formal/README.md) | The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job for each unit that is checked. |
 
 ## Running the tests
 
@@ -1564,6 +1564,12 @@ Each job also has a `cover` task, with Yices, or Boolector for
 `nice_pkg`, and `debug_link` a `cover_side` for its side client. The
 times are those of one `make formal` with Yosys 0.56, all jobs at once
 on 20 CPUs. The paragraphs below say what each job assumes and asserts.
+
+The sound and its sample player, `opm.vhd` and `pcm.vhd`, have no job
+(#219). Their test benches alone check their ports, with the write that
+a full FIFO holds: `tb_opm` and `tb_pcm` (What the tests check). The
+FPU's arithmetic unit has none either, as `formal_fpu` puts a free
+stand-in in its place, below.
 
 `formal_multicycle` connects the multi-cycle core to `core_check`, which
 both cores share, and which puts a checker on each of its two buses.

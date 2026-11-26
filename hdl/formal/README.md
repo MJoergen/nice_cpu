@@ -1,6 +1,6 @@
 # hdl/formal
 
-The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job for each unit. [hdl/README.md](../README.md#the-formal-checks) says how to run them and what each proves.
+The formal checks: the checkers of the ports, and a wrapper and a SymbiYosys job for each unit that is checked. The sound and its sample player have none. [hdl/README.md](../README.md#the-formal-checks) says how to run them and what each proves.
 
 | File | What it is |
 |---|---|

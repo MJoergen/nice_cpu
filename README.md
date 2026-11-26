@@ -24,8 +24,8 @@ different FPGA implementations: the pipelined one, whose design note is
 [doc/MICROARCH.md](doc/MICROARCH.md), which is the default, and a simple
 multi-cycle one. Both are tested by comparing their traces with the
 emulator's, instruction by instruction, and both pass. Formal checks
-cover their ports, five stages of the pipeline, the devices, and the
-shifter and the ALU for every input.
+cover their ports, five stages of the pipeline, the devices but the
+sound, and the shifter and the ALU for every input.
 
 The core is FPGA-agnostic. This repository has no board top level and no
 synthesis for a particular board. An example design for the MEGA65, which

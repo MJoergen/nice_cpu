@@ -213,6 +213,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** as said at each.
 
+**Resolved.** The README names `ASIN` of 2 as the operand beyond its bound, says how a program waits before its `HALT` with and without `--step-time`, points at the window above, has the sound's vectors in `make dist`, and has `make opmcheck`, the sound's vectors, `test/wav.py`, and the models' tests in the account of `make test`, where `test/errors.py` is no longer last. The archives of the table are those of `V3.1`, whose window plays the sound. `window.py` prints 14 tests.
+
 ### 2.11 hdl/README.md: what used to be true, and 430 cycles
 
 - **History.** After the FPU's table of `make timing-spread`: "Before #185 the medians were 1.018 and 0.913 ns. The FPU of `V3.0`, which took the start from a decode of the function's number, had 0.424, 0.839, and 1.342 ns in the `default` flow … Before #211, the reads of `FPU_STATUS`, `FPU_REL`, and `FPU_X_S` addressed the stack's distributed RAM with its top, and their paths were the worst, with 0.579 and 0.739 ns at the least." The figures are those of the commits. They say what used to be true, which belongs to HISTORY.md (CONTRIBUTING.md, Documents), and HISTORY.md has nothing of #194, #164, or #211.

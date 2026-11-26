@@ -505,7 +505,7 @@ def main() -> None:
         test_close_link(tmp)
         test_sound(tmp)
         test_player(tmp)
-    print("PASS window (13 tests)")
+    print("PASS window (14 tests)")
 
 
 if __name__ == "__main__":

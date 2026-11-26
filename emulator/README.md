@@ -11,20 +11,20 @@ The window of `--window` needs a build with `-Dwindow`, below.
 
 Each [release](https://github.com/MJoergen/nice_cpu/releases) from V1.2
 on has niceemu built for x86_64 Linux, so it can run without Zig. The
-files of V1.2 are:
+files of V3.1 are:
 
 | File | What it is |
 |---|---|
-| `niceemu-V1.2-x86_64-linux.tar.gz` | Without the window. Static, so it runs on any distribution. |
-| `niceemu-window-V1.2-x86_64-linux.tar.gz` | With the window of `--window`, which plays the sound. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/`. |
+| `niceemu-V3.1-x86_64-linux.tar.gz` | Without the window. Static, so it runs on any distribution. |
+| `niceemu-window-V3.1-x86_64-linux.tar.gz` | With the window of `--window`, which plays the sound. Needs glibc 2.31 or later, and X11 or Wayland for the window. Has the licenses of SDL in `licenses/`. |
 | `SHA256SUMS` | The SHA-256 of both. |
 
 Each archive holds one directory, with `niceemu`, this README, and the
 license:
 
     $ sha256sum -c --ignore-missing SHA256SUMS
-    $ tar xzf niceemu-V1.2-x86_64-linux.tar.gz
-    $ niceemu-V1.2-x86_64-linux/niceemu --help
+    $ tar xzf niceemu-V3.1-x86_64-linux.tar.gz
+    $ niceemu-V3.1-x86_64-linux/niceemu --help
 
 Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
 `make build` builds. `make dist` builds them, below.
@@ -58,7 +58,8 @@ runs is under [Tests](#tests), at the end.
 release workflow, `.github/workflows/release.yml`, runs it on each tag.
 It builds niceemu for `x86_64-linux-musl` without the window, and for
 `x86_64-linux-gnu.2.31` with it, as SDL loads the libraries of X11 or
-Wayland at run time, which a static build cannot. It first replays the FPU's vectors in a unit test built for
+Wayland at run time, which a static build cannot. It first replays the
+FPU's vectors and the sound's in a unit test built for
 `x86_64-linux-musl` with ReleaseSafe. It runs the programs of
 `make test` and `test/link.py` on both, `test/errors.py` on the first, and
 `test/window.py` on the second. Their names take the tag from the version
@@ -471,8 +472,8 @@ depth, the stack faults, the sticky flags, a save and a restore of
 and a read of the eight words through `@R9++`. `test/fpudec.nasm` prints
 numbers through `DIGITS 15`, and reads one back through `FROMBCD` and
 `SCALE10`. `test/fpufunc.nasm` runs `SIN`, `COS`, `TAN`, `ATAN2`,
-`EXP`, `LN`, `POW`, `HYPOT`, and `POW2`, one beyond its bound, and one
-whose frame does not fit above the stack.
+`EXP`, `LN`, `POW`, `HYPOT`, and `POW2`, `ASIN` of 2, beyond its bound,
+and one whose frame does not fit above the stack.
 
 ### Clock
 
@@ -515,8 +516,10 @@ eight words ordinary memory.
 PCM, left first, at 55930 Hz, the sound's rate of 55930.4 rounded down.
 Its header states the sizes once the run ends. A run with `--step-time`
 gives the same file each time. To hear a program to its last note, let
-it wait with `TIME_SKIP` before its `HALT`. The window of `--window`
-plays the samples (Window below).
+it wait before its `HALT`: with `--step-time` by a write of `TIME_SKIP`,
+which is ignored without it, and else by reading `TIME_LO` in a loop.
+The window of `--window`
+plays the samples (Window above).
 
 `src/opm_tables.zig` holds the tables of the synthesizer. `test/opm_tables.py`
 writes it:
@@ -759,10 +762,12 @@ line.
 ## Tests
 
 `make test` first checks with `zig fmt --check` that the Zig sources are
-laid out as `zig fmt` lays them out, and with `make seqcheck` that
+laid out as `zig fmt` lays them out, with `make seqcheck` that
 `src/fpu_seq.zig` is what `test/fpu_seq.py` writes (Floating-point unit
-above). It then writes the FPU's vectors
-with `test/fpu_vectors.py`, runs the unit tests in `src/cpu.zig` and the
+above), and with `make opmcheck` the same of `src/opm_tables.zig` and
+`test/opm_tables.py` (Sound above). It then writes the FPU's vectors
+with `test/fpu_vectors.py` and the sound's with `test/opm_vectors.py`,
+runs the unit tests in `src/cpu.zig` and the
 other sources, which replay the vectors, for this machine's CPU and again
 for the baseline x86_64 CPU of the release files (Download), which has
 no FMA instruction. Zig keeps the result of a run of the unit tests, and
@@ -806,17 +811,19 @@ but `h` (DEBUG.md §9). And it checks that the reserved registers
 control register, read 0 and take no write, and that the range answers
 while the program runs. And it checks the screen's mode word over
 the link, and that `--no-screen-mode` holds after a clear.
-Then `test/udp.py` checks the frames over the socket of `--eth-udp`
+Then `test/wav.py` checks the files of `--wav` and `--pcm-wav` (Sound
+above), and `test/udp.py` checks the frames over the socket of `--eth-udp`
 (Ethernet frames above), and `test/tap.py` the same through
 `tools/nicetap.py` and a TAP device (A real network above).
-Last, `test/errors.py` checks the error messages and exit statuses of the
+Then `test/errors.py` checks the error messages and exit statuses of the
 command line and the loader, and the exit status and some output lines of
 runs that stop in each way: `HALT`, a reserved control word, and the
 step limit, `-n 0` included, and that `--irq`, `--nmi`, and
 `--no-timer-irq` are unknown options. It checks the name
 of each trap code with a symbol file, input files with CR LF lines, the
 screen's mode word with and without `--no-screen-mode`, and the pixels
-with `-2004`.
+with `-2004`. Last come the tests of the two models,
+`test/fpu_model_test.py` and `test/opm_model_test.py`, below.
 
 `test/fpu_model.py` is a reference model of the floating-point unit of
 DEVICES.md §11. It computes every result exactly, with Python's

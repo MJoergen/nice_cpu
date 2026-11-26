@@ -169,8 +169,9 @@ end entity tb_core;
 
 architecture simulation of tb_core is
 
-   -- A step takes far fewer cycles than this, even one that waits for the
-   -- FPU, whose longest command, DIGITS, takes some 3200 cycles.
+   -- A step takes fewer cycles than this, even one that waits for the
+   -- FPU, whose longest command, TAN of a huge X, takes at most 6108,
+   -- and at most 7350 by its bound in test/tb_fpu.vhd.
    constant C_STEP_TIMEOUT : natural := 10000;
 
    -- A word in hex, for G_PATCH_DATA

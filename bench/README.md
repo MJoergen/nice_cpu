@@ -23,7 +23,7 @@ NICE with other processors.
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
-    make words      # the size in words of the benchmark, safe.zig, CoreMark, and math modules, and of the C library's parts
+    make words      # the size in words of the benchmark, safe.zig, CoreMark, the float library, and math modules, and of the C library's parts (needs clang)
     make mathsteps  # the steps of a call of each math function of the C library on the emulator
     make native     # build and run bench.c, float.c, and CoreMark on the host, as a check
     make wasm       # rebuild bench.wasm, float.wasm, dhrystone/dhry.wasm, and coremark/coremark.wasm (needs clang)
@@ -511,7 +511,9 @@ own, and `make words` prints the benchmark with
 `--no-bounds-checks` as well, 5445, 43% fewer. 2578 of the benchmark's
 words are the
 float conversions of `printf`, which every program that calls it gets,
-and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
+and `iprintf` leaves out (runtime/README.md). A `.nasm` file is counted
+as it is, and `make words` prints the size of the float library,
+`runtime/float_fpu.nasm`, 409 words. It also builds `build/math.wasm`, with
 clang, a module of the math functions of the C library that are C, in
 double and float, and prints its size, 880 words, which
 runtime/README.md quotes. The others are routines of the float library.
@@ -580,7 +582,7 @@ values, and runs the program; `make native` runs it on the host. To
 change a size, edit its define, run `python3 floatexpected.py`, put its
 values in `float.c`, and run `make wasm`.
 
-The program is 8632 words, the float library among them. The table
+The program is 8641 words, the float library among them. The table
 from the emulator:
 
     phase      instructions       cycles  result
@@ -609,7 +611,7 @@ make it faster.
 
 `make test` also runs `float.c` as `build/float_inline.bin`, translated
 with nicewasm's `--inline-fpu`, which writes the FPU's accesses in place
-of most calls of the float library. The program takes 9060 words, 428
+of most calls of the float library. The program takes 9069 words, 428
 more, and the emulator gives:
 
     phase      instructions       cycles  result

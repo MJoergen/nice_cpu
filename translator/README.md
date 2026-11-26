@@ -150,7 +150,7 @@ the module `nice`. Zig and Rust take one source file, the root of the
 program, and a Rust program that wants `nice.rs` mounts it itself (runtime
 README). The float library, `runtime/float_fpu.nasm`, which uses the FPU
 of DEVICES.md §11, is joined if the program calls it, for a float
-operation or a function of `math.h`: all of it, 400 words. A function of
+operation or a function of `math.h`: all of it, 409 words. A function of
 the program's own with the name of one of the library's, such as an
 exported `log`, is no call of it. A wasm trap writes a line with its code
 and address to the console before the processor halts, as `trapmsg.nasm`

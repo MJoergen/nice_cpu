@@ -265,7 +265,8 @@ A routine pushes the operands, writes a command, reads the result, and
 pops it, so it leaves the FPU's stack as it found it. A routine of the
 table below uses at most two of its values (DEVICES.md §11.5). An entry
 sets the command in R5 and jumps to a part that the entries share, so
-the library is 400 words, 245 of them for the float operations and the
+the library is 409 words, as `make words` in `bench/` prints, 245 of
+them for the float operations and the
 rest for the functions of `math.h` (Math functions, below). A program
 that calls any routine of it is joined with all of it. An
 `f32` goes in and out through the view `FPU_X_S`, and `+`, `−`, `×`,
@@ -390,7 +391,7 @@ The library is small on purpose:
   exact arithmetic. The float arithmetic is the float library's, so a
   program that calls `scanf`, even only for integers, is joined with
   the float library. `sscanf` with `%d` alone is 7000 words, and the float
-  library comes with it, 400 words more. This size, and those of
+  library comes with it, 409 words more. This size, and those of
   `siscanf`, `printf`, and `iprintf` below, are those of the programs of
   `bench/libc/`, built with `nicebuild.py` and counted by `words.py`
   with no runtime, as `make words` in `bench/` prints them.

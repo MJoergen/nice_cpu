@@ -179,6 +179,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** 409 and 164, and 8641 and 9069. `make -C bench words` could print the library's size beside those of the C library's parts.
 
+**Resolved.** The four places say 409, DEVICES.md §11.5 164 words for the functions, and bench/README.md 8641 and 9069 words for the float benchmark. `words.py` now counts a `.nasm` file as it is, and `make -C bench words` prints `float_fpu 409`, so the figure has a target that gives it.
+
 ### 2.8 DEVICES.md §12.4: the model's test checks half of the formulas
 
 "The model gives these, and `emulator/test/opm_model_test.py` checks them." emulator/README.md says the same: it "checks the model against the formulas of DEVICES.md §12.4". The script has eight tests: the pitch, with KF, DT2, and MUL, a tone, the times of the rates, the effective rate, the levels of TL and D1L, the LFO's step and its reset, the rules of the writes, and the DAC. It has no test of DT1, of an attack at r = 62 or 63, of the silence from 0x380 on, of the scale of a modulation and of the feedback, of a channel's clip, of AMD, PMD, AMS, and PMS, of the LFO's waves, or of the noise. No word of `dt1`, `noise`, `feedback`, `AMS`, `PMS`, or `clip` is in the file. What checks those is ymfm, through `make ymfmcheck`, which no gate runs (§4.4), and the reader's comparison of §12.4 with `opm.zig` found them right.

@@ -6,7 +6,8 @@
     ./words.py --test                             check the count on a snippet
 
 Each module is translated with ../translator/nicewasm.py, and assembled
-on its own. OPTIONS are options for nicewasm, in one argument, such as
+on its own. A FILE.nasm, such as the float library, is not translated,
+and is counted as it is. OPTIONS are options for nicewasm, in one argument, such as
 "--trust-alignment --byte-windows". The labels it uses but does not define, such as the runtime's
 routines, are defined as 0 with .EQU first. A constant takes a whole word
 whatever its value (ISA.md §2.3),
@@ -77,7 +78,7 @@ def test() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("files", nargs="*", metavar="FILE.wasm")
+    ap.add_argument("files", nargs="*", metavar="FILE.wasm", help="a wasm module, or a .nasm file, counted as it is")
     ap.add_argument("--test", action="store_true")
     ap.add_argument("--options", default="", help="options for nicewasm, in one argument")
     ap.add_argument("--minus", metavar="BASE.wasm", help="count each module less the words of BASE")
@@ -93,6 +94,10 @@ def main() -> None:
         less = f" less {os.path.splitext(os.path.basename(a.minus))[0]}" if a.minus else ""
         for wasm in a.files:
             name = os.path.splitext(os.path.basename(wasm))[0]
+            if wasm.endswith(".nasm"):
+                with open(wasm) as f:
+                    print(f"{name} {words(f.readlines(), wasm)}")
+                continue
             n = words(translate(wasm, tmp, options), wasm) - base
             print(f"{name} {n} {a.options}".rstrip() + less)
 

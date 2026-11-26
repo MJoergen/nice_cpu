@@ -270,10 +270,11 @@ profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/float.bin $(BUILD)/bench.
 	@NICEEMU=$(EMU) $(PYTHON) cycprof.py $(BUILD)/float.full.nasm $(BUILD)/float.bin
 
 # The size in words of the translated modules the READMEs quote: the
-# benchmark's, translator/test/safe.zig's, and CoreMark's, and that of a
+# benchmark's, translator/test/safe.zig's, and CoreMark's, that of the
+# float library, runtime/float_fpu.nasm, and that of a
 # module of the math functions of the C library that are C, in double
 # and float, which needs clang. The others are routines of the float
-# library, runtime/float_fpu.nasm. Then the programs of libc/ that call
+# library. Then the programs of libc/ that call
 # printf, iprintf, sscanf, and siscanf with %d alone, built by nicebuild,
 # and the words each of those math functions brings into a program: those
 # of a module of libc/mathbase.c with the function exported too, less
@@ -285,6 +286,7 @@ words:
 	@$(PYTHON) words.py bench.wasm ../translator/test/safe.wasm $(CM)/coremark.wasm
 	@$(PYTHON) words.py --options "--trust-alignment --byte-windows" bench.wasm
 	@$(PYTHON) words.py --options "--trust-alignment --byte-windows --no-bounds-checks" bench.wasm
+	@$(PYTHON) words.py ../runtime/float_fpu.nasm
 	@$(MAKE) -s --no-print-directory -C $(LIBC) libc.a
 	@mkdir -p $(BUILD)/libc
 	@$(CLANG) --target=wasm32 -mbulk-memory -nostdlib -Wl,--no-entry \

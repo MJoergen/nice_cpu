@@ -273,18 +273,38 @@ profile: $(BUILD)/bench.bin $(BUILD)/hand.bin $(BUILD)/float.bin $(BUILD)/bench.
 # benchmark's, translator/test/safe.zig's, and CoreMark's, and that of a
 # module of the math functions of the C library that are C, in double
 # and float, which needs clang. The others are routines of the float
-# library, runtime/float_fpu.nasm.
+# library, runtime/float_fpu.nasm. Then the programs of libc/ that call
+# printf, iprintf, sscanf, and siscanf with %d alone, built by nicebuild,
+# and the words each of those math functions brings into a program: those
+# of a module of libc/mathbase.c with the function exported too, less
+# those of the module of libc/mathbase.c alone.
 MATH_FUNCS = ceil copysign cos fabs floor fmax fmin frexp modf nearbyint rint sin sqrt tan trunc
+LIBC_SIZES = printf iprintf sscanf siscanf
+MATH_CLANG = $(CLANG) --target=wasm32 -mbulk-memory -O2 -nostdlib -Wl,--no-entry
 words:
 	@$(PYTHON) words.py bench.wasm ../translator/test/safe.wasm $(CM)/coremark.wasm
 	@$(PYTHON) words.py --options "--trust-alignment --byte-windows" bench.wasm
 	@$(PYTHON) words.py --options "--trust-alignment --byte-windows --no-bounds-checks" bench.wasm
 	@$(MAKE) -s --no-print-directory -C $(LIBC) libc.a
-	@mkdir -p $(BUILD)
+	@mkdir -p $(BUILD)/libc
 	@$(CLANG) --target=wasm32 -mbulk-memory -nostdlib -Wl,--no-entry \
 	  $(foreach f,$(MATH_FUNCS),-Wl,--export=$(f) -Wl,--export=$(f)f) \
 	  -o $(BUILD)/math.wasm $(LIBC)/libc.a
 	@$(PYTHON) words.py $(BUILD)/math.wasm
+	@$(foreach p,$(LIBC_SIZES),$(PYTHON) ../translator/nicebuild.py --keep -o $(BUILD)/libc/$(p).bin libc/$(p).c &&) true
+	@$(PYTHON) words.py $(LIBC_SIZES:%=$(BUILD)/libc/%.wasm)
+	@$(MATH_CLANG) -Wl,--export=base -o $(BUILD)/libc/mathbase.wasm libc/mathbase.c $(LIBC)/libc.a
+	@$(foreach f,$(MATH_FUNCS) $(MATH_FUNCS:%=%f),$(MATH_CLANG) -Wl,--export=base -Wl,--export=$(f) \
+	  -o $(BUILD)/libc/$(f).wasm libc/mathbase.c $(LIBC)/libc.a &&) true
+	@$(PYTHON) words.py --minus $(BUILD)/libc/mathbase.wasm $(foreach f,$(MATH_FUNCS),$(BUILD)/libc/$(f).wasm $(BUILD)/libc/$(f)f.wasm)
+
+# The steps of a call of each math function on the emulator, which
+# runtime/README.md quotes, from libc/mathsteps.c.
+mathsteps: emulator
+	@$(MAKE) -s --no-print-directory -C $(LIBC) libc.a
+	@mkdir -p $(BUILD)/libc
+	@$(PYTHON) ../translator/nicebuild.py -o $(BUILD)/libc/mathsteps.bin libc/mathsteps.c
+	@$(EMU) $(BUILD)/libc/mathsteps.bin < /dev/null | sed '/^Halted/,$$d'
 
 # Needs mypy (pip install mypy).
 typecheck:
@@ -325,4 +345,4 @@ emulator:
 clean:
 	rm -rf build
 
-.PHONY: run dhry coremark test core core-dhry core-coremark hazards cycles compare profile words typecheck wasm native emulator clean
+.PHONY: run dhry coremark test core core-dhry core-coremark hazards cycles compare profile words mathsteps typecheck wasm native emulator clean

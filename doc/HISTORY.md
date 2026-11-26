@@ -326,7 +326,7 @@ the library module `float`, 6844 words joined to a program, of which
 routines of `float_fpu.nasm` on the FPU's functions, in place of
 musl's code, but for the reduction of a huge argument of `sin`, `cos`,
 and `tan`. A program that used all of them had 23413 words of them,
-and now has 7268. musl's `exp(1)` was the double nearest e; the FPU's
+and then 7268, and 5723 since a call is one word (#192). musl's `exp(1)` was the double nearest e; the FPU's
 is the double above, as fdlibm's. musl's `acosf(-1)`, `acosf(0)`, and
 `atanf` of an infinity were the float below π or π/2; they are now the
 nearest. On the emulator, `sin` took some 670 steps and `pow` 1500, and
@@ -772,7 +772,13 @@ program that called it grew by 3085 words: `printf` with `%d` alone went
 from 4124 words to 7209. A small program, such as one under a monitor,
 then wrote its own formatter of integers and strings. On 2026-11-14, the
 i family, `iprintf` and its relatives, gave it `printf` without them, in
-4246 words, and `printf` with `%d` alone became 7298 (#173).
+4246 words, and `printf` with `%d` alone became 7298 (#173). Since a
+call is one word (#192), they are 3481 and 6059, and `sscanf` and
+`siscanf` with `%d` alone 7000 and 3516, where they were 8816 and 4374.
+The README had these sizes and those of the math functions without the
+programs that measured them, until `bench/libc/` and `make words` gave
+them (#205). The math functions' steps were measured on 2026-11-16 with
+a program that was not kept, and `make mathsteps` gives them since.
 
 ## A program for the FPU on a system without it
 

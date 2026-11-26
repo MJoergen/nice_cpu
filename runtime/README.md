@@ -391,11 +391,14 @@ The library is small on purpose:
   a missing `ERANGE`. `fuzz_strtod.py` (below) checks the result against
   exact arithmetic. The float arithmetic is the float library's, so a
   program that calls `scanf`, even only for integers, is joined with
-  the float library. `sscanf` with `%d` alone is 8816 words, and the float
-  library comes with it, 400 words more.
+  the float library. `sscanf` with `%d` alone is 7000 words, and the float
+  library comes with it, 400 words more. This size, and those of
+  `siscanf`, `printf`, and `iprintf` below, are those of the programs of
+  `bench/libc/`, built with `nicebuild.py` and counted by `words.py`
+  with no runtime, as `make words` in `bench/` prints them.
 - The i family, `iscanf` and its relatives, with newlib's names, is
   `scanf` without the float conversions: `siscanf` with `%d` alone is
-  4374 words, and is joined without the float library. A float
+  3516 words, and is joined without the float library. A float
   conversion, `%*f` too, is a matching failure, as a conversion that
   `scanf` does not know is: it reads no input, ends the scan, and the
   call returns the number of values stored so far. The two families share
@@ -416,11 +419,11 @@ The library is small on purpose:
   nearest, ties to even, as glibc does. `%a` prints a 1 before the point,
   also for a subnormal, as musl does, or a 2 when the rounding carries
   into it, such as `0x2p+0` for `%.0a` of 1.5. They cost every program
-  that calls `printf` 2578 words: `printf` with `%d` alone is 7298 words.
+  that calls `printf` 2578 words: `printf` with `%d` alone is 6059 words.
   `%f` of 1e300 takes about 48000 steps.
 - The i family, `iprintf` and its relatives, with newlib's names, is
   `printf` without the float conversions, for a program that must be
-  small: `iprintf` with `%d` alone is 4246 words. It prints `e E f F g G
+  small: `iprintf` with `%d` alone is 3481 words. It prints `e E f F g G
   a A` as they stand, as `printf` prints a conversion that it does not
   know, and takes their `double` from the arguments, so that those after
   them stay in place. The two families share one formatter, which calls
@@ -550,14 +553,14 @@ A call costs, on the emulator with the math unit, the steps below,
 averaged over 32 arguments in the range each function is most used in,
 such as −10 to 10 for `sin`, and with the few steps of the loop around
 the call, which reads each argument from a `volatile` array of the
-function's own type and stores the result. They were measured on
-2026-11-16, with `nice_instructions` before and after the loop, when a
-call of a label took two steps: it now takes one, so a function takes 1
-to 4 steps fewer than its figure here, by the calls in it. A float
+function's own type and stores the result, less the steps of two reads
+of `nice_instructions` with nothing between them, which come before and
+after the loop. `make mathsteps` in `bench/` prints them, from
+`bench/libc/mathsteps.c`. A float
 function passes one word for each operand, so it takes fewer steps than
 the double one, but for `sinf`, `cosf`, and `tanf`, which call the
 double function. `fmin` and `fmax` look at the signs first: for two
-arguments of one sign they take 75 and 73 steps, and 52 and 51 in float,
+arguments of one sign they take 74 and 72 steps, and 51 and 50 in float,
 and for two of different signs 57, and 36 in float. The table has half
 of each. A write of a function's command to `FPU_CMD` is one step, and
 the processor then waits for the FPU: on the FPGA, up to the cycles of
@@ -565,24 +568,27 @@ hdl/README.md (The floating-point unit), such as 1552 for `COS` and 3018
 for `POW`. The emulator counts no such wait. Each function in C also
 brings the words below into the program: its own and those of the
 routines it calls, the float library not counted, which has the others.
-A program that uses all of them gets 5723 words, as `make words` in
-`bench/` prints, almost all of them the reduction of a huge argument,
-which costs `sin` up to some 6000 steps and `sinf` up to 5500. `frexp`
-and `modf` are 199 and 261 words, and their float versions 189 and 187.
+`make words` in `bench/` prints them: the words of a module of
+`bench/libc/mathbase.c`, a function that uses the float library, with
+the function exported too, less those of that module alone. A program
+that uses all of them gets 5723 words, as `make words` prints too,
+almost all of them the reduction of a huge argument, which costs `sin`
+up to some 5900 steps and `sinf` up to 5300. `frexp` and `modf` are 164
+and 220 words, and their float versions 155 and 153.
 
 | Function | Steps, double | Steps, float | Words, double | Words, float |
 |---|---|---|---|---|
-| `sin`, `cos` | 43 | 59 | 5529 | 5539 |
-| `tan` | 45 | 61 | 5569 | 5579 |
-| `asin`, `acos`, `atan`, `exp`, `log`, `log10`, `log2` | 21 | 18 | 0 | 0 |
+| `sin`, `cos` | 42 | 56 | 4380 | 4383 |
+| `tan` | 43 | 57 | 4412 | 4415 |
+| `asin`, `acos`, `atan`, `exp`, `log`, `log10`, `log2` | 20 | 17 | 0 | 0 |
 | `exp2` | 19 | 16 | 0 | 0 |
-| `atan2`, `fmod` | 33 | 26 | 0 | 0 |
+| `atan2`, `fmod` | 32 | 25 | 0 | 0 |
 | `pow` | 37 | 28 | 0 | 0 |
-| `hypot` | 41 | 32 | 0 | 0 |
-| `sqrt`, `floor` | 19 | 16 | 2 | 2 |
-| `round` | 19 | 18 | 0 | 0 |
-| `fmin`, `fmax` | 66, 65 | 44 | 72 | 46 |
-| `fabs` | 9 | 7 | 2 | 2 |
+| `hypot` | 40 | 31 | 0 | 0 |
+| `sqrt`, `floor` | 19 | 16 | 1 | 1 |
+| `round` | 19 | 17 | 0 | 0 |
+| `fmin`, `fmax` | 66, 65 | 44, 43 | 65, 63 | 39, 38 |
+| `fabs` | 10 | 8 | 3 | 3 |
 
 `libc/test/math.c` checks each function and macro on the cases whose
 results C17 Annex F gives, on exact results, on a few known values, on

@@ -2,6 +2,7 @@
 """The size in words of wasm modules translated by nicewasm.
 
     ./words.py [--options OPTIONS] FILE.wasm...   translate and count each module
+    ./words.py --minus BASE.wasm FILE.wasm...     the same, less the words of BASE
     ./words.py --test                             check the count on a snippet
 
 Each module is translated with ../translator/nicewasm.py, and assembled
@@ -12,7 +13,9 @@ whatever its value (ISA.md §2.3),
 so that changes no size. The count is the words the assembler emits for
 the module, its instructions and data. The words that .RES reserves, such
 as the linear memory, are not counted. One line per module: its name and
-its words, and then OPTIONS, if given.
+its words, and then OPTIONS, if given. With --minus, the words are those
+of the module less those of BASE, translated with the same OPTIONS, and the
+line ends with "less" and BASE's name.
 """
 
 import argparse
@@ -77,17 +80,21 @@ def main() -> None:
     ap.add_argument("files", nargs="*", metavar="FILE.wasm")
     ap.add_argument("--test", action="store_true")
     ap.add_argument("--options", default="", help="options for nicewasm, in one argument")
+    ap.add_argument("--minus", metavar="BASE.wasm", help="count each module less the words of BASE")
     a = ap.parse_args()
     if a.test:
         test()
         return
     if not a.files:
         ap.error("no FILE.wasm")
+    options = shlex.split(a.options)
     with tempfile.TemporaryDirectory() as tmp:
+        base = words(translate(a.minus, tmp, options), a.minus) if a.minus else 0
+        less = f" less {os.path.splitext(os.path.basename(a.minus))[0]}" if a.minus else ""
         for wasm in a.files:
             name = os.path.splitext(os.path.basename(wasm))[0]
-            n = words(translate(wasm, tmp, shlex.split(a.options)), wasm)
-            print(f"{name} {n} {a.options}".rstrip())
+            n = words(translate(wasm, tmp, options), wasm) - base
+            print(f"{name} {n} {a.options}".rstrip() + less)
 
 
 if __name__ == "__main__":

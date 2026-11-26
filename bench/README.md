@@ -23,7 +23,8 @@ NICE with other processors.
     make cycles     # estimate the cycles of the three on the pipelined core of MICROARCH.md
     make profile    # the same, charged to the source lines, in build/*.cyc.txt
     make compare    # the model's cycles beside the pipelined core's, phase by phase and by cause, with the difference in percent, after make core
-    make words      # the size in words of the benchmark, safe.zig, CoreMark, and math modules
+    make words      # the size in words of the benchmark, safe.zig, CoreMark, and math modules, and of the C library's parts
+    make mathsteps  # the steps of a call of each math function of the C library on the emulator
     make native     # build and run bench.c, float.c, and CoreMark on the host, as a check
     make wasm       # rebuild bench.wasm, float.wasm, dhrystone/dhry.wasm, and coremark/coremark.wasm (needs clang)
 
@@ -32,7 +33,9 @@ small processors, ported to the C library (see Dhrystone below), and
 `coremark/` is CoreMark, its successor, ported the same way (see CoreMark
 below).
 `float.c` is a benchmark of floating-point code, and so of the float
-library (see The float benchmark below).
+library (see The float benchmark below). `libc/` holds the programs that
+measure the sizes and steps of the C library's parts that
+runtime/README.md quotes (see The size of a module below).
 
 The programs that use floats, `float.c`, Dhrystone, and CoreMark, are
 joined with the float library, `runtime/float_fpu.nasm`, which uses the
@@ -517,7 +520,19 @@ float conversions of `printf`, which every program that calls it gets,
 and `iprintf` leaves out (runtime/README.md). It also builds `build/math.wasm`, with
 clang, a module of the math functions of the C library that are C, in
 double and float, and prints its size, 5723 words, which
-runtime/README.md quotes. The others are routines of the float library. Each module is translated and
+runtime/README.md quotes. The others are routines of the float library.
+Then it prints the sizes of the programs of `libc/` that call `printf`,
+`iprintf`, `sscanf`, and `siscanf` with `%d` alone, built with
+`nicebuild.py`, and the words that each of those math functions brings
+into a program, in double and float: with `words.py --minus`, the words
+of a module of `libc/mathbase.c` with the function exported too, less
+those of the module of `libc/mathbase.c` alone. `mathbase.c` uses the
+float library, so the module has the check for the FPU already
+(translator/WASM.md), which every program that uses a float has.
+runtime/README.md quotes all of these. `make mathsteps` runs
+`libc/mathsteps.c` on the emulator, which prints the steps of a call of
+each math function that runtime/README.md quotes, and says how it
+counts them. Each module is translated and
 assembled on its own, with the labels it uses but does not define, such
 as the runtime's routines, defined as 0 first; a constant takes a whole
 word whatever its value (ISA.md §2.3), so that changes no size. The count

@@ -338,6 +338,10 @@ instructions and 9% of the hand-written one's (§5.6). So rule 3 matters:
 PREPARE may load the read in the cycle the bus accepts the store, so that
 the read is on the bus in the next cycle. That is still a cycle after the
 store's instruction retires, because the store waits a cycle in DBUS.
+PREPARE loads no read in the cycle WRITE is done with a store, though,
+and a store into the I/O range is done only in the cycle the bus accepts
+it. So a read after one loads a cycle later, as `bench/pipecycles.py`
+models it.
 That costs at most 0.9% of the cycles of the translated benchmark and
 3.6% of the hand-written one's.
 

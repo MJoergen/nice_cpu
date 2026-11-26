@@ -339,8 +339,8 @@ charged to the rule that caused it, so the output says where the time
 goes, and a program that reads the instruction counter around each phase,
 as both programs do, gets a row per phase:
 
-    bench.bin: 1694067 instructions, 2424787 cycles (estimate), CPI 1.431
-      cycles above 1/instruction: 730720
+    bench.bin: 1694067 instructions, 2425168 cycles (estimate), CPI 1.432
+      cycles above 1/instruction: 731101
       ...
       taken jumps resolved in WRITE (flush)                        270193  0.159/instr  37.0%
       jumps DECODE resolves (early-redirect bubble)                 79101  0.047/instr  10.8%
@@ -349,7 +349,7 @@ as both programs do, gets a row per phase:
       read data used by more than a register write                 180100  0.106/instr  24.6%
 
       phase         instr    cycles    CPI   main extra cycles per instruction
-      rng64         51744     82002  1.585   mpu 0.35, bus 0.15, early 0.06, fetch 0.02
+      rng64         51744     82002  1.585   mpu 0.26, bus 0.24, early 0.06, fetch 0.02
       ...
       total       1650702   2340857  1.418
 
@@ -380,7 +380,7 @@ the flush. Each case of `pipecycles.py --test` gives the core's cycles,
 step by step, with `--retires` below.
 
 The phases of the translated program take an estimated
-2340857 cycles, 1.42 per instruction, and those of `hand.nasm` 1247321,
+2340857 cycles, 1.42 per instruction, and those of `hand.nasm` 1247576,
 2.6 per instruction: the hand-written code has more instructions with
 side effects, memory operands, and reads of the math unit, and fewer
 instructions in all. Options such as `--flush`, `--early`, `--agen`,
@@ -399,11 +399,11 @@ mode 001 or 010, and a jump to a computed target, N cycles more in
 WRITE. A store through `@R` or `@R++` never waits, since WRITE takes
 the value it wrote last. With the four rules, the translated program's
 phases take 2340857 cycles, against 2339144 without, and those of
-`hand.nasm` 1247321 against 1246297. A fifth, `--read-late N`, also 1 by
+`hand.nasm` 1247576 against 1246552. A fifth, `--read-late N`, also 1 by
 default, has WRITE take read data N cycles after its ACK, but for a
 micro-op whose data only goes into a register: s0 or s1 with a side
 effect, and a `MOVE` into a register other than R15 (MICROARCH.md §5.3).
-Without it, the phases take 2250869 cycles and 1168102. `pipecycles.py --test` checks the model on
+Without it, the phases take 2250869 cycles and 1168357. `pipecycles.py --test` checks the model on
 small programs whose cycles are worked out by hand in the script, and
 `make test` runs it, and then the model on both programs with `--phases
 6`, which fails unless each reads the instruction counter around its six
@@ -418,20 +418,17 @@ word (#192):
 
 | Phase | `bench.c`, model | Core | Model − core | `hand.nasm`, model | Core | Model − core |
 |---|---|---|---|---|---|---|
-| `rng64` | 82002 | 82057 | −55 | 61493 | 61761 | −268 |
+| `rng64` | 82002 | 82057 | −55 | 61748 | 61761 | −13 |
 | `crc32` | 80705 | 80761 | −56 | 40235 | 40248 | −13 |
 | `bst` | 401803 | 401859 | −56 | 225136 | 225149 | −13 |
 | `heapsort` | 376737 | 376792 | −55 | 269014 | 269027 | −13 |
 | `vm` | 1238108 | 1238163 | −55 | 604050 | 604064 | −14 |
 | `strings` | 161502 | 161558 | −56 | 47393 | 47406 | −13 |
-| total | 2340857 | 2341190 | −333 | 1247321 | 1247655 | −334 |
+| total | 2340857 | 2341190 | −333 | 1247576 | 1247655 | −79 |
 
 The difference is all but the same in every phase of a program, so it
 lies at the reads of the instruction counter around the phases, whose
-timing the model does not follow exactly, and not in the phases. The
-exception is `rng64` of `hand.nasm`, where the core takes a cycle more
-than the model at `rng.buf`, an odd address, after each of the 256
-jumps back to it.
+timing the model does not follow exactly, and not in the phases.
 
 `make compare` also sets the model's cycles beside the core's by cause,
 phase by phase, with `pipecycles.py --causes`, from the retire log of
@@ -453,18 +450,14 @@ the core to what WRITE did in it, so they compare in groups:
 | adjust | adjust | ADJUST |
 | other | | OTHER |
 
-Both programs have the same cycles in each phase by both counts, but
-for the 255 cycles of `hand.nasm`'s `rng64` above, and the same in every
-group but two pairs, where each counts a cycle in the other's group.
-The model's fetch cycles after a redirect, where the target is not yet
-fetched, are the core's refill or bubble, which last until the target
-reaches WRITE: 22208 of the translated program's 23296 and all but 4 of
-`hand.nasm`'s 11993. And the model's wait for a product of the math
-unit is the core's BUS, since PREPARE's read of it waits for the store
-to `MPU_A` while WRITE is empty: one cycle for each of rng64's 1536
-values with three reads, 4608, in both programs, and 1023 to 2048 in
-each other phase but crc32, the same in both programs. Every other
-group agrees to the cycle.
+Both programs have the same cycles in each phase by both counts, and the
+same in every group but one pair, where each counts a cycle in the
+other's group. The model's fetch cycles after a redirect, where the
+target is not yet fetched, are the core's refill or bubble, which last
+until the target reaches WRITE: 22208 of the translated program's 23296
+and all but 4 of `hand.nasm`'s 11993. Every other group agrees to the
+cycle, but that in `hand.nasm` the core counts a cycle more as read in
+each phase, and the model a cycle more as bus in each but `vm`.
 
 `make core` also has the testbench write a retire log,
 `hdl/build/bench_pipeline.retires` and `hand_pipeline.retires`
@@ -479,10 +472,11 @@ differ from the emulator's, and the comparison stops there:
 
     python3 pipecycles.py --retires ../hdl/build/hand_pipeline.retires build/hand.bin
 
-The model is 291 cycles below the core over the first 1586297 steps of
-the translated program, which take the core 2245913 cycles, and 234
-below it over the 491303 steps of `hand.nasm`, which take 1255051, 255
-of them at `rng.buf`.
+The model is 23 cycles below the core over the first 1586297 steps of
+the translated program, which take the core 2245913 cycles, and 27
+above it over the 491303 steps of `hand.nasm`, which take 1255051: 64
+above at `pu.loop` in `print_u64`, and 35 below at the read of the
+remainder after it.
 
 `cycprof.py` charges the model's cycles to the source lines of a program,
 and `make profile` writes `build/bench.cyc.txt`, `build/hand.cyc.txt`,
@@ -607,7 +601,7 @@ On the pipelined core, `make core CORE_PROGRAMS=float` gives:
     norm             11077        39930  7703cd00  ok
     total           169542       600538
 
-That is 3.54 cycles per instruction. `make cycles` gives 594957. The
+That is 3.54 cycles per instruction. `make cycles` gives 595213. The
 FPU's unit takes 14 cycles for an `ADD` and 16 for a `MUL`, and the FPU
 about 4 more for the command. Issue
 [#164](https://github.com/MJoergen/nice_cpu/issues/164) lists ways to
@@ -628,7 +622,7 @@ more, and the emulator gives:
 
 That is 50% fewer instructions than with the calls. On the pipelined core
 it takes 354930 cycles, 41% fewer than 600538, at 4.21 per instruction,
-and `make cycles` gives 351552. The top-level `make slow` runs `float`
+and `make cycles` gives 352424. The top-level `make slow` runs `float`
 and `float_inline` on both cores, and `release.py figures` checks that
 this section quotes their cycles on the pipelined core.
 

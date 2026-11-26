@@ -401,6 +401,17 @@ translator from before.
   reset; a store into the I/O range retires when the bus takes it; FETCH
   waits for a store in DBUS after DECODE's redirect; and DECODE takes an
   instruction once the last micro-op before is split off into skid_r.
+- Until 2026-11-26 the model let PREPARE load a read in the cycle a
+  store into the I/O range retires, the cycle the bus takes it, where the
+  core loads it a cycle later (#206). A read of the math unit's result
+  waits for the unit anyway, so the model got its data right, but freed
+  PREPARE a cycle early, which showed only where a redirect could not
+  hide the cycle: the model took 255 cycles fewer than the core in
+  `rng64` of `hand.nasm`, one for each jump back to `rng.buf`, an odd
+  address. Other reads came a cycle early: 268 cycles in `bench.c`, at
+  the return of `___console_putc`, which reads the stack right after the
+  store to the console. And the model counted as the math unit's a cycle
+  that the core counts as the bus's, 4608 in `rng64` of both programs.
 
 ## The assembler's checks
 

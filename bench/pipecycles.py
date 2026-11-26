@@ -83,7 +83,11 @@ may enter a stage in the cycle its predecessor leaves it (valid/ready).
   retires as it leaves WRITE, one into the I/O range when the bus takes
   it ("data bus"). So a read loaded while a store is in WRITE follows it
   on the bus at no cost, and a second read in one micro-op waits a cycle
-  ("data bus"). FETCH puts no request on the bus while a store waits in
+  ("data bus"). PREPARE loads no read in the cycle a store leaves WRITE
+  (hdl/src/pipe_prepare.vhd), which for one into the I/O range is the
+  cycle the bus takes it, so a read after it loads a cycle later ("data
+  bus"), even when it then waits for the math unit or the FPU anyway: it
+  holds PREPARE that cycle longer. FETCH puts no request on the bus while a store waits in
   the register after its first cycle there, nor in the cycle after WRITE
   queued a store, when DECODE redirected FETCH in that cycle or the one
   before (hdl/src/pipeline.vhd): the target of a jump that DECODE
@@ -489,6 +493,7 @@ class Model:
         self.reg_done = [-10] * 16  # cycle the last write of each register left WRITE
         self.sr_ready = -10
         self.jump_ready = -10     # first cycle a read may load after the last jump
+        self.io_store_done = -10  # cycle the last store into the I/O range left WRITE
         # The math unit: its operands, and the cycle in which a read of each
         # unit's result can be accepted.
         self.mpu_ops = {0xFFFFFF20: 0, 0xFFFFFF21: 0, 0xFFFFFF30: 0, 0xFFFFFF31: 0,
@@ -612,6 +617,12 @@ class Model:
                 # which is a cycle late for an ADD into R15.
                 if self.jump_ready > t:
                     t, tag = self.jump_ready, "jump"
+                # Nor in the cycle an older store into the I/O range leaves
+                # WRITE, which is the cycle the bus takes it: PREPARE loads
+                # no read while WRITE is done with a store micro-op
+                # (hdl/src/pipe_prepare.vhd).
+                if self.io_store_done >= t:
+                    t, tag = self.io_store_done + 1, "bus"
                 if not skipped:
                     # Loaded in t, the read is on the bus in t + --read-bus,
                     # after the access before it.
@@ -702,6 +713,7 @@ class Model:
                     self.gaps["bus"] += acc - done - fpu_wait
                     self.gaps["fpu"] += fpu_wait
                     done = acc
+                    self.io_store_done = done
             self.s_prev, self.w_prev, self.done_prev = s, w, done
             self.pin_prev = pin
             for r, fx in zip(u.writes, u.sidefx):
@@ -1083,15 +1095,17 @@ l               MOVE    R3, @R2++
         ?!Z     ADD     R15, R15, l-n
 n               HALT
 """,
-     # The read of the math unit's product waits for it (mpu 3 a round),
-     # and meanwhile DECODE takes the jump and redirects FETCH, so the S0
-     # of MOVE R3, @R2++ is in PREPARE when the jump enters WRITE. The
+     # The read of the math unit's product waits for it, 3 cycles a round:
+     # bus 1, as it loads a cycle after the store to A leaves WRITE (see
+     # "math unit: write A and B" below), and mpu 2. Meanwhile DECODE
+     # takes the jump and redirects FETCH, so the S0 of MOVE R3, @R2++ is
+     # in PREPARE when the jump enters WRITE. The
      # jump's ADD takes two cycles there (adjust 1), and the read loads
      # only in the second, a cycle after DEC[M]'s SR would allow: 1 more
      # in each of the 2 taken rounds, charged to the read's data, readbus.
      # The skipped jump flushes (7). Without the wait it would be 49
      # cycles; tb_core's retire log of the pipelined core gives 51.
-     18, 51, {"startup": 6, "multi": 3, "flush": 7, "bus": 3, "mpu": 9, "readbus": 3,
+     18, 51, {"startup": 6, "multi": 3, "flush": 7, "bus": 6, "mpu": 6, "readbus": 3,
               "adjust": 2}),
     ("unconditional MOVE R15, label: DECODE redirect, 3-cycle bubble",
      """                MOVE    R15, a
@@ -1136,6 +1150,40 @@ loop            SUB[M]  R1, R1, 1
      # refetches the HALT, a flush of 7. 22 instructions + 6 (start) + 27
      # + 7 = 62.
      22, 62, {"startup": 6, "early": 27, "flush": 7}),
+    ("JMPR back to an odd target, after a read behind a store to the math unit",
+     """                MOVE    R8, 2
+                MOVE    R7, 0x100
+                NOP
+l               SHR     R3, R1, 12
+                MOVE    @0xFFFFFF20, R2
+                ADD     R6, R6, @0xFFFFFF24
+                MOVE    @R7++, R5
+                MOVE    @R7++, R6
+                DEC[M]  R8, R8
+        ?!Z     JMPR    l
+                HALT
+""",
+     # The loop of rng64 in hand.nasm in short. MOVE R8 (words 0 and 1) is
+     # done at 6, MOVE R7 (2, 3) at 7, and the NOP (4) at 8. The SHR at l
+     # (5, 6) is in DECODE at 6, done 9. The store to A (7, 8): DECODE 7,
+     # WRITE 10, and the bus takes it at 11, when it retires (bus 1). The
+     # ADD (9, 10) is in DECODE at 8 and PREPARE at 10, but loads its read
+     # only at 12, as PREPARE loads none in the cycle a store leaves WRITE,
+     # so it holds PREPARE until it enters WRITE at 13 (bus 1). The product
+     # is read at 11 + 3 = 14, data in WRITE at 16 (mpu 3). The first
+     # store through R7 (11) is in DECODE at 9, split off at 10, and enters
+     # PREPARE at 13 as the ADD leaves it, WRITE at 17. The second (12),
+     # DECODE 10, is split off at 13, PREPARE 17, WRITE 18. DEC[M] (13),
+     # DECODE 11 into the second slot, moves up as the second store is
+     # split off, at 14: WRITE 19. So the JMPR (14) is in DECODE at 14, not
+     # 13, and redirects FETCH: SHR at l needs pairs 2 and 3, on the bus at
+     # 16 and 17, so it is in DECODE at 19 and done at 22, after the JMPR
+     # at 20 (early 1). The second round is the first's, 13 cycles later:
+     # the JMPR is done at 33, skipped, and flushes (7). HALT is done at 41.
+     # 18 instructions + 6 (start) + 4 + 6 + 1 + 7 = 42, as in tb_core's
+     # retire log. With the ADD's read loaded at 11, the JMPR would be in
+     # DECODE at 13, and the SHR done at 21, with no bubble.
+     18, 42, {"startup": 6, "bus": 4, "mpu": 6, "early": 1, "flush": 7}),
     ("a counted loop with ?!Z JMP back: no prediction, each taken jump flushes",
      """                MOVE    R1, 10
 loop            SUB[M]  R1, R1, 1
@@ -1216,11 +1264,12 @@ next            HALT
 """,
      # Two 3-word stores into the I/O range, each of which retires when the
      # bus takes it, a cycle after WRITE: the first in WRITE at 7, done 8,
-     # the second in WRITE at 9, done 10, which starts the computation. The
-     # read is loaded in PREPARE in 10 and on the bus in 11, but the product
-     # can be read at 10 + 3 = 13, data in WRITE at 14: a gap of 14 - 10 -
-     # 1 = 3. HALT done at 15, so 16 cycles.
-     4, 16, {"startup": 7, "bus": 2, "mpu": 3}),
+     # the second in WRITE at 9, done 10, which starts the computation.
+     # PREPARE loads no read in the cycle a store leaves WRITE, so the read
+     # is loaded in 11, not 10, and enters WRITE at 12: bus 1. It is on the
+     # bus in 12, but the product can be read at 10 + 3 = 13, data in WRITE
+     # at 14: mpu 2. HALT done at 15, so 16 cycles.
+     4, 16, {"startup": 7, "bus": 3, "mpu": 2}),
     ("FPU: a read of X_LO waits for DIV",
      """                MOVE    @0xFFFFFF8B, 7
                 MOVE    @0xFFFFFF8C, 0x13
@@ -1230,10 +1279,10 @@ next            HALT
      # As for the math unit: the push through X_W done at 8, the write of
      # CMD done at 10, when the FPU takes it. It serves it at 11, which
      # starts DIV, busy for --fpu-long, 60 cycles, to 71. The read is
-     # loaded in PREPARE in 10, on the bus and taken at 11, served at 71,
-     # data in WRITE at 72: a gap of 72 - 10 - 1 = 61. HALT done at 73, so
-     # 74 cycles.
-     4, 74, {"startup": 7, "bus": 2, "fpu": 61}),
+     # loaded in PREPARE in 11, as for the math unit, and enters WRITE at
+     # 12: bus 1. It is on the bus and taken at 12, served at 71, data in
+     # WRITE at 72: fpu 60. HALT done at 73, so 74 cycles.
+     4, 74, {"startup": 7, "bus": 3, "fpu": 60}),
     ("FPU: a push waits for DIV too, and a read of CMD does not",
      """                MOVE    @0xFFFFFF8B, 7
                 MOVE    @0xFFFFFF8C, 0x13
@@ -1242,13 +1291,13 @@ next            HALT
                 HALT
 """,
      # DIV is served at 11 and ends at 71, as above. The read of CMD does
-     # not wait for it: loaded in 10, on the bus and taken at 11, served
-     # at 12, data in 13, done 13, 2 cycles of fpu. The push is in WRITE
-     # at 14, and the FPU takes it at 15, done 15, a cycle of bus, but
-     # serves it at 71, with its ACK at 72. HALT is done at 16, but the
-     # core halts after that ACK, at 72: 56 cycles more of fpu. So 73
-     # cycles.
-     5, 73, {"startup": 7, "bus": 3, "fpu": 58}),
+     # not wait for it: loaded in 11, as above (bus 1), on the bus and
+     # taken at 12, served at 13, data in 14, done 14, 2 cycles of fpu.
+     # The push is in WRITE at 15, and the FPU takes it at 16, done 16, a
+     # cycle of bus, but serves it at 71, with its ACK at 72. HALT is done
+     # at 17, but the core halts after that ACK, at 72: 55 cycles more of
+     # fpu. So 73 cycles.
+     5, 73, {"startup": 7, "bus": 4, "fpu": 57}),
     ("math unit: 9 / 7 unsigned skips 24 quotient bits in 3 cycles",
      """                MOVE    @0xFFFFFF20, 9
                 MOVE    @0xFFFFFF21, 7
@@ -1259,8 +1308,9 @@ next            HALT
      # dividend's top 24 bits are 0 and 9 shifted into view is not less
      # than 7 until then, and 8 cycles run the rest, n = 11, as tb_mpu
      # counts it. The read is accepted at 10 + 2 + 11 = 23, data at 24:
-     # a gap of 13. HALT done at 25, so 26 cycles.
-     4, 26, {"startup": 7, "bus": 2, "mpu": 13}),
+     # a gap of 13, bus 1 as above and mpu 12. HALT done at 25, so 26
+     # cycles.
+     4, 26, {"startup": 7, "bus": 3, "mpu": 12}),
     ("math unit: -7 / 2 signed divides 7 by 2, n = 11",
      """                MOVE    @0xFFFFFF20, 0xFFFFFFF9
                 MOVE    @0xFFFFFF21, 2
@@ -1269,7 +1319,7 @@ next            HALT
 """,
      # The signed divider takes the absolute values: 7 / 2 skips 24 bits
      # in 3 cycles and runs 8, n = 11, so the same 26 cycles.
-     4, 26, {"startup": 7, "bus": 2, "mpu": 13}),
+     4, 26, {"startup": 7, "bus": 3, "mpu": 12}),
     ("math unit: 0xFFFFFFF9 / 2 unsigned skips nothing, n = 32",
      """                MOVE    @0xFFFFFF20, 0xFFFFFFF9
                 MOVE    @0xFFFFFF21, 2
@@ -1278,8 +1328,9 @@ next            HALT
 """,
      # The unsigned divider sees a dividend whose top bits are 1, so no
      # cycle skips: n = 32. The read is accepted at 10 + 2 + 32 = 44,
-     # data at 45: a gap of 34. HALT done at 46, so 47 cycles.
-     4, 47, {"startup": 7, "bus": 2, "mpu": 34}),
+     # data at 45: a gap of 34, bus 1 and mpu 33. HALT done at 46, so 47
+     # cycles.
+     4, 47, {"startup": 7, "bus": 3, "mpu": 33}),
     ("math unit: a bit count of A waits as a product does",
      """                MOVE    @0xFFFFFF20, 7
                 MOVE    @0xFFFFFF21, 6
@@ -1287,7 +1338,7 @@ next            HALT
                 HALT
 """,
      # The same as the product above: CLZ can be read at 10 + 3 = 13.
-     4, 16, {"startup": 7, "bus": 2, "mpu": 3}),
+     4, 16, {"startup": 7, "bus": 3, "mpu": 2}),
     ("math unit: the square root of C takes 32 steps",
      """                MOVE    @0xFFFFFF30, 0xFFFFFFF9
                 MOVE    @0xFFFFFF31, 2
@@ -1295,8 +1346,9 @@ next            HALT
                 HALT
 """,
      # The writes go to C, at the same times as above. The root is read
-     # at 10 + 2 + 32 = 44, data at 45: a gap of 34, so 47 cycles.
-     4, 47, {"startup": 7, "bus": 2, "mpu": 34}),
+     # at 10 + 2 + 32 = 44, data at 45: a gap of 34, bus 1 and mpu 33,
+     # so 47 cycles.
+     4, 47, {"startup": 7, "bus": 3, "mpu": 33}),
     ("the data bus between two slaves: the math unit, then RAM, and back",
      """                MOVE    R2, 0x100
                 MOVE    @0xFFFFFF20, R2
@@ -1457,10 +1509,11 @@ a       ?!Z     ADD     R15, R3, 2
 
 # The FPU's times as the options give them by default, 18 and 75, on the
 # snippet "FPU: a read of X_LO waits for DIV" with other commands. As
-# there, the FPU serves the command at 11, and the read of X_LO, taken at
-# 11, is served when the command ends, with its data in WRITE a cycle
-# later, at 12 + c for a command of c cycles: a gap of c + 1, and c + 14
-# cycles in all.
+# there, the FPU serves the command at 11, and the read of X_LO, loaded at
+# 11 (bus 1) and taken at 12, is served when the command ends, at 11 + c
+# for a command of c cycles, but no earlier than 13, a cycle after it is
+# taken. Its data is in WRITE a cycle later: fpu max(c, 2), and
+# max(c, 2) + 14 cycles in all.
 def fpu_snippet(cmd: int) -> str:
     return ("                MOVE    @0xFFFFFF8B, 7\n"
             f"                MOVE    @0xFFFFFF8C, {cmd:#x}\n"
@@ -1469,8 +1522,8 @@ def fpu_snippet(cmd: int) -> str:
 
 
 def fpu_default(what: str, cmd: int, c: int) -> Tuple[str, str, int, int, Dict[str, int]]:
-    return (f"FPU by default: {what} takes {c} cycles", fpu_snippet(cmd), 4, c + 14,
-            {"startup": 7, "bus": 2, "fpu": c + 1})
+    return (f"FPU by default: {what} takes {c} cycles", fpu_snippet(cmd), 4, max(c, 2) + 14,
+            {"startup": 7, "bus": 3, "fpu": max(c, 2)})
 
 
 DEFAULT_TESTS = [

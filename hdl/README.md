@@ -1257,7 +1257,7 @@ program.
 `make test` does, and reports where the steps run, how much of each
 program runs, how the runs end, and
 how often they make the hazards of MICROARCH.md §5, beside the benchmark's
-shares. With `--generator`, it measures another version of
+shares, which it reads from the table of MICROARCH.md §5.6. With `--generator`, it measures another version of
 `random_prog.py`.
 
 `make programs` runs the test programs of the runtime and of the

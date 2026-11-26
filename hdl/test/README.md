@@ -57,6 +57,6 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [bubble.nasm](bubble.nasm) | Measures the bubbles of the pipelined core with the cycle counter, and checks itself. |
 | [readwait.nasm](readwait.nasm) | Data reads that wait for their condition and for an older micro-operation, which `tb_core` counts on the pipelined core. |
 | [random_prog.py](random_prog.py) | Writes random programs. |
-| [random_stats.py](random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard. |
+| [random_stats.py](random_stats.py) | Shows how the random programs spend their steps, and how often they make each hazard, beside the shares of MICROARCH.md §5.6. With `--test`, it checks that each hazard it shows is a row of that table, as `make run/shown` does. |
 | [trace_reads.py](trace_reads.py) | Finds the first line where two traces differ, and shows the data reads of that instruction. With `--test`, it checks its decoding against words decoded by hand, as `make run/reads` does. |
 | [timing_budget.py](timing_budget.py) | Compares the reports of `make timing` with the budget of the unit and the board, and warns at a miss. With `--spread` it gives the least, the median, and the most of each slack over the runs of `make timing-spread`. |

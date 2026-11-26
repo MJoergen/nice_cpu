@@ -50,6 +50,7 @@ data read returns.
   - [12.4 Formulas](#124-formulas)
   - [12.5 Programs](#125-programs)
   - [12.6 Differences from the YM2151](#126-differences-from-the-ym2151)
+  - [12.7 Sample player](#127-sample-player)
 
 ## Memory map
 
@@ -65,7 +66,7 @@ its ordinary memory, is in [emulator/README.md](../emulator/README.md).
 | `0xFFFFFF00` | 1 | Console (§1.2). |
 | `0xFFFFFF01` | 1 | Read counter (§1.7). |
 | `0xFFFFFF02`–`0xFFFFFF07` | 6 | Reserved for I/O (§4). |
-| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12). With `--no-sound`, the emulator makes them ordinary memory. |
+| `0xFFFFFF08`–`0xFFFFFF0F` | 8 | Sound (§12): the synthesizer and the sample player. With `--no-sound`, the emulator makes them ordinary memory. |
 | `0xFFFFFF10`–`0xFFFFFF1F` | 16 | Reserved for I/O (§4). |
 | `0xFFFFFF20`–`0xFFFFFF3F` | 32 | Math unit (§2). |
 | `0xFFFFFF40`–`0xFFFFFF7F` | 64 | Performance counters (§3), but for `0xFFFFFF46`–`0xFFFFFF49`, the clock of the time of day (§10). |
@@ -502,7 +503,7 @@ A board that wraps the FPGA core, such as [NiceMonMEGA65](https://github.com/MJo
 - **Clock.** A system may leave out the clock of §10, or set it at a reset of the system from a source of its own (§10). NiceMonMEGA65 has the clock, on the MEGA65 and the Nexys4DDR, reset only by a reset of the system. The MEGA65 has a real-time clock with a battery, on I2C, which keeps local time, as the MEGA65 core sets it. The monitor in NiceMonMEGA65's ROM sets the clock from it at its start, in that local time, when the clock is not set yet and the real-time clock has not lost its time, and its command `time` writes the real-time clock too (MJoergen/NiceMonMEGA65#105). The clock then keeps the offset it started with, so it follows a change of daylight saving time only after a reset of the system, or when `time` sets it. So on the MEGA65 "set" is 1 after the ROM's start, unless the real-time clock lost its time. The Nexys4DDR has no real-time clock, and there "set" stays 0 until a program sets the clock.
 - **Byte windows.** A system may leave out the windows of §9. Then a program translated to use them does not run there. NiceMonMEGA65 has them (MJoergen/NiceMonMEGA65#90), on the MEGA65 and the Nexys4DDR, in its RAM, and in its ROM while the ROM is shown. There a read of a byte or a halfword takes a cycle more than a read of a word, for the timing at 100 MHz, which does not change the step counts. An instruction fetch from a window reads the memory that the address aliases (**Aliasing** below).
 - **FPU.** A system may leave out the FPU of §11. Then it has nothing at `0xFFFFFF88`–`0xFFFFFF8F`, and runs integer programs only: the float library, `runtime/float_fpu.nasm`, uses the FPU. A program that nicewasm translates looks for the FPU at start-up, if it uses floats or a function of `math.h` that the float library holds, and traps with code 9 when it finds none ([WASM.md](../translator/WASM.md), Start-up). The check writes `0xFFFFFF88`, `0xFFFFFF8C`, and `0xFFFFFF8D` before it reads `0xFFFFFF8D`. A program written in assembly that joins `runtime/float_fpu.nasm` does not look for the FPU: on a system without one it reads what the system has at those words, and computes wrong results. NiceMonMEGA65 has the FPU from its `V2.2` on, on the MEGA65 and the Nexys4DDR (MJoergen/NiceMonMEGA65#136). Its releases before that have none, and their screen registers are at those words, so a program that uses floats does not run there.
-- **Sound.** A system may leave out the sound of §12. Then it has nothing at `0xFFFFFF08`–`0xFFFFFF0F`, and a program finds that out from `OPM_STATUS`, whose bits 31..16 read `0x2151` only where the sound is (§12.1). A system that has it mixes the samples and converts them to the rate of its output (§12.3). NiceMonMEGA65 has no sound.
+- **Sound.** A system may leave out the sound of §12. Then it has nothing at `0xFFFFFF08`–`0xFFFFFF0F`, and a program finds that out from `OPM_STATUS`, whose bits 31..16 read `0x2151` only where the sound is (§12.1). A system with the sound may leave out its sample player (§12.7), whose words then read 0. A system that has the sound mixes the samples and converts them to the rate of its output (§12.3). NiceMonMEGA65 has no sound.
 - **ROM.** A system may map a ROM at 0 that it can hide, so that a program loads at 0 as in the emulator.
 - **Font.** A board that shows the screen on a display draws it from the font of §1.8, with the same font RAM, character ROM, and base, and its clear makes the font RAM and the base 0. An instruction fetch from `0xFFFE0000`–`0xFFFE3FFF` may reach the board's RAM there instead, as an alias (**Aliasing** below). NiceMonMEGA65 has the font RAM, the character ROM, and the base from its V1.6 (MJoergen/NiceMonMEGA65#71), on the MEGA65 and the Nexys4DDR; there an instruction fetch from the range reads the RAM it aliases. Its ROM has the blocks and arrows of §1.8 at `0x80`–`0x99` from its `V2.6` on (MJoergen/NiceMonMEGA65#171). In its releases before that they are blank, and `0xFFFE3000` reads 0.
 - **Debug link.** A board may serve the debug link of [DEBUG.md](DEBUG.md) on its UART, or over TCP as the emulator does. Its debug registers at `0xFFFFFFD0`–`0xFFFFFFFF` are for the link only, so a program's data accesses there go to whatever the board has there otherwise. NiceMonMEGA65 serves the link in version `0x10`, major 1, from its `V3.0` on (MJoergen/NiceMonMEGA65#169). Its releases before that serve version 8, of major 0, and a host tool stops with a message on a major other than its own ([DEBUG.md §9](DEBUG.md#9-versions)): the tools of `V3.0` here work with the board from its `V3.0` on, and those of `V2.6` with the board before it.
@@ -887,7 +888,7 @@ To push the microsecond counter (§3), as a binary64 value:
 
 ## 12. Sound
 
-The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator maps the sound at `0xFFFFFF08`–`0xFFFFFF0F`, and `--no-sound` makes its words ordinary memory. `--wav` writes its samples to a file. The FPGA implementation has it too, in `hdl/src/opm.vhd`.
+The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the OPM: 8 channels of 4 operators each, the 8 connections of the operators, an LFO, and noise. It gives a stereo sample of 16 bits 3579545/64 times a second, some 55930 times. A reference model in Python, `emulator/test/opm_model.py`, defines it, and the emulator and the FPGA implementation are to give the same samples from the same writes, bit for bit. The model follows ymfm by Aaron Giles, which is under the BSD 3-Clause license, and `make ymfmcheck` compares the two (§12.6). The emulator maps the sound at `0xFFFFFF08`–`0xFFFFFF0F`, and `--no-sound` makes its words ordinary memory. `--wav` writes its samples to a file. The FPGA implementation has it too, in `hdl/src/opm.vhd`. Beside the synthesizer, a sample player plays the samples that a program writes (§12.7).
 
 ### 12.1 Registers
 
@@ -895,7 +896,8 @@ The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the
 |---|---|---|---|
 | `0xFFFFFF08` | `OPM_WRITE` | 0 | queues a write of bits 7..0 to the register in bits 15..8, and ignores bits 31..16 |
 | `0xFFFFFF09` | `OPM_STATUS` | the status below | is ignored |
-| `0xFFFFFF0A`–`0xFFFFFF0F` | | 0 | is ignored |
+| `0xFFFFFF0A`–`0xFFFFFF0C` | | the sample player's (§12.7) | |
+| `0xFFFFFF0D`–`0xFFFFFF0F` | | 0 | is ignored |
 
 The status:
 
@@ -909,7 +911,7 @@ The status:
 
 - **One word for a write.** The register and its data go in one word, so nothing waits between two halves of a write, and a pause or a memory dump cannot split one.
 - **A read has no side effect.**
-- `0xFFFFFF0A`–`0xFFFFFF0F` are reserved for sound, such as the playback of samples and a mixer.
+- `0xFFFFFF0D`–`0xFFFFFF0F` are reserved for sound, such as a mixer.
 
 ### 12.2 The chip's registers
 
@@ -1002,3 +1004,46 @@ The model follows ymfm. `make ymfmcheck` runs random logs of writes through both
 - **The CT outputs** of `0x1B` and the bits of the test register `0x01` but the LFO reset do nothing.
 - **The clock** is 3579545 Hz. A tune written for a chip at another clock, such as 4 MHz, plays at another pitch and tempo.
 - **The output** is the value of the chip's DAC as a signed 16-bit number, and not the serial floating-point of the chip's pins.
+
+### 12.7 Sample player
+
+The sample player plays stereo samples of 16 bits that a program writes into a FIFO, at a rate that the program sets. The program decodes the samples, such as those of a WAV or an MP3 file, and the player only plays them.
+
+| Address | Name | A data read returns | A write |
+|---|---|---|---|
+| `0xFFFFFF0A` | `PCM_DATA` | 0 | puts a sample into the FIFO |
+| `0xFFFFFF0B` | `PCM_RATE` | the rate in Hz | sets the rate |
+| `0xFFFFFF0C` | `PCM_STATUS` | the status below | clears the underrun flag |
+
+The status:
+
+| Bits | What |
+|---|---|
+| 12..0 | The number of samples in the FIFO, 0 to 4096. |
+| 14..13 | 0. |
+| 15 | The underrun flag. |
+| 31..16 | The depth of the FIFO, 4096. |
+
+- **A sample** is one word: bits 31..16 are the left value and bits 15..0 the right one, each signed. A mono program writes the same value to both halves.
+- **The FIFO** holds 4096 samples, 93 ms at 44100 Hz, more than three frames of an MP3 file. A program without interrupts (ISA.md §7) fills it between frames.
+- **The rate.** A write of 0 stops the player: the FIFO keeps its samples, and none is played. A write of 1 to 999 sets 1000, and one above 48000 sets 48000. A read returns the rate that is set. A write of the rate takes effect from the next sample on, and keeps the time already counted toward it (**Time** below).
+- **A write to a full FIFO** holds off its acknowledge until the next sample takes one from the FIFO, as for the synthesizer (§12.3), at most 1 ms at 1000 Hz. So a program never needs to poll the status. With the rate 0, nothing takes a sample, and a write to a full FIFO is dropped.
+- **An underrun.** When a sample is due and the FIFO is empty, the player plays 0 and sets the underrun flag. The flag stays set until a write of `PCM_STATUS`, so that a program can tell that it fell behind. A program fills the FIFO before it sets the rate, and clears the flag after.
+- **A read has no side effect.**
+- **Time.** The FPGA implementation adds the rate to an accumulator in each cycle, and plays a sample each time the sum reaches its clock frequency in hertz, which it subtracts. With `--step-time`, the emulator adds the rate for each step, one microsecond, and plays a sample each time the sum reaches 1000000. Without it, the emulator plays the samples of the host's time. A skip, a write to a full FIFO, a hold, a pause, and a halt are as for the synthesizer (§12.3): the player always runs.
+- **A reset and a start.** A reset of the system, and a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), empty the FIFO, set the rate to 0, clear the underrun flag, and the accumulator.
+- **The samples** come out of the FPGA implementation with a strobe, at the player's rate, an underrun's 0 included. They are not mixed with the synthesizer's: the mixer, and the conversion to the rate of an output, are the system's (§12.3). The emulator's window plays both.
+- **Finding the player.** A program reads `OPM_STATUS` first, whose bits 31..16 read `0x2151` only where the sound is (§12.1). Then the player is there if `PCM_STATUS` does not read 0.
+
+To play the `n` samples at `buf`, at most 4096, at 8000 Hz:
+
+                    MOVE    R1, PCM_DATA
+                    MOVE    R2, buf
+                    MOVE    R3, n
+    :               MOVE    @R1, @R2++
+                    DEC[M]  R3, R3
+            ?!Z     JMP     :-
+                    MOVE    @PCM_RATE, 8000
+                    MOVE    @PCM_STATUS, 0  ; clear the underrun flag
+
+A longer sound goes in the same way for its first 4096 samples, and the rest after the rate is set: each write to the full FIFO then waits for a sample to be played. At the end, the FIFO runs empty and the flag is set.

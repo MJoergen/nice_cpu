@@ -385,3 +385,16 @@ proposed again. The open items are the
   the cores** (#196), to shorten `make -C hdl test`, which the sweeps of
   `hazard.bin` bounded. The sweeps went with the interrupts, and the
   test fell from 13 minutes to 5.
+- **One math unit, the math unit of DEVICES.md §2 absorbed into the
+  FPU** (#171). The FPU's stack takes two more accesses for each
+  operation than the math unit's registers, the write of the command
+  and a `DROP`: on the cycle model, with integer commands in the
+  emulator's FPU, CoreMark took 5.7% more cycles and Dhrystone 0.8% more,
+  with 2 cycles of the FPU for each, and a faster FPU removes neither
+  access. A multiply would also wait behind a long command, up to some
+  6100 cycles for `TAN` of a huge argument, where the math unit takes 3
+  to 33, and a system would need the whole FPU, more LUTs than the
+  pipelined core, for a hardware multiply. Moving only the square root
+  and the bit counts to the FPU keeps the two 64-bit dividers, the
+  largest part of the math unit, and makes the routines of the
+  multiplication need the float library.

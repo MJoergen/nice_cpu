@@ -67,17 +67,26 @@ BUDGET: dict[tuple[str, str], tuple[float, float, float, float]] = {
 # outputs 0.709 to 2.597; in the timing flow 0.079 to 0.551, 1.463 to 2.735,
 # and 1.290 to 2.770. So the budget of the outputs lies inside the range of
 # both flows, and the core's inside that of the default flow. The FPU's on
-# the MEGA65 on 2026-11-26, with the faster steps of #164 and its
-# functions in seven orders in the ROM: in the default flow the FPU has
-# 0.579 to 1.140, the inputs and the outputs 9.502 and 7.958 in all; in
-# the timing flow 0.739 to 1.164, 7.799 to 8.468, and 7.958. So the budget
-# of the FPU lies inside the range of both flows.
+# the MEGA65 on 2026-11-26, with X and Y in registers (#211) and the
+# reduction of a huge argument (#185), and its functions in seven orders
+# in the ROM: in the default flow the FPU has 0.460 to 1.252, the inputs
+# 8.300 to 8.731, and the outputs 7.958 in all; in the timing flow 0.297
+# to 1.103, 6.458 to 7.520, and 7.958. So the budget of the FPU lies
+# inside the range of both flows. hdl/README.md shows the runs in two
+# tables, and the self-test checks that these are their ranges.
 SPREAD: dict[tuple[str, str, str], tuple[float, float, float]] = {
     ("pipeline", "mega65", "default"): (0.44, 1.26, 1.89),
     ("pipeline", "mega65", "timing"): (0.47, 1.27, 1.48),
-    ("fpu", "mega65", "default"): (0.56, 0.0, 0.0),
-    ("fpu", "mega65", "timing"): (0.43, 0.67, 0.0),
+    ("fpu", "mega65", "default"): (0.79, 0.43, 0.0),
+    ("fpu", "mega65", "timing"): (0.81, 1.06, 0.0),
 }
+
+# The tables of make timing-spread in hdl/README.md: the unit in the head,
+# and a row for each flow with the least, the median, and the most of the
+# slack of the unit, the inputs, and the outputs, or one value "in all".
+README = Path(__file__).resolve().parent.parent / "README.md"
+TABLE = re.compile(r"^\| MEGA65, 10 ns \| (core|FPU) \|.*\n\|[-|]+\|\n((?:\| `\w+` flow \|.*\n)+)", re.M)
+ROW = re.compile(r"^\| `(\w+)` flow \|([^|]*)\|([^|]*)\|([^|]*)\|", re.M)
 
 SLACK = re.compile(r"^Slack \((?:MET|VIOLATED)\)\s*:\s*(-?\d+\.\d+)ns", re.M)
 
@@ -156,6 +165,23 @@ def report(d: Path, board: str, period: float, flow: str = "default", unit: str 
     print(describe(r))
 
 
+def cell_range(cell: str) -> int:
+    """The most less the least of the slacks in a cell of the README's tables, in ps."""
+    xs = [round(float(x) * 1000) for x in re.findall(r"-?\d+\.\d+", cell.replace("\u2212", "-"))]
+    return max(xs) - min(xs)
+
+
+def readme_spread(text: str) -> dict[tuple[str, str, str], tuple[int, int, int]]:
+    """The ranges of the tables of make timing-spread in the README, in ps."""
+    out = {}
+    for table in TABLE.finditer(text):
+        unit = {"core": "pipeline", "FPU": "fpu"}[table.group(1)]
+        for row in ROW.finditer(table.group(2)):
+            out[(unit, "mega65", row.group(1))] = (
+                cell_range(row.group(2)), cell_range(row.group(3)), cell_range(row.group(4)))
+    return out
+
+
 def fake(d: Path, reg: str, p_in: str, p_out: str) -> None:
     for name, s in (("timing", reg), ("timing_in", p_in), ("timing_out", p_out)):
         (d / f"{name}.rpt").write_text(
@@ -214,7 +240,11 @@ def self_test() -> None:
         assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is True
         fake(d, "0.500", "2.254", "2.456")
         assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is True
-        assert judge(d, "mega65", 10.0, "timing", "fpu")["within_spread"] is False
+        fake(d, "0.100", "2.254", "2.456")
+        assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is False
+        fake(d, "1.000", "0.800", "2.456")
+        assert judge(d, "mega65", 10.0, "default", "fpu")["within_spread"] is False
+        assert judge(d, "mega65", 10.0, "timing", "fpu")["within_spread"] is True
         assert "within_spread" not in judge(d, "nexys4ddr", 10.0, "default", "fpu")
         fake(d, "0.900", "2.254", "2.456")
         assert "fpu 0.9 ns (>= 1.0)" in describe(judge(d, "mega65", 10.0, "default", "fpu"))
@@ -222,6 +252,14 @@ def self_test() -> None:
         assert judge(d, "mega65", 10.0, "timing", "fpu")["status"] == "met"
         assert judge(d, "nexys4ddr", 10.0, "default", "fpu")["status"] == "none"
         assert judge(d, "mega65", 10.0, "default", "other")["status"] == "none"
+    # SPREAD has the ranges of the README's tables, to 0.01 ns.
+    assert cell_range(" \u22120.005, 0.255, 0.434 ns ") == 439
+    assert cell_range(" 7.958 ns in all ") == 0
+    shown = readme_spread(README.read_text())
+    assert shown.keys() == SPREAD.keys(), sorted(shown)
+    for key, ranges in shown.items():
+        near = [abs(r - round(s * 1000)) <= 5 for r, s in zip(ranges, SPREAD[key])]
+        assert all(near), (key, ranges, SPREAD[key])
     print("timing_budget: ok")
 
 

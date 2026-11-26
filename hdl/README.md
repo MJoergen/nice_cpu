@@ -323,8 +323,9 @@ breakpoints and 4 watchpoints misses the clock there by 5 ps. The
 variant of the boards, 4 of each, which `make timing` runs, leaves the
 core 0.291 ns in the `default` flow and 0.079 ns in the `timing` flow.
 A change that moves a median by less than the range is noise. `SPREAD`
-in `timing_budget.py` holds the ranges, and `make timing` says when a
-miss is by less than one of them.
+in `timing_budget.py` holds the ranges of this table and of the FPU's
+below, and its self-test in `make test` compares them with the tables.
+`make timing` says when a miss is by less than one of them.
 
 The FPU with `UNIT=fpu`, on 2026-11-26, with the start of a function in
 a register (#194), the faster steps of #164, X and Y in registers

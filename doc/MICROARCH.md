@@ -516,6 +516,12 @@ the condition is known. These are the shares of all instructions:
 | Data read after a conditional jump | 5.8% | 7.9% |
 | R14 read as an operand | 3.0% | 6.6% |
 | R15 as a pointer, or with a side effect | 0% | 0% |
+| Shift, count a constant | 17.0% | 4.8% |
+| Shift, count a register | 3.5% | 0% |
+| Source in mode 001 or 011, register from the previous | 0% | 0% |
+| Store in mode 011, 101, or 111, register from the previous | 0.1% | 1.1% |
+| Taken jump resolved in WRITE, to a computed target | 0% | 0% |
+| Register destination in mode 001 or 010 | 0% | 0% |
 
 The numbers support three decisions: FETCH reads two words per cycle (§3),
 a register written by the previous instruction is read without a wait

@@ -11,7 +11,7 @@ The testbenches, the test programs, and the scripts that run them. [hdl/README.m
 | [tb_opm.vhd](tb_opm.vhd) | A test of the sound, which replays the vectors of `emulator/test/opm_vectors.py` over its bus. |
 | [tb_pcm.vhd](tb_pcm.vhd) | A self-checking test of the sample player. |
 | [tb_fpu_unit.vhd](tb_fpu_unit.vhd) | A test of the FPU's arithmetic unit, which replays the vectors of [fpu_unit_vectors.py](fpu_unit_vectors.py). |
-| [fpu_slow_vectors.py](fpu_slow_vectors.py) | The vectors of the slowest `DIGITS`, `SCALE10`, and `FMOD` that a scan found, which `tb_fpu` adds to those of `emulator/test/fpu_vectors.py` for its bounds on cycles. |
+| [fpu_slow_vectors.py](fpu_slow_vectors.py) | The vectors of the slowest `DIGITS`, `SCALE10`, and `FMOD`, of the slowest of each function, and of `SIN`, `COS`, and `TAN` of huge arguments, that scans found, which `tb_fpu` adds to those of `emulator/test/fpu_vectors.py` for its bounds on cycles. |
 | [fpu_unit_vectors.py](fpu_unit_vectors.py) | The vectors of `tb_fpu_unit`, from the model `emulator/test/fpu_model.py`: every operation on every operand or pair of a format of 8 bits, or with `--wide`, random operands of binary64. |
 | [tb_perf.vhd](tb_perf.vhd) | A self-checking test of the performance counters. |
 | [tb_perf_hz.vhd](tb_perf_hz.vhd) | A self-checking test of the microsecond counter at 33333333, 83333333, and 100000000 Hz, against the integer part of N·10⁶/`G_CLK_HZ`. |

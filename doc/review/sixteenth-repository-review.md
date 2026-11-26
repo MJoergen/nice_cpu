@@ -268,6 +268,8 @@ bench/README.md has the sizes of the float benchmark from before, by the same 9 
 
 **Fix:** as said at each.
 
+**Resolved.** The points of `hdl/`: ASSUMPTIONS.md says that the benchmarks have such sums in stores alone, in 0.1% and 1.1% of their instructions. The table of MICROARCH.md §5.6 has six rows more, from `make hazards`: the shifts with a constant count and with one in a register, the sums on a register from the previous instruction in a source and in a store, a jump to a computed target, and a register destination in mode 001 or 010, so the three citations find their counts there. hdl/test/README.md names all that `fpu_slow_vectors.py` holds. The comments say 4 and 9 minutes, 1.9 ns, and a fifth of the steps.
+
 ## 4. Gaps
 
 ### 4.1 The archives of a release carry no notice of ymfm

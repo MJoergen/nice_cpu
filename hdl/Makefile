@@ -724,8 +724,8 @@ timing:
 # This runs make timing for UNIT, BOARD, and FLOW in seven variants, all at
 # once, and prints the least, median, and most of each slack: for the core
 # the counts of breakpoints and watchpoints of SPREAD_pipeline, and for the
-# FPU the rotations of its functions in the ROM of SPREAD_fpu. About 11
-# minutes for the core with the default flow and 40 with the timing flow,
+# FPU the rotations of its functions in the ROM of SPREAD_fpu. About 4
+# minutes for the core with the default flow and 9 with the timing flow,
 # and 4 and 5 for the FPU, on 20 CPUs.
 SPREAD_pipeline = 4-0 4-1 4-2 4-3 4-4 2-0 2-4
 SPREAD_fpu      = 0 2 4 6 8 10 12

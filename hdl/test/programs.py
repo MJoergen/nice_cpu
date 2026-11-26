@@ -144,8 +144,8 @@ def main() -> None:
     # The emulator runs every program first, in every shard: it takes
     # seconds, and its steps are what the core's time follows. The shares
     # are of nearly equal total steps. The longest program, libc_mchess,
-    # has most of them, so it gets a share of its own when it can, and the
-    # others share the rest.
+    # has a fifth of them, so it gets a share of its own when it can, and
+    # the others share the rest.
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         weight = dict(zip(programs, pool.map(lambda f: steps(args, f), programs)))
     shares = split(weight, count)

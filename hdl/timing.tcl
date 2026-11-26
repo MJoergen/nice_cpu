@@ -31,7 +31,7 @@
 # the register or port they start from and the register or port they end
 # at, with the worst slack of each group. A run of the core takes about 3
 # minutes with the default flow. A change elsewhere in the design moves
-# the placement, and with it the slacks, by up to 1.4 ns on the MEGA65, so
+# the placement, and with it the slacks, by up to 1.9 ns on the MEGA65, so
 # "make timing-spread" runs seven variants of the core, or of the FPU
 # with its functions in other orders in the ROM (test/timing_budget.py,
 # SPREAD).

@@ -18,7 +18,8 @@ core does and why. MICROARCH.md has since taken up items 1, 9, 10, and 12 to 15.
    the micro-operation in WRITE will still write it. That wait costs a
    cycle, but only for a pointer that the previous micro-operation writes,
    as in `ADD R1, R2++, @R2` or a load through a register just loaded, and
-   for a sum on a register just written, which neither benchmark has
+   for a sum on a register just written, which the benchmarks have in
+   stores alone, in 0.1% and 1.1% of their instructions
    (MICROARCH.md §5.6). Values in R1 to R4 passed from one ALU
    instruction to the next need no wait. R14 is SR in WRITE, as §5.4
    wants, and a field that is R14 reads it there. R15 is the

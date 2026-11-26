@@ -31,12 +31,13 @@ Both are built for the baseline x86_64 CPU, with ReleaseSafe, as
 
 ## Build and test
 
-    make          # unit tests, example and probe programs, test/errors.py, the FPU's model and vectors
+    make          # unit tests, example and probe programs, test/errors.py, the FPU's model and vectors, the sound's model
     make build    # just build zig-out/bin/niceemu
     make window   # build it with the window of --window
     make window-test  # build it so, and run test/window.py
     make dist     # the files of Download, in dist/
     make fpu-long # the FPU's vectors with a random sequence of a million accesses
+    make ymfmcheck  # the model of the sound against ymfm (git, a C++ compiler)
     make bincheck # fail if a probe's .bin is not what its .nasm assembles to
     make bins     # reassemble the probes' .bin files, after a change to a .nasm
     make typecheck  # mypy --strict on the Python of test/, tools/, and font/
@@ -766,6 +767,22 @@ and the unit test of `src/fpu.zig` replays them on the emulator's unit
 (Floating-point unit above); `tb_fpu` in `hdl/` replays them on the FPU
 of the cores. `make fpu-long` writes and replays a random sequence of a
 million accesses, from `SEED`, 1 by default.
+
+`test/opm_model.py` is a reference model of the sound of DEVICES.md
+§12, the FM synthesizer whose registers are the YM2151's. It defines
+the samples that a log of writes gives, and follows ymfm step by step.
+`test/opm_tables.py` holds its tables: the sine and the exponential
+computed from their formulas, each value checked to round the same on
+every host, and the pitch, the detune, and the envelope's increments as
+ymfm has them, under ymfm's notice. `make test` runs
+`test/opm_model_test.py`, which checks the model against the formulas
+of DEVICES.md §12.4, its rules of writes, and its DAC on hand-checked
+values. `test/opm_vectors.py` writes random logs of writes from a seed,
+and with the model's samples, the vectors. `make ymfmcheck` clones ymfm
+at `YMFM_COMMIT` into `build/ymfm`, or takes a checkout in `YMFM`,
+builds `test/opm_ymfm.cpp` against it, and compares every sample of
+`SEEDS` random logs, 20 by default, of 30000 samples each, through
+`test/opm_ymfm.py`. The emulator does not map the sound yet.
 
 `test/cputest.nasm` is a self-checking test of the whole instruction set:
 every opcode, shift, addressing mode, and condition, the flags, F0, F1,

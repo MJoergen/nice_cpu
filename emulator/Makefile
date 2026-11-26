@@ -120,6 +120,7 @@ test: build bincheck fmtcheck seqcheck
 	@$(MAKE) --no-print-directory programs
 	@NICEEMU=$(abspath $(EMU)) $(PYTHON) test/errors.py
 	@$(PYTHON) test/fpu_model_test.py
+	@$(PYTHON) test/opm_model_test.py
 
 # The FPU's vectors with a long random sequence, from the seed SEED,
 # replayed by the unit test in ReleaseSafe. A failing run leaves the
@@ -231,12 +232,27 @@ seqcheck:
 	  || { echo "STALE src/fpu_seq.zig: run $(PYTHON) test/fpu_seq.py --zig > src/fpu_seq.zig"; exit 1; }; \
 	echo "PASS seqcheck"
 
+# Check the model of the FM synthesizer (doc/DEVICES.md §12) against
+# ymfm, which it follows: random logs of writes through both, every
+# sample compared. Needs git and a C++ compiler, CXX. YMFM is a checkout
+# of ymfm, by default one of YMFM_COMMIT cloned into build/ymfm.
+YMFM_URL = https://github.com/aaronsgiles/ymfm.git
+YMFM_COMMIT = 81aec25ccbb98f4873a255f7551ac4dadac59b4a
+YMFM ?= build/ymfm
+SEEDS ?= 20
+ymfmcheck:
+	@if [ ! -d $(YMFM) ]; then \
+	  git clone -q $(YMFM_URL) $(YMFM) && git -C $(YMFM) checkout -q $(YMFM_COMMIT) || exit 1; \
+	fi
+	$(PYTHON) test/opm_ymfm.py --ymfm $(YMFM) --seeds $(SEEDS)
+
 # Needs mypy (pip install mypy).
 typecheck:
 	$(PYTHON) -m mypy --strict test/errors.py test/link.py test/udp.py test/tap.py test/window.py test/fpu_model.py test/fpu_model_test.py test/fpu_vectors.py test/fpu_seq.py \
+	  test/opm_tables.py test/opm_model.py test/opm_model_test.py test/opm_vectors.py test/opm_ymfm.py \
 	  tools/nicetap.py font/gen_font.py
 
 clean:
-	rm -rf zig-out .zig-cache zig-pkg dist test/*.out
+	rm -rf zig-out .zig-cache zig-pkg dist build test/*.out
 
-.PHONY: test fpu-long programs dist build window window-test bins bincheck seqcheck fmtcheck typecheck clean
+.PHONY: test fpu-long ymfmcheck programs dist build window window-test bins bincheck seqcheck fmtcheck typecheck clean

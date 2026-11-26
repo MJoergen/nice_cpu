@@ -1003,7 +1003,7 @@ fn runWindow(arena: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, opts: Op
     var win: Window = undefined;
     win.open(arena, opts.invert_fg, opts.screen_size, file) catch return error.Load;
     defer win.close(arena);
-    if (opts.sound) win.playSound(&cpu.sound);
+    if (opts.sound) win.playSound(&cpu.sound, &cpu.pcm);
     cpu.input = win.queue.input();
     var pacer: Pacer = .{ .speed = opts.speed, .start_ns = nowNs(io) };
     const chunk = chunkSteps(opts.speed);
@@ -1119,7 +1119,7 @@ fn serve(arena: std.mem.Allocator, io: std.Io, opts: Options, syms: []const Symb
     var win: Window = undefined;
     if (windowed) {
         win.open(arena, opts.invert_fg, opts.screen_size, null) catch return error.Load;
-        if (opts.sound) win.playSound(&cpu.sound);
+        if (opts.sound) win.playSound(&cpu.sound, &cpu.pcm);
         cpu.input = link.pollInput();
     } else {
         cpu.input = .fromReader(&link.reader);

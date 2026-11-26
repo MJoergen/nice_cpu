@@ -248,6 +248,13 @@ at `--speed 1000000`. If no audio device can be opened, niceemu prints
 `niceemu: no sound:` and SDL's error, and runs without the sound.
 `--no-sound` opens none.
 
+The samples of the sample player (DEVICES.md §12.7) go to a second
+stream on the same device, which SDL converts from the player's rate and
+mixes with the sound's. They get the same 50 ms ahead of them and the
+same limit of 250 ms, at their own rate. When the rate changes, the
+samples before go to the stream at the old rate, and the stream takes
+the new one from there.
+
 With `--link`, the window opens when niceemu starts and stays open over
 every run, and shows the screen also while the processor is held, halted,
 or paused. The console reads the link's input buffer, into which the keys
@@ -273,8 +280,11 @@ note of DEVICES.md §12.5 on SDL's disk audio driver, which writes the
 samples to a file at the sound's rate, and checks them against the
 model's: silence, then the model's samples from the first that is not
 silence, for at least 0.2 s, and after each silence that the window put
-in, a later part of them. It checks that `--no-sound` plays nothing, and
-the warning without an audio device. The others run on SDL's dummy audio
+in, a later part of them. It plays 4096 samples of one value on the
+sample player at 8000 Hz on the same driver, and checks that the file
+holds the value for nearly their 0.512 s, and not much longer. It checks
+that `--no-sound` plays nothing, and the warning without an audio
+device. The others run on SDL's dummy audio
 driver. The key table and the drawing of the screen are unit tests
 in `src/keys.zig` and `src/frame.zig`, the keys' way into the link's
 buffer one in `src/link.zig`, and the mapping of SDL's key events to the
@@ -284,7 +294,9 @@ those of `-2004`, and checks the size of each, 1280×896 and 1280×800,
 that the words after its rows do not show, in the text and in the chunky
 mode, and that its last row is at the bottom edge. One more gives the
 samples of the sound to a stream on the dummy audio driver, paused, and
-checks the 50 ms ahead of them, and the drop of too many.
+checks the 50 ms ahead of them, and the drop of too many, and one more
+gives the sample player's to their own stream, and checks its rate and
+a change of it.
 `make window-test` runs these unit tests with `DISPLAY` and
 `WAYLAND_DISPLAY` unset, so that a test that needs a display fails there
 as it does in CI.

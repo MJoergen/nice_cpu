@@ -8,7 +8,8 @@ the window is tested through NICEEMU_CLOSE_AFTER=N in the environment, a
 hook of niceemu for this file: the window counts as closed once a run has
 made N steps. test_link and test_close_link run --window with --link, with
 the host of link.py. The sound plays on SDL's dummy audio driver, and on
-its disk driver, which writes the samples to a file, in test_sound."""
+its disk driver, which writes the samples to a file, in test_sound and
+test_player."""
 
 from __future__ import annotations
 
@@ -358,6 +359,50 @@ def test_sound(tmp: str) -> None:
         fail(f"stderr without an audio device: {err!r}")
 
 
+# The sample player's tune: PLAYER_COUNT samples of PLAYER_SAMPLE at
+# PLAYER_RATE, written before the rate is set, then a halt, after which
+# the player plays on.
+PLAYER_COUNT = 4096
+PLAYER_RATE = 8000
+PLAYER_SAMPLE = (3000, -3000)
+PLAYER = (
+    "PCM_DATA        .EQU    0xFFFFFF0A\n"
+    "PCM_RATE        .EQU    0xFFFFFF0B\n"
+    f"                MOVE    R1, {PLAYER_COUNT}\n"
+    f":               MOVE    @PCM_DATA, 0x{PLAYER_SAMPLE[0] & 0xFFFF:04X}{PLAYER_SAMPLE[1] & 0xFFFF:04X}\n"
+    "                DEC[M]  R1, R1\n"
+    "        ?!Z     JMP     :-\n"
+    f"                MOVE    @PCM_RATE, {PLAYER_RATE}\n"
+    "                HALT\n"
+)
+
+
+def test_player(tmp: str) -> None:
+    """The window plays the sample player's samples (DEVICES.md §12.7) on
+    the same device, here SDL's disk driver at the synthesizer's rate, to
+    which SDL converts them from the player's. The samples are a constant,
+    so the conversion keeps it: the file must hold it, within a few, for
+    nearly the 0.512 s of the 4096 samples at 8000 Hz, and not much
+    longer."""
+    tune = assemble(tmp, "player", PLAYER)
+    raw = os.path.join(tmp, "player.raw")
+    if os.path.exists(raw):
+        os.remove(raw)
+    env = dict(ENV, SDL_AUDIODRIVER="disk", SDL_AUDIO_DISK_OUTPUT_FILE=raw)
+    p = subprocess.Popen([NICEEMU, "--window", tune], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    expect("the report of the player", read_lines(p, 1)[0], "Halted (HALT) after 12291 steps, PC=0000000b")
+    time.sleep(1.2)
+    stop(p)
+    data = open(raw, "rb").read() if os.path.exists(raw) else b""
+    got = [struct.unpack_from("<hh", data, i) for i in range(0, len(data) - 3, 4)]
+    near = sum(1 for left, right in got
+               if abs(left - PLAYER_SAMPLE[0]) <= 4 and abs(right - PLAYER_SAMPLE[1]) <= 4)
+    length = PLAYER_COUNT * 55930 // PLAYER_RATE
+    if not length * 0.95 <= near <= length * 1.01:
+        fail(f"player: {near} samples near {PLAYER_SAMPLE} of {len(got)}, not about {length}")
+
+
 def test_close_link(tmp: str) -> None:
     """With --link, closing the window ends niceemu with status 0, as a
     signal does, also while a program runs."""
@@ -459,6 +504,7 @@ def main() -> None:
         test_link_skip(tmp)
         test_close_link(tmp)
         test_sound(tmp)
+        test_player(tmp)
     print("PASS window (13 tests)")
 
 

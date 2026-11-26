@@ -398,3 +398,14 @@ proposed again. The open items are the
   and the bit counts to the FPU keeps the two 64-bit dividers, the
   largest part of the math unit, and makes the routines of the
   multiplication need the float library.
+- **`K` and `PICK` of the FPU's steps in one cycle** (#164), in place of
+  two. They are half the steps that a function runs, and the change
+  would save some 13% of a function's cycles, from 11% for `ASIN` to
+  15% for `SIN`, on typical arguments: some 130 cycles of a `SIN` of
+  870, and 350 of a `POW` of 2500. No benchmark calls a function, so
+  none would gain. `K` needs the ROM of the steps to read two steps
+  ahead, or the ROM of the constants addressed by the other's output,
+  and a taken jump would then lose two steps. `PICK` puts the ROM's
+  output, through a subtraction, on the read address of the stack and
+  into X, next to the FPU's worst path, from the command's number to
+  X.

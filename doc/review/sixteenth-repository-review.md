@@ -68,6 +68,8 @@ RELEASE.md step 2.9: the version is the new tag's, `3.1.0`, set before `release.
 
 **Fix:** `3.1.0`.
 
+**Resolved.** `emulator/build.zig.zon` says `3.1.0`, which `version_is_tags()` of `release.py` takes for the tag `V3.1`.
+
 ### 1.4 #164 is open in the milestone `V3.1`
 
 RELEASE.md step 1.2: the milestone of the release has no open issue left. #164, "nicehdl: a faster arithmetic unit for the FPU", is open there. Two of its parts are done (5436324, dbfa2bf), one is decided against (1a2a381), and its last comment says that it "stays open for the barrel shifter and two quotient bits a cycle for `DIV`". The other 13 issues of the milestone are closed. #210 is closed with no milestone, and decisions.md has its entry.

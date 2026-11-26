@@ -446,8 +446,8 @@ class Model:
                  agen: int = 1, sidefx_fast: bool = False, mul: int = 3,
                  div_skip: int = 8, shift_late: int = 1, shift_reg: int = 1,
                  sum_wait: int = 1, dest_adjust: int = 1, read_late: int = 1,
-                 read_bus: int = 1, slave_gap: int = 1, fpu_op: int = 18,
-                 fpu_long: int = 75) -> None:
+                 read_bus: int = 1, slave_gap: int = 1, fpu_op: int = 16,
+                 fpu_long: int = 72) -> None:
         self.mem = mem
         self.bp = max(2, ibuf // 2)
         self.flush, self.early, self.agen = flush, early, agen
@@ -1507,7 +1507,7 @@ a       ?!Z     ADD     R15, R3, 2
 ]
 
 
-# The FPU's times as the options give them by default, 18 and 75, on the
+# The FPU's times as the options give them by default, 16 and 72, on the
 # snippet "FPU: a read of X_LO waits for DIV" with other commands. As
 # there, the FPU serves the command at 11, and the read of X_LO, loaded at
 # 11 (bus 1) and taken at 12, is served when the command ends, at 11 + c
@@ -1527,18 +1527,18 @@ def fpu_default(what: str, cmd: int, c: int) -> Tuple[str, str, int, int, Dict[s
 
 
 DEFAULT_TESTS = [
-    # --fpu-op, 18 cycles, for the commands but the stack and the long ones.
-    fpu_default("ADD", 0x10, 18),
-    fpu_default("MUL", 0x12, 18),
-    fpu_default("FLOOR", 0x20, 18),
-    fpu_default("SCALE2", 0x38, 18),
-    # --fpu-long, 75, for DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS.
-    fpu_default("DIV", 0x13, 75),
-    fpu_default("SQRT", 0x14, 75),
-    fpu_default("ISQRT", 0x1A, 75),
-    fpu_default("FMOD", 0x1D, 75),
-    fpu_default("SCALE10", 0x39, 75),
-    fpu_default("DIGITS 15", 0x0F3A, 75),
+    # --fpu-op, 16 cycles, for the commands but the stack and the long ones.
+    fpu_default("ADD", 0x10, 16),
+    fpu_default("MUL", 0x12, 16),
+    fpu_default("FLOOR", 0x20, 16),
+    fpu_default("SCALE2", 0x38, 16),
+    # --fpu-long, 72, for DIV, SQRT, ISQRT, FMOD, SCALE10, and DIGITS.
+    fpu_default("DIV", 0x13, 72),
+    fpu_default("SQRT", 0x14, 72),
+    fpu_default("ISQRT", 0x1A, 72),
+    fpu_default("FMOD", 0x1D, 72),
+    fpu_default("SCALE10", 0x39, 72),
+    fpu_default("DIGITS 15", 0x0F3A, 72),
     # The stack commands, a cycle.
     fpu_default("DUP", 0x02, 1),
     fpu_default("DROP 2", 0x0203, 1),
@@ -1630,12 +1630,12 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--slave-gap", type=int, default=1, metavar="N",
                     help="cycles more for an access to another slave of the data bus than "
                          "the one before (1)")
-    ap.add_argument("--fpu-op", type=int, default=18, metavar="N",
+    ap.add_argument("--fpu-op", type=int, default=16, metavar="N",
                     help="cycles the FPU is busy with a command other than a stack command or "
-                         "one of --fpu-long (18)")
-    ap.add_argument("--fpu-long", type=int, default=75, metavar="N",
+                         "one of --fpu-long (16)")
+    ap.add_argument("--fpu-long", type=int, default=72, metavar="N",
                     help="cycles the FPU is busy with DIV, SQRT, ISQRT, FMOD, SCALE10, or "
-                         "DIGITS (75)")
+                         "DIGITS (72)")
     ap.add_argument("--phases", type=int, metavar="N",
                     help="fail unless each program reads INSTR_LO around N phases")
     ap.add_argument("--against", metavar="FILE",

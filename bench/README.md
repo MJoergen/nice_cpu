@@ -318,8 +318,8 @@ MICROARCH.md §3 to §5:
   out from the operands in the trace;
 - the FPU of DEVICES.md §11, `hdl/src/fpu.vhd`, by averages: a command
   keeps it busy for a cycle if it is a stack command, `--fpu-long`
-  cycles (75) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and
-  `DIGITS`, and `--fpu-op` cycles (18) for the others. The FPU takes
+  cycles (72) for `DIV`, `SQRT`, `ISQRT`, `FMOD`, `SCALE10`, and
+  `DIGITS`, and `--fpu-op` cycles (16) for the others. The FPU takes
   each access into a register and serves it in the next cycle at the
   earliest, with its ACK in the cycle after; every access but a read of
   `CMD` is served once the command ends. One access more is taken while
@@ -594,16 +594,16 @@ from the emulator:
 On the pipelined core, `make core CORE_PROGRAMS=float` gives:
 
     phase      instructions       cycles  result
-    convert          40743       116180  97943df8  ok
-    dot32             4686        16234  c0c723f7  ok
-    dot64             6309        18381  ba3319ea  ok
-    mandel          106727       409813  4c25faf9  ok
-    norm             11077        39930  7703cd00  ok
-    total           169542       600538
+    convert          40743       114135  97943df8  ok
+    dot32             4686        15466  c0c723f7  ok
+    dot64             6309        17614  ba3319ea  ok
+    mandel          106727       391001  4c25faf9  ok
+    norm             11077        38850  7703cd00  ok
+    total           169542       577066
 
-That is 3.54 cycles per instruction. `make cycles` gives 595213. The
-FPU's unit takes 14 cycles for an `ADD` and 16 for a `MUL`, and the FPU
-about 4 more for the command. Issue
+That is 3.40 cycles per instruction. `make cycles` gives 578759. The
+FPU's unit takes 13 cycles for an `ADD` and 15 for a `MUL` of normal
+operands, and the FPU about 2 more for the command. Issue
 [#164](https://github.com/MJoergen/nice_cpu/issues/164) lists ways to
 make it faster.
 
@@ -621,8 +621,8 @@ more, and the emulator gives:
     total            84393        84523
 
 That is 50% fewer instructions than with the calls. On the pipelined core
-it takes 354930 cycles, 41% fewer than 600538, at 4.21 per instruction,
-and `make cycles` gives 352424. The top-level `make slow` runs `float`
+it takes 331137 cycles, 43% fewer than 577066, at 3.92 per instruction,
+and `make cycles` gives 333792. The top-level `make slow` runs `float`
 and `float_inline` on both cores, and `release.py figures` checks that
 this section quotes their cycles on the pipelined core.
 

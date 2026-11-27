@@ -306,7 +306,7 @@ pointers. nicewasm supports all of them. A Rust program uses a table and
 `call_indirect` for `dyn` trait calls.
 
 The optimizations change nothing in WASM.md. The size of translated code
-is measured in words (`make words` in `bench/`): `test/safe.zig` is 4909
+is measured in words (`make words` in `bench/`): `test/safe.zig` is 4908
 words. The benchmark of [bench/](../bench/)
 runs 1650702 instructions in its phases, from a module of 9625 words,
 2578 of them the float conversions of the C library's `printf`.
@@ -347,8 +347,9 @@ the steps that got the code here.
   read the result, in three instructions for `i32` and six for `i64`,
   through the labels `__mpu.a` and the like that `runtime/muldiv_mpu.nasm`
   defines. With `--no-mpu` they call `__mul`, `__div64`, and the like
-  instead. `i64.mul`, except by a constant (below), and the bit counts
-  always call the runtime library, for example `__mul64` and `__popcnt` (see
+  instead. `i64.mul`, except by a constant and of two extended words
+  (below), and the bit counts always call the runtime library, for
+  example `__mul64` and `__popcnt` (see
   [runtime/README.md](../runtime/README.md)). Division by 0
   traps with code 3, and `div_s` of the most negative number by −1 with
   code 4. `rem_s` by −1 is 0 without a division, because C leaves the most
@@ -362,6 +363,13 @@ the steps that got the code here.
   constant takes at most three products of the math unit, or with
   `--no-mpu` calls `__mul64` ([DESIGN.md](DESIGN.md), Multiplication by a
   constant).
+- **Products of extended words:** an `i64.mul` of two words that are both
+  sign extended, or both zero extended, as C's `(int64_t)a * b` is, takes
+  one product of the math unit, `SMUL` or `UMUL`, or with `--no-mpu` calls
+  `__mul64`. A word is extended by `i64.extend_i32_s` or `_u`, by a load
+  of 1, 2, or 4 bytes into an `i64`, or is a constant, or an `i64` local
+  that only ever holds such words ([DESIGN.md](DESIGN.md), Products of
+  extended words).
 - **Comparisons:** `eqz`, `eq`, `ne`, `lt`, `gt`, `le`, and `ge`, signed
   and unsigned, for `i32` and `i64`.
 - **Shifts:** `shl`, `shr_s`, `shr_u`, `rotl`, and `rotr`, for `i32` and
@@ -628,11 +636,12 @@ with the trap code in R1. The linear memory at the halt must match the
 model's too, word for word. It starts with a pattern in which no two
 words are alike, so an access at the wrong word gets a value of its own.
 The modules have four functions with `i32` and
-`i64` parameters, 8 to 13 locals, loops, blocks, and ifs whose block
+`i64` parameters, 9 to 13 locals, one of them an `i64` that only ever
+holds an extended word, loops, blocks, and ifs whose block
 types may have parameters and several results, branches that carry no
 value, one, or several, `br_table` among them, `return`, `nop`, both
 forms of `select`, calls through the table, tail calls, every integer
-operation and comparison, the results of comparisons kept in locals for
+operation and comparison, products of extended words, the results of comparisons kept in locals for
 later conditions, mutable and immutable globals, loads and stores of
 every width at constant and dynamic addresses, the addresses of array
 elements as `(i << s) + c`, among them, at the start of `main`, loads

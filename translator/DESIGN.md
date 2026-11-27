@@ -11,6 +11,7 @@ tests of these rules are `test/run.py`, `test/fuzz.py`, and
 
 - [How functions are translated](#how-functions-are-translated)
 - [Multiplication by a constant](#multiplication-by-a-constant)
+- [Products of extended words](#products-of-extended-words)
 - [Register allocation](#register-allocation)
 - [The frame](#the-frame)
 - [The output](#the-output)
@@ -361,6 +362,44 @@ that takes at most four shifts, additions, and subtractions is computed
 so, while the math unit computes xl · cl. xorshift64*'s constant
 0x2545F4914F6CDD1D takes three products of the math unit, nine
 instructions. With `--no-mpu` the multiplication calls `__mul64`.
+
+## Products of extended words
+
+C computes a product of two words to 64 bits, `(int64_t)a * b`, as an
+`i64.mul` of two `i64.extend_i32_s`. Such a product is the signed
+product of the two words, which the math unit gives at once: nicewasm
+writes the low words to A and B and reads `SMUL_LO` and `SMUL_HI`, four
+instructions, where `__mul64` takes three products, 11 instructions
+with the call and the return. The same holds for two zero extended
+words and `UMUL_LO` and `UMUL_HI`. Not for a sign extended word by a
+zero extended one, and not by the constant 0 or 1, which take no
+product (above). With `--no-mpu` the multiplication calls `__mul64`.
+
+So nicewasm tracks, for each `i64` on the operand stack, whether it is
+known to be a sign extension of its low word, a zero extension, both,
+as 0 to 2^31 − 1 are, or neither. `i64.extend_i32_s` and `_u`,
+`i64.extend8_s`, `16_s`, and `32_s`, the loads of 1, 2, and 4 bytes into
+an `i64`, and the constants give one. Every other instruction gives
+neither, even one whose result happens to be such a word.
+
+Compilers keep an extended word in an `i64` local, and load it with
+`i64.load32_s`, so most of the operands are locals. Before nicewasm
+translates a function, it reads its body once (`local_exts`) and finds
+the `i64` locals, not the parameters, that only ever hold extended
+words. A local starts at 0, so it holds them if every value set to it
+by `local.set` or `local.tee` is one, of the same kind. That value is the
+result of the instruction right before, which is enough: the value that
+an instruction such as the `end` of a block gives counts as neither. A
+`local.get` or `local.tee` of another local before it gives what that
+local holds, so the locals are found together, starting from all and
+dropping each that a set disproves until none is dropped. Code that
+cannot be reached counts too, which can only drop a local.
+
+In the Helix MP3 decoder of #217, 269 of the 275 products that called
+`__mul64` are of such words, and so are 71 by constants. A frame of
+128 kbit/s stereo at 44.1 kHz takes 1.62 M cycles where it took
+3.14 M, by the cycle estimate of `bench/`, and 1.34 M where 2.92 M with
+`--trust-alignment --byte-windows --no-bounds-checks`.
 
 ## Register allocation
 

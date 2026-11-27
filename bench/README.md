@@ -508,7 +508,7 @@ are worked out by hand in the script, and the runs of both kinds of
 `words.py` gives the size in words of a wasm module translated by
 nicewasm, the measure that [translator/README.md](../translator/README.md)
 quotes for `test/safe.zig`. `make words` prints it for `bench.wasm`,
-`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 9625, 4909,
+`translator/test/safe.wasm`, and `coremark/coremark.wasm`: 9625, 4908,
 and 24591 words. `words.py --options` gives nicewasm options of its
 own, and `make words` prints the benchmark with
 `--trust-alignment --byte-windows` too, 7589 words, 21% fewer, and with

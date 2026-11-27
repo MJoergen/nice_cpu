@@ -7,6 +7,7 @@
 __mpu.a         .EQU    0xFFFFFF20
 __mpu.b         .EQU    0xFFFFFF21
 __mpu.smul_lo   .EQU    0xFFFFFF22
+__mpu.smul_hi   .EQU    0xFFFFFF23
 __mpu.umul_lo   .EQU    0xFFFFFF24
 __mpu.umul_hi   .EQU    0xFFFFFF25
 __mpu.sdiv_q    .EQU    0xFFFFFF26

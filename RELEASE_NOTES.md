@@ -50,8 +50,9 @@ Yamaha's YM2151 (#209), and a sample player that plays what a program
 writes into its FIFO (#216), at `0xFFFFFF08`–`0xFFFFFF0F`. The
 emulator and the FPGA implementation give the same samples, bit for
 bit. The FPU's `SIN`, `COS`, and `TAN` take any finite argument
-(#185), and its steps are faster (#164). The debug link stays version
-`0x10`.
+(#185), and its steps are faster (#164). nicewasm multiplies two words
+to 64 bits, `(int64_t)a * b`, with one product of the math unit
+(#222). The debug link stays version `0x10`.
 
 **Upgrade notes.**
 
@@ -210,6 +211,16 @@ bit. The FPU's `SIN`, `COS`, and `TAN` take any finite argument
   the float library, as the other math functions, so a program that
   calls one looks for the FPU at its start. The imports `nice_sin`,
   `nice_cos`, and `nice_tan` are gone (#185).
+- An `i64.mul` of two words that are both sign extended, or both zero
+  extended, takes one product of the math unit, `SMUL` or `UMUL`, four
+  instructions, where it called `__mul64` (#222). A word is extended by
+  `i64.extend_i32_s` or `_u`, a load of 4 bytes or fewer, or is a
+  constant, or an `i64` local that only ever holds such words. The Helix
+  MP3 decoder of #217 takes 1.62 M cycles a frame of 128 kbit/s stereo
+  at 44.1 kHz, where 3.14 M, and 1.34 M with `--trust-alignment
+  --byte-windows --no-bounds-checks`, where 2.92 M: it now decodes in
+  real time at 100 MHz, which allows 2.61 M. The benchmarks have no
+  such product, and `test/safe.zig` is a word smaller, 4908.
 
 **Benchmarks**
 

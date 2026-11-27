@@ -928,6 +928,23 @@ def mul64_by(x: int, c: int, want: int, how: int) -> bytes:
     return out + k(want) + EQ64
 
 
+def sx(i: int) -> bytes:
+    """The i32 local i, sign extended to an i64."""
+    return local_get(i) + EXTEND_S
+
+
+def ux(i: int) -> bytes:
+    """The i32 local i, zero extended to an i64."""
+    return local_get(i) + EXTEND_U
+
+
+def mul_ext(a: int, b: int, ext_a: bytes, ext_b: bytes, want: int) -> bytes:
+    """A check that a and b, in the i32 locals 1 and 2, extended by ext_a
+    and ext_b, multiply to the i64 want."""
+    return (c32(a) + local_set(1) + c32(b) + local_set(2)
+            + local_get(1) + ext_a + local_get(2) + ext_b + b"\x7e" + c64(want) + EQ64)
+
+
 # setup() installs a trap handler that adds word {0} of the memory to
 # the trap code in R1, and then traps as before, so that a case shows
 # that a store before the trap was done.
@@ -2449,6 +2466,90 @@ CASES: List[Tuple[str, Union[bytes, str], str, int]] = [
             (0x1_00000001, 0xA6CECC1B_00000001, 0xA6CECC1C_00000001),
             (0x1_00000001, 0xA6CECC1B_A6CECC1B, 0x4D9D9836_A6CECC1B)]]
             + [mul64_by(3, 5, 16, 0)])))), "", 0x1FFFFFE),
+    # i64.mul of two words that are both sign extended, or both zero
+    # extended, which nicewasm makes one product of the math unit, SMUL
+    # or UMUL, with no call of __mul64 (MPU_SHAPES): from
+    # i64.extend_i32_s and _u, from loads of 1, 2, and 4 bytes, by a
+    # constant, and from the i64 locals 3 to 6, which only ever get such
+    # words, by local.set, local.tee, and copies from one another,
+    # around a loop too. The words in memory are 0x80000001 at 0 and
+    # 0xFFFFFFFE at 4. 15 ones, then a check that fails.
+    ("mulext", module(
+        types(MAIN_TYPE),
+        funcs(0),
+        memory(1),
+        exports(("main", 0, 0)),
+        code(([I32, I32, I32, I64, I64, I64, I64, I32, I64], bits(0, *[
+            # -2^31 * -2^31 = 2^62, -2^31 * (2^31 - 1) = -2^62 + 2^31,
+            # and -1 * -1.
+            i32_const(0) + c32(0x80000001) + mem(I32_STORE)
+            + i32_const(4) + c32(0xFFFFFFFE) + mem(I32_STORE)
+            + mul_ext(-2**31, -2**31, EXTEND_S, EXTEND_S, 0x40000000_00000000),
+            mul_ext(-2**31, 2**31 - 1, EXTEND_S, EXTEND_S, 0xC0000000_80000000),
+            mul_ext(-1, -1, EXTEND_S, EXTEND_S, 1),
+            # (2^32 - 1)^2 = 2^64 - 2^33 + 1, and 2^31 * 2 = 2^32.
+            mul_ext(0xFFFFFFFF, 0xFFFFFFFF, EXTEND_U, EXTEND_U, 0xFFFFFFFE_00000001),
+            mul_ext(0x80000000, 2, EXTEND_U, EXTEND_U, 0x1_00000000),
+            # (-2^31 + 1) * -2 = 2^32 - 2, and unsigned
+            # (2^31 + 1) * (2^32 - 2) = 2^63 - 2.
+            i32_const(0) + mem(I64_LOAD32_S) + i32_const(4) + mem(I64_LOAD32_S) + b"\x7e"
+            + c64(0xFFFFFFFE) + EQ64,
+            i32_const(0) + mem(I64_LOAD32_U) + i32_const(4) + mem(I64_LOAD32_U) + b"\x7e"
+            + c64(0x7FFFFFFF_FFFFFFFE) + EQ64,
+            # The byte 1 times -5, and the half -2 times 2^31 - 1, signed
+            # both: a byte or half zero extended is also sign extended.
+            c32(-5) + local_set(1) + i32_const(0) + mem(I64_LOAD8_U) + sx(1) + b"\x7e"
+            + c64(-5) + EQ64,
+            c32(2**31 - 1) + local_set(2) + i32_const(4) + mem(I64_LOAD16_S) + sx(2) + b"\x7e"
+            + c64(0xFFFFFFFF_00000002) + EQ64,
+            # Locals: x = -2^31 and y = -2, x * y = 2^32. Then q = 3 by
+            # local.tee, and p a copy of x, q * p = -3 * 2^31.
+            c32(-2**31) + local_set(1) + sx(1) + local_set(3)
+            + i32_const(4) + mem(I64_LOAD32_S) + local_set(4)
+            + local_get(3) + local_get(4) + b"\x7e" + c64(0x1_00000000) + EQ64,
+            c32(3) + local_set(2) + local_get(3) + local_set(5)
+            + sx(2) + local_tee(6) + local_get(5) + b"\x7e" + c64(0xFFFFFFFE_80000000) + EQ64,
+            # Three times around a loop, acc += x * y, then x, y, q =
+            # y, q, x, by way of p: -2^31 * -2 + -2 * 3 + 3 * -2^31
+            # = 2^32 - 6 - 3 * 2^31 = -2^31 - 6.
+            i64_const(0) + local_set(8) + i32_const(3) + local_set(7)
+            + loop() + local_get(8) + local_get(3) + local_get(4) + b"\x7e" + ADD64
+            + local_set(8)
+            + local_get(3) + local_set(5) + local_get(4) + local_set(3)
+            + local_get(6) + local_set(4) + local_get(5) + local_set(6)
+            + local_get(7) + i32_const(1) + SUB + local_tee(7) + br_if(0) + END
+            + local_get(8) + c64(-2**31 - 6) + EQ64,
+            # By constants: -2^31 * -3, 0x7FFFFFFF * -1, and unsigned
+            # 2^31 * 3.
+            c32(-2**31) + local_set(1) + sx(1) + c64(-3) + b"\x7e" + c64(0x1_80000000) + EQ64,
+            c32(-1) + local_set(1) + c64(0x7FFFFFFF) + sx(1) + b"\x7e"
+            + c64(0xFFFFFFFF_80000001) + EQ64,
+            c32(3) + local_set(1) + c64(0x80000000) + ux(1) + b"\x7e"
+            + c64(0x1_80000000) + EQ64,
+            mul_ext(2, 3, EXTEND_S, EXTEND_S, 7)])))), "", 0xFFFE),
+    # i64.mul that must stay a product of all 64 bits: of the parameters
+    # of g, of a sign and a zero extension, of the local L, which once
+    # holds 2^32, and of the local p, which holds a product, by forward.
+    # 4 ones, then a check that fails.
+    ("mulwide", module(
+        types(MAIN_TYPE, ([I64, I64], [I64])),
+        funcs(0, 1),
+        exports(("main", 0, 0)),
+        code(([I32, I32, I32, I64, I64], bits(0, *[
+            # 0x1_00000002 * 3, and -1 * (2^32 - 1).
+            c64(0x1_00000002) + c64(3) + call(1) + c64(0x3_00000006) + EQ64,
+            mul_ext(-1, 0xFFFFFFFF, EXTEND_S, EXTEND_U, 0xFFFFFFFF_00000001),
+            # L = 5, L * 7, then L = 2^32, L * 7.
+            c32(5) + local_set(1) + c32(7) + local_set(2) + sx(1) + local_set(3)
+            + local_get(3) + sx(2) + b"\x7e" + c64(35) + EQ64
+            + c64(0x1_00000000) + local_set(3)
+            + local_get(3) + sx(2) + b"\x7e" + c64(0x7_00000000) + EQ64 + AND,
+            # p = (2^31 - 1) * 3 = 0x1_7FFFFFFD, then p * 3.
+            c32(2**31 - 1) + local_set(1) + c32(3) + local_set(2)
+            + sx(1) + sx(2) + b"\x7e" + local_set(4)
+            + local_get(4) + sx(2) + b"\x7e" + c64(0x4_7FFFFFF7) + EQ64,
+            mul_ext(2, 3, EXTEND_S, EXTEND_S, 7)])),
+             ([], local_get(0) + local_get(1) + b"\x7e"))), "", 0x1E),
     # Division by 0 traps with code 3, and MIN / -1 with code 4.
     ("divzero", module(
         types(MAIN_TYPE),
@@ -3530,14 +3631,16 @@ CASES += [(name + "_unchecked", wasm, extra, expected) for name, wasm, extra, ex
 # the reach, also for the call and the tail call of the import, a label
 # that the module does not define either, while the call of the module's
 # own function 2 is one word (farcall32). With 31 pages they all are
-# (nearcall). main gives 7 * 7 + 7 + 7 = 63.
+# (nearcall). main gives 7 * 7 + 7 + 7 = 63. The i64.add of 0 makes the
+# operands of the i64.mul more than extended words, which would take no
+# call (mulext).
 FAR_CALL = module(
     types(MAIN_TYPE),
     imports(("env", "seven", 0)),
     funcs(0, 0),
     memory(1),
     exports(("main", 0, 1)),
-    code(([I64], call(0) + EXTEND_U + local_tee(0) + local_get(0) + b"\x7e" + WRAP
+    code(([I64], call(0) + EXTEND_U + i64_const(0) + ADD64 + local_tee(0) + local_get(0) + b"\x7e" + WRAP
           + call(0) + ADD + call(2) + ADD),
          (0, return_call(0))))
 CASES += [(name, FAR_CALL, "_seven MOVE R1, 7\n MOVE R15, @R13++\n", 63)
@@ -3715,6 +3818,8 @@ CASES += [(name + suffix, wasm, extra, expected) for name, wasm, extra, expected
 # 4 * (i + c) keeps the operand of word c with i as its index, as
 # without the windows (hoistagen_win).
 SHAPES["hoistagen_win"] = SHAPES["hoistagen"]
+# And shapes that hold only with the math unit, not with --no-mpu.
+MPU_SHAPES = {"mulext": (r"__mul64", False)}
 SHAPES["mathimport"] = (r"^W\.fpucheck$", True)
 SHAPES["float32"] = (r"^W\.fpucheck$", True)
 # A trusted word access through the window needs no word index, no test
@@ -3881,8 +3986,10 @@ def check(name: str, wasm_file: str, extra: str, expected: int, tmp: str,
     problems = []
     if "Stopped at the step limit" in output:
         problems.append(f"ran away: stopped after {STEP_LIMIT} steps")
-    if name in SHAPES:
-        pattern, must = SHAPES[name]
+    shapes = [SHAPES[name]] if name in SHAPES else []
+    if name in MPU_SHAPES and mode != "soft":
+        shapes.append(MPU_SHAPES[name])
+    for pattern, must in shapes:
         bare = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith(";"))
         if bool(re.search(pattern, bare, re.M)) != must:
             problems.append(f"the code {'does not match' if must else 'matches'} {pattern}")

@@ -286,6 +286,43 @@ class Deferred:
 
 
 @dataclass
+class Decoded:
+    """An instruction of a function's body, as decode reads it."""
+    at: int                   # where it starts in the module
+    op: int                   # its opcode, or 0x100 + n for 0xFC n
+    name: str
+    imm: Optional[int]        # its index, constant, or offset, if it has one
+    ft: FuncType              # the type of a block, loop, or if
+    targets: List[int]        # the labels of a br_table
+    sel_type: Optional[int]   # the type that a select names
+    align: int                # the alignment of a load or store
+
+
+# What an i64 is known to be (ext_of): the sign extension of its low
+# word, EXT_S, or the zero extension, EXT_U. A value may be both, such
+# as 0 to 2^31 - 1, or neither, 0.
+EXT_S, EXT_U = 1, 2
+
+
+def ext_of(op: int, imm: Optional[int]) -> int:
+    """What the i64 that the instruction op with the immediate imm gives
+    is known to be (EXT_S, EXT_U), whatever its operands: that of an
+    i64.extend_i32_s or _u, of an i64.extend8_s, 16_s, or 32_s, of a load
+    of fewer than 8 bytes into an i64, or of an i64 constant."""
+    if op in (0xAC, 0x30, 0x32, 0x34, 0xC2, 0xC3, 0xC4):
+        return EXT_S
+    if op in (0xAD, 0x35):
+        return EXT_U
+    if op in (0x31, 0x33):  # i64.load8_u, load16_u: below 2^31
+        return EXT_S | EXT_U
+    if op == 0x42 and imm is not None:
+        c = imm & 0xFFFFFFFF_FFFFFFFF
+        return ((EXT_S if c < 2**31 or c >= 2**64 - 2**31 else 0)
+                | (EXT_U if c < 2**32 else 0))
+    return 0
+
+
+@dataclass
 class Label:
     """A label in a function's code."""
     name: str
@@ -3484,6 +3521,8 @@ class FunctionTranslator:
         self.stack: List[int] = []                      # the type of each value on the operand stack
         self.vals: List[List[str]] = []                 # its words as source operands
         self.deferred: List[Optional[Deferred]] = []    # and what it is, if it is deferred
+        self.exts: List[int] = []                       # and for an i64, what it is known to be
+        self.local_ext = self.local_exts()
         self.loops = 0                                  # the loops around the current instruction
         self.n_traps = 0
         self.n_labels = 0
@@ -3522,6 +3561,13 @@ class FunctionTranslator:
         self.stack.append(t)
         self.vals.append(v)
         self.deferred.append(deferred)
+        ext = 0
+        if t == I64 and deferred is not None and deferred.local is not None:
+            ext = self.local_ext.get(deferred.local, 0)
+        elif t == I64 and deferred is not None:
+            c = sum((int(w) & MASK32) << (32 * k) for k, w in enumerate(deferred.words))
+            ext = ext_of(0x42, c)
+        self.exts.append(ext)
         return v
 
     def top(self) -> List[str]:
@@ -3549,6 +3595,7 @@ class FunctionTranslator:
             del self.stack[-n:]
             del self.vals[-n:]
             del self.deferred[-n:]
+            del self.exts[-n:]
         return out
 
     def settle(self, i: int) -> None:
@@ -3823,6 +3870,7 @@ class FunctionTranslator:
         del self.stack[f.height:]
         del self.vals[f.height:]
         del self.deferred[f.height:]
+        del self.exts[f.height:]
         for t, w in zip(types, words):
             self.push(t, words=w)
 
@@ -4625,6 +4673,33 @@ class FunctionTranslator:
             self.push(I32, fwd[1])
         return True
 
+    def mul_ext(self, r: Reader, at: int, what: str) -> bool:
+        """An i64.mul of two values that are both sign extensions of their
+        low words, or both zero extensions (EXT_S, EXT_U), inline with the
+        math unit, if it is used: the signed or unsigned product of the low
+        words, SMUL or UMUL (DEVICES §2), is the whole product. Not by the
+        constant 0 or 1, which mul64_const does without the math unit.
+        Returns whether it was. Its result may go straight to a local."""
+        if (not self.t.mpu or len(self.stack) - self.ctrl[-1].height < 2
+                or self.stack[-2:] != [I64, I64]):
+            return False
+        if {self.const_value(2, I64), self.const_value(1, I64)} & {0, 1}:
+            return False
+        ext = self.exts[-2] & self.exts[-1]
+        if not ext:
+            return False
+        word = "smul" if ext & EXT_S else "umul"
+        fwd = self.forward(r, at, I64, 2)
+        a, b = self.pop([I64, I64], at, what)
+        d = self.push(I64) if fwd is None else fwd[0]
+        self.emit("MOVE", "@__mpu.a", a[0])
+        self.emit("MOVE", "@__mpu.b", b[0])
+        self.emit("MOVE", d[0], f"@__mpu.{word}_lo")
+        self.emit("MOVE", d[1], f"@__mpu.{word}_hi")
+        if fwd is not None and fwd[1] is not None:
+            self.push(I64, fwd[1])
+        return True
+
     def mul64_const(self, r: Reader, at: int, what: str) -> bool:
         """An i64.mul by a constant c = 2^32 * ch + cl, inline with the math
         unit, if it is used. Returns whether it was. With x = 2^32 * xh + xl, the
@@ -4987,6 +5062,125 @@ class FunctionTranslator:
                 self.emit("C>0", lo, a_hi, str(n - 32))
             self.emit("C>0", hi, a_hi, "32")
 
+    def decode(self, r: Reader) -> Decoded:
+        """Reads the next instruction of the function's body, with its
+        immediates, and checks that nicewasm supports it."""
+        at = r.pos
+        op = r.byte()
+        name = OPCODES.get(op, f"opcode 0x{op:02x}")
+        if op == 0xFC:
+            sub = r.u32()
+            name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
+            if sub not in (10, 11) and 0x100 + sub not in TRUNC_SAT_OPS:
+                raise WasmError(f"function {self.idx}: {name} is not supported", at)
+            for _ in range(2 if sub == 10 else 1 if sub == 11 else 0):
+                mem_at = r.pos
+                mem = r.u32()
+                if mem != 0 or self.t.m.memory_pages is None:
+                    raise WasmError(f"function {self.idx}: memory {mem} does not exist",
+                                    mem_at)
+            op = 0x100 + sub
+        imm: Optional[int] = None
+        ft = FuncType([], [])
+        targets: List[int] = []
+        sel_type: Optional[int] = None
+        align = 0
+        if op in (0x0C, 0x0D, 0x10, 0x12, 0x20, 0x21, 0x22, 0x23, 0x24):
+            imm = r.u32()
+        elif op in (0x11, 0x13):  # call_indirect: a type index, then a table index
+            type_at = r.pos
+            imm = r.u32()
+            if imm >= len(self.t.m.types):
+                raise WasmError(f"type index {imm} is out of range", type_at)
+            table_at = r.pos
+            table_idx = r.u32()
+            if table_idx != 0 or self.t.m.table_size is None:
+                raise WasmError(f"function {self.idx}: table {table_idx} does not exist",
+                                table_at)
+        elif op in (0x41, 0x42, 0x43, 0x44):  # the constants
+            imm = read_const(r, {0x41: I32, 0x42: I64, 0x43: F32, 0x44: F64}[op])
+        elif op in (BLOCK, LOOP, IF):
+            ft = self.block_type(r)
+        elif op in LOADS or op in STORES:
+            align = r.u32()
+            imm = r.u32()  # the offset
+        elif op in (0x3F, 0x40):  # memory.size, memory.grow
+            mem_at = r.pos
+            mem = r.u32()
+            if mem != 0 or self.t.m.memory_pages is None:
+                raise WasmError(f"function {self.idx}: memory {mem} does not exist", mem_at)
+            if self.t.library:
+                raise WasmError(f"function {self.idx}: a library module may not use {name}",
+                                at)
+            if self.t.ram is not None:
+                raise WasmError(f"function {self.idx}: a module that runs from a ROM (--ram)"
+                                f" may not use {name}", at)
+            if self.t.partial:
+                raise WasmError(f"function {self.idx}: a module with only the start of its"
+                                f" memory reserved (--memory-bytes) may not use {name}", at)
+        elif op == 0x0E:
+            targets = [r.u32() for _ in range(r.u32() + 1)]
+        elif op == 0x1C:
+            types = [r.byte() for _ in range(r.u32())]
+            if len(types) != 1:
+                raise WasmError(f"function {self.idx}: select must name one type", at)
+            check_types(types, f"function {self.idx}: select", at)
+            sel_type = types[0]
+        elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
+                         0xAC, 0xAD, 0x10A, 0x10B, 0x11, 0x13)
+                  or op in REINTERPRET_OPS or op in SIGN_OPS or op in FLOAT_OPS
+                  or op in TRUNC_OPS or op in TRUNC_SAT_OPS or op in FLOAT_CMP_OPS
+                  or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
+                  or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
+                  or op in SHIFT_OPS or op in SHIFT64_OPS):
+            raise WasmError(f"function {self.idx}: {name} is not supported", at)
+        if self.t.library and (op in FLOAT_OPS or op in TRUNC_OPS or op in TRUNC_SAT_OPS
+                               or op in FLOAT_CMP_OPS):
+            # These use the FPU, and a library module has no
+            # ___wasm_start to check for it (fpu_check).
+            raise WasmError(f"function {self.idx}: a library module may not use {name}", at)
+        return Decoded(at, op, name, imm, ft, targets, sel_type, align)
+
+    def local_exts(self) -> Dict[int, int]:
+        """The i64 locals, not parameters, whose values are known to be
+        word extensions (EXT_S, EXT_U), and what they are. A local starts
+        at 0, which is both, and is what every value set to it is. That
+        value, which local.set or local.tee takes, is the result of the
+        instruction before it, if that has one that ext_of knows, or is
+        the value of the local that local.get or local.tee before it gives,
+        whatever that local is known to be. Any other instruction there,
+        such as the end of a block, gives nothing known, and so does
+        forward, whose operation is the instruction before. Code that cannot
+        be reached counts too, which can only lose a local. If the body
+        does not decode, run says why, and no local is known."""
+        n_params = len(self.ftype.params)
+        ext = {i: EXT_S | EXT_U for i in range(n_params, len(self.locals))
+               if self.local_types[i] == I64}
+        sets: List[Tuple[int, int, Optional[int]]] = []  # (local, ext, or the local it copies)
+        r = Reader(self.t.data, self.code.start, self.code.end)
+        prev: Optional[Decoded] = None
+        try:
+            while not r.at_end():
+                d = self.decode(r)
+                if d.op in (0x21, 0x22) and d.imm in ext:
+                    if prev is not None and prev.op in (0x20, 0x22):
+                        sets.append((d.imm, 0, prev.imm))
+                    else:
+                        sets.append((d.imm, ext_of(prev.op, prev.imm) if prev else 0, None))
+                prev = d
+        except WasmError:
+            return {}
+        changed = True
+        while changed:
+            changed = False
+            for i, k, src in sets:
+                if src is not None:
+                    k = ext.get(src, 0)  # 0 for a parameter or a local of another type
+                if ext[i] & k != ext[i]:
+                    ext[i] &= k
+                    changed = True
+        return {i: k for i, k in ext.items() if k}
+
     def run(self) -> List[str]:
         r = Reader(self.t.data, self.code.start, self.code.end)
         reachable = True
@@ -4995,81 +5189,10 @@ class FunctionTranslator:
         # not 0, when the flags hold it and its register does not.
         pending: Optional[str] = None
         while True:
-            at = r.pos
-            op = r.byte()
+            dec = self.decode(r)
+            at, op, name, imm = dec.at, dec.op, dec.name, dec.imm
+            ft, targets, sel_type, align = dec.ft, dec.targets, dec.sel_type, dec.align
             flags, pending = pending, None
-            name = OPCODES.get(op, f"opcode 0x{op:02x}")
-            if op == 0xFC:
-                sub = r.u32()
-                name = FC_OPCODES.get(sub, f"opcode 0xfc {sub}")
-                if sub not in (10, 11) and 0x100 + sub not in TRUNC_SAT_OPS:
-                    raise WasmError(f"function {self.idx}: {name} is not supported", at)
-                for _ in range(2 if sub == 10 else 1 if sub == 11 else 0):
-                    mem_at = r.pos
-                    mem = r.u32()
-                    if mem != 0 or self.t.m.memory_pages is None:
-                        raise WasmError(f"function {self.idx}: memory {mem} does not exist",
-                                        mem_at)
-                op = 0x100 + sub
-            imm: Optional[int] = None
-            ft = FuncType([], [])
-            targets: List[int] = []
-            sel_type: Optional[int] = None
-            align = 0
-            if op in (0x0C, 0x0D, 0x10, 0x12, 0x20, 0x21, 0x22, 0x23, 0x24):
-                imm = r.u32()
-            elif op in (0x11, 0x13):  # call_indirect: a type index, then a table index
-                type_at = r.pos
-                imm = r.u32()
-                if imm >= len(self.t.m.types):
-                    raise WasmError(f"type index {imm} is out of range", type_at)
-                table_at = r.pos
-                table_idx = r.u32()
-                if table_idx != 0 or self.t.m.table_size is None:
-                    raise WasmError(f"function {self.idx}: table {table_idx} does not exist",
-                                    table_at)
-            elif op in (0x41, 0x42, 0x43, 0x44):  # the constants
-                imm = read_const(r, {0x41: I32, 0x42: I64, 0x43: F32, 0x44: F64}[op])
-            elif op in (BLOCK, LOOP, IF):
-                ft = self.block_type(r)
-            elif op in LOADS or op in STORES:
-                align = r.u32()
-                imm = r.u32()  # the offset
-            elif op in (0x3F, 0x40):  # memory.size, memory.grow
-                mem_at = r.pos
-                mem = r.u32()
-                if mem != 0 or self.t.m.memory_pages is None:
-                    raise WasmError(f"function {self.idx}: memory {mem} does not exist", mem_at)
-                if self.t.library:
-                    raise WasmError(f"function {self.idx}: a library module may not use {name}",
-                                    at)
-                if self.t.ram is not None:
-                    raise WasmError(f"function {self.idx}: a module that runs from a ROM (--ram)"
-                                    f" may not use {name}", at)
-                if self.t.partial:
-                    raise WasmError(f"function {self.idx}: a module with only the start of its"
-                                    f" memory reserved (--memory-bytes) may not use {name}", at)
-            elif op == 0x0E:
-                targets = [r.u32() for _ in range(r.u32() + 1)]
-            elif op == 0x1C:
-                types = [r.byte() for _ in range(r.u32())]
-                if len(types) != 1:
-                    raise WasmError(f"function {self.idx}: select must name one type", at)
-                check_types(types, f"function {self.idx}: select", at)
-                sel_type = types[0]
-            elif not (op in (0x00, 0x01, 0x05, 0x0B, 0x0F, 0x1A, 0x1B, 0x45, 0x50, 0xA7,
-                             0xAC, 0xAD, 0x10A, 0x10B, 0x11, 0x13)
-                      or op in REINTERPRET_OPS or op in SIGN_OPS or op in FLOAT_OPS
-                      or op in TRUNC_OPS or op in TRUNC_SAT_OPS or op in FLOAT_CMP_OPS
-                      or op in DIV_OPS or op in LIB_OPS or op in EXTEND_OPS
-                      or op in ALU_OPS or op in ALU64_OPS or op in CMP_OPS or op in CMP64_OPS
-                      or op in SHIFT_OPS or op in SHIFT64_OPS):
-                raise WasmError(f"function {self.idx}: {name} is not supported", at)
-            if self.t.library and (op in FLOAT_OPS or op in TRUNC_OPS or op in TRUNC_SAT_OPS
-                                   or op in FLOAT_CMP_OPS):
-                # These use the FPU, and a library module has no
-                # ___wasm_start to check for it (fpu_check).
-                raise WasmError(f"function {self.idx}: a library module may not use {name}", at)
             if not reachable:
                 # Skip to the else or end that makes the code reachable again.
                 if op in (BLOCK, LOOP, IF):
@@ -5336,6 +5459,7 @@ class FunctionTranslator:
                 t, n, signed = LOADS[op]
                 self.memarg(n, align, at, name)
                 self.load(t, n, signed, imm, at, name, align)
+                self.exts[-1] = ext_of(op, imm) if t == I64 else 0
             elif op in STORES:
                 assert imm is not None
                 t, n = STORES[op]
@@ -5485,6 +5609,8 @@ class FunctionTranslator:
                     self.emit("OR", top, top, x)
             elif op == 0x6C and self.mul_const(r, at, name):
                 pass
+            elif op == 0x7E and self.mul_ext(r, at, name):
+                pass
             elif op == 0x7E and self.mul64_const(r, at, name):
                 pass
             elif op == 0x6C and self.t.mpu:
@@ -5512,6 +5638,7 @@ class FunctionTranslator:
                 if t == I64:
                     self.emit("MOVE", ext[1], "0")
                     self.emit("?N MOVE", ext[1], "-1")
+                    self.exts[-1] = EXT_S
             elif op == 0xA7:  # i32.wrap_i64
                 deferred = self.deferred[-1] if len(self.stack) > self.ctrl[-1].height else None
                 (a,) = self.pop([I64], at, name)
@@ -5529,6 +5656,7 @@ class FunctionTranslator:
                 self.emit("MOVE", hi, "0")
                 if op == 0xAC:
                     self.emit("?N MOVE", hi, "-1")
+                self.exts[-1] = ext_of(op, None)
         return self.finish()
 
     def ret(self, at: int, what: str) -> None:

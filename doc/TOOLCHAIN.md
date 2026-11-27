@@ -65,8 +65,8 @@ builds a program for one: it picks the `_mon` start-up file
 - The runtime library's start-up code calls `_main` (a C name `f` is the
   label `_f`, ABI.md), and `start_wasm.nasm`
   first calls the `___wasm_start` that `nicewasm` emits. Translated code
-  uses the math unit through the labels in `muldiv_mpu.nasm` for `i32.mul`
-  and the divisions, or calls `__mul`, `__div`, and the like with
+  uses the math unit through the labels in `muldiv_mpu.nasm` for `i32.mul`,
+  some of `i64.mul`, and the divisions, or calls `__mul`, `__div`, and the like with
   `--no-mpu`, and traps through `___wasm_trap_vector`. A C compiler for
   NICE would call the same routines.
 - Translated code calls the float library, `runtime/float_fpu.nasm`,

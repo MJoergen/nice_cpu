@@ -19,9 +19,10 @@ COUNT - 1 are tried; the same seed always gives the same module.
 
 A module has four functions: main, f(i32, i64, i32, i32) -> i32, whose
 last argument goes on the stack, g(i64, i32) -> i64, and h(i32, i32) ->
-i32. Each has 8 to 13 locals, i32 and i64, so that with the values on
+i32. Each has 9 to 13 locals, i32 and i64, so that with the values on
 the operand stack some live in registers and some are spilled to the
-frame. The bodies use blocks,
+frame. One of them is an i64 that only ever holds a word sign extended,
+or in some functions zero extended (gen_word). The bodies use blocks,
 loops, if and else, br, br_if, and br_table with and without values,
 return, nop, both forms of select, calls and call_indirect, half of f's
 results by return_call or return_call_indirect of h, every
@@ -32,7 +33,7 @@ comparisons kept in a local by local.tee for later conditions, a
 br_if out of the function at its start, eqz
 before if and br_if, i64 shifts by constants and by variables, groups
 of word loads and stores at offsets from one address in a local,
-multiplications by constants, divisions with nonzero divisors, some of
+multiplications by constants and of extended words, divisions with nonzero divisors, some of
 them constants, loads and stores of every width at
 constant and at dynamic addresses, among them the addresses of array
 elements, (i << s) + c, with an index i whose high bits the shift drops
@@ -535,7 +536,12 @@ class Ctx:
         self.loop_depth = 0
         # The last two locals are loop counters, which nothing else touches.
         self.counters = [len(fn.local_types) - 2, len(fn.local_types) - 1]
-        self.usable = [i for i in range(len(fn.local_types)) if i not in self.counters]
+        # The i64 before them only ever holds a word extended as word_ext
+        # says, EXTEND_S or EXTEND_U (gen_word).
+        self.word = len(fn.local_types) - 3
+        self.word_ext = rng.choice([EXTEND_S, EXTEND_U])
+        self.usable = [i for i in range(len(fn.local_types))
+                       if i not in self.counters and i != self.word]
 
     def locals_of(self, t: int) -> List[int]:
         return [i for i in self.usable if self.fn.local_types[i] == t]
@@ -630,6 +636,13 @@ def gen_binop(ctx: Ctx, t: int, depth: int) -> Expr:
         b = binop("or", t, gen_expr(ctx, t, depth), konst(t, 1))
         if name == "div_s":
             b = binop("or", t, binop("and", t, gen_expr(ctx, t, depth), konst(t, 0x7FFF)), konst(t, 1))
+    elif name == "mul" and t == I64 and ctx.rng.random() < 0.6:
+        # Two extended words, which nicewasm multiplies with one product
+        # of the math unit if both are sign or both zero extended, as
+        # they mostly are here.
+        ext = ctx.rng.choice([EXTEND_S, EXTEND_U])
+        a = gen_word(ctx, depth, ext)
+        b = gen_word(ctx, depth, ext if ctx.rng.random() < 0.8 else None)
     elif name == "mul" and ctx.rng.random() < 0.4:
         # A constant, which nicewasm multiplies by with shifts, additions,
         # and subtractions if few will do.
@@ -649,6 +662,41 @@ def gen_binop(ctx: Ctx, t: int, depth: int) -> Expr:
     else:
         b = gen_expr(ctx, t, depth)
     return binop(name, t, a, b)
+
+
+def gen_word(ctx: Ctx, depth: int, ext: Optional[bytes] = None) -> Expr:
+    """An i64 that is a word sign extended, or with ext EXTEND_U zero
+    extended, at random if ext is None: i64.extend_i32_s or _u of an
+    i32, a load of 1, 2, or 4 bytes into an i64, a constant, or the local
+    ctx.word, which only ever holds such words, or a local.tee of a word
+    to it."""
+    signed = (ext or ctx.rng.choice([EXTEND_S, EXTEND_U])) == EXTEND_S
+    r = ctx.rng.random()
+    if r < 0.35:
+        a = gen_expr(ctx, I32, depth)
+        if signed:
+            return Expr(I64, a.code + EXTEND_S, lambda st: s32(a.ev(st)) & M64)
+        return Expr(I64, a.code + EXTEND_U, a.ev)
+    if r < 0.55:
+        # A byte or a half zero extended is also sign extended.
+        op = ctx.rng.choice([0x31, 0x33] + ([0x30, 0x32, 0x34] if signed else [0x35]))
+        n = LOADS[op][1]
+        offset = ctx.rng.choice([0, 1, 4])
+        a = gen_address(ctx, depth, offset + n)
+        return load(op, offset, a, ctx.hint(a, offset, n))
+    if r < 0.7:
+        return konst(I64, ctx.rng.choice([0, 1, 3, 0x7FFFFFFF] + (
+            [-1, -3, -2**31] if signed else [0x80000000, 0xFFFFFFFF, ctx.rng.getrandbits(32)])))
+    if r < 0.85 and (ext is None or ext == ctx.word_ext):
+        return get(I64, ctx.word)
+    v = gen_word(ctx, depth, ctx.word_ext)
+    i = ctx.word
+
+    def ev(st: State) -> int:
+        x = v.ev(st)
+        st.locals[i] = x
+        return x
+    return Expr(I64, v.code + local_tee(i), ev)
 
 
 def risky_division(ctx: Ctx, name: str, t: int, depth: int) -> Tuple[Expr, Expr]:
@@ -1191,6 +1239,8 @@ def consume(ctx: Ctx, ts: List[int]) -> Tuple[Callable[[State, List[int]], None]
 
 
 def gen_set(ctx: Ctx, depth: int) -> Stmt:
+    if ctx.rng.random() < 0.1:
+        return set_local(ctx.word, gen_word(ctx, depth, ctx.word_ext))
     t = ctx.rng.choice([I32, I32, I64])
     i = ctx.rng.choice(ctx.locals_of(t))
     if ctx.rng.random() < 0.3:
@@ -1944,10 +1994,12 @@ def build(seed: int, bounds: bool = True, tails: bool = True, trust: bool = Fals
     rng = random.Random(seed)
     risky = rng.random() < 0.4
     more = ([F64, F32, F64, F32, F64], [F64, F32, F32]) if floats else ([], [])
-    fns = [Func(0, [], I32, [I32] * 7 + [I64] * 3 + more[0] + [I32, I32]),
-           Func(1, [I32, I64, I32, I32], I32, [I32, I64, I32, I32] + [I32] * 3 + [I64] * 2 + more[1] + [I32, I32]),
-           Func(2, [I64, I32], I64, [I64, I32] + [I32] * 2 + [I64] * 2 + more[1] + [I32, I32]),
-           Func(3, [I32, I32], I32, [I32, I32] + [I32] * 6 + [I64] + more[1] + [I32, I32])]
+    # Each ends with Ctx.word and the two loop counters.
+    last = [I64, I32, I32]
+    fns = [Func(0, [], I32, [I32] * 7 + [I64] * 3 + more[0] + last),
+           Func(1, [I32, I64, I32, I32], I32, [I32, I64, I32, I32] + [I32] * 3 + [I64] * 2 + more[1] + last),
+           Func(2, [I64, I32], I64, [I64, I32] + [I32] * 2 + [I64] * 2 + more[1] + last),
+           Func(3, [I32, I32], I32, [I32, I32] + [I32] * 6 + [I64] + more[1] + last)]
     for idx, fn in enumerate(fns):
         ctx = Ctx(rng, fn, idx, fns, risky, bounds, trust, floats)
         count = rng.randrange(8, 20) if idx == 0 else rng.randrange(3, 10)

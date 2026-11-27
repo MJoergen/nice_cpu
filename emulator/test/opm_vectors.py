@@ -6,7 +6,10 @@ A log is a list of writes, each with the sample before which it lands,
 at most one in a sample (opm_model.read_log). random_log() makes one
 from a seed: it sets up the eight channels with random registers, keys
 them on and off, and changes registers, the LFO's and the noise's
-included, while they sound. opm_ymfm.py checks the model against ymfm
+included, while they sound. With --bare, the set-up writes only the
+attack rates, which are 0 after a reset, and keys on every operator, so
+that the registers that the log does not write sound with their values
+of a reset. opm_ymfm.py checks the model against ymfm
 with such logs, and the emulator and the RTL replay the vectors.
 
 A vector file is the log, then one line for each sample: its number,
@@ -49,8 +52,10 @@ def _reg_value(rng: random.Random, reg: int) -> int:
     return rng.randrange(256)
 
 
-def random_log(seed: int, count: int) -> List[Write]:
-    """A log of writes over count samples, from seed."""
+def random_log(seed: int, count: int, bare: bool = False) -> List[Write]:
+    """A log of writes over count samples, from seed, which sets up every
+    register of the channels and the operators first, or if bare only the
+    attack rates, and keys every operator on."""
     rng = random.Random(seed)
     writes: List[Write] = []
     n = 0
@@ -60,14 +65,20 @@ def random_log(seed: int, count: int) -> List[Write]:
         writes.append((n, reg, data))
         n += 1
 
-    for reg in GLOBAL_REGS:
-        put(reg, _reg_value(rng, reg))
-    for ch in range(8):
-        for reg in CHANNEL_REGS:
-            put(reg + ch, _reg_value(rng, reg))
-        for op in range(4):
-            for reg in OPERATOR_REGS:
-                put(reg + 8 * op + ch, _reg_value(rng, reg))
+    if bare:
+        for slot in range(32):
+            put(0x80 + slot, _reg_value(rng, 0x80))
+        for ch in range(8):
+            put(0x08, 0x78 | ch)
+    else:
+        for reg in GLOBAL_REGS:
+            put(reg, _reg_value(rng, reg))
+        for ch in range(8):
+            for reg in CHANNEL_REGS:
+                put(reg + ch, _reg_value(rng, reg))
+            for op in range(4):
+                for reg in OPERATOR_REGS:
+                    put(reg + 8 * op + ch, _reg_value(rng, reg))
     while n < count:
         n += rng.choice((0, 1, 2, 5, 20, 100, 400))
         r = rng.random()
@@ -98,12 +109,13 @@ def main() -> int:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--count", type=int, default=20000, help="the number of samples")
     p.add_argument("--log", action="store_true", help="write the log only")
+    p.add_argument("--bare", action="store_true", help="set up the attack rates alone, and key every operator on")
     p.add_argument(
         "--env-start", type=int, default=0, help="the envelope's counter at the start, as the RTL's G_ENV_START sets it"
     )
     p.add_argument("-o", "--output", default="-")
     a = p.parse_args()
-    writes = random_log(a.seed, a.count)
+    writes = random_log(a.seed, a.count, a.bare)
     text = write_log(writes, a.count)
     if not a.log:
         opm = opm_model.Opm()

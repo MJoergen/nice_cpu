@@ -475,7 +475,9 @@ begin
 
          case state_r is
 
-            -- Reset writes every entry of the RAMs, one at a time.
+            -- Reset writes every entry of the RAMs, one at a time. The
+            -- RAMs of the registers share reg_data_r, so the slots' take
+            -- cycles 0 to 31 and the channels' cycles 32 to 47.
             when CLEAR_ST =>
                wave_we_r   <= '1';
                wave_addr_r <= clr_r;
@@ -490,8 +492,7 @@ begin
                   op_att_d_r   <= (others => '1');
                   op_state_d_r <= C_RELEASE;
                   op_key_d_r   <= '0';
-               end if;
-               if clr_r < 8 then
+               elsif clr_r < 40 then
                   -- 0x20 + c is 0xC0, so that each channel goes to both outputs.
                   creg_we_r    <= "0001";
                   creg_addr_r  <= clr_r(2 downto 0);
@@ -500,9 +501,10 @@ begin
                   fb_addr_r    <= clr_r(2 downto 0);
                   fb_old_d_r   <= (others => '0');
                   fb_new_d_r   <= (others => '0');
-               elsif clr_r < 16 then
+               elsif clr_r < 48 then
                   creg_we_r    <= "1110";
                   creg_addr_r  <= clr_r(2 downto 0);
+                  reg_data_r   <= X"00";
                end if;
                clr_r <= clr_r + 1;
                if clr_r = 255 then

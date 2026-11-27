@@ -1125,7 +1125,11 @@ and the rate of the samples: from the first to the last, each takes
 cycles, a little more than the 422 of one sample in the engine. `run/opm/high` runs 2000 samples at
 268 MHz, the most that `G_CLK_HZ` may be, with a sample every 4792
 cycles, where the sums of the sample clock need all 34 bits of its
-accumulator.
+accumulator. `run/opm/bare` runs 2000 samples of a log whose set-up,
+with `--bare`, writes only the attack rates and keys every operator
+on, so that the registers it does not write sound as a reset leaves
+them. Its 40 writes never fill the FIFO, so the generic `G_WAITS`
+false lets none wait.
 
 `tb_pcm` runs the sample player at 1 MHz, so that a cycle is a
 microsecond, as a step is in the emulator with `--step-time`, and a

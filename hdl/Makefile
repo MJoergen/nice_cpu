@@ -105,16 +105,22 @@ $(FPU_RUNS): run/fpu/%:
 # that sample alone. high runs 2000 samples of start's seed at 268 MHz,
 # the most that G_CLK_HZ may be, with a sample every 4792 cycles: there
 # the sums of the sample clock need all 34 bits of its accumulator, and
-# tb_opm checks the rate of the samples.
+# tb_opm checks the rate of the samples. bare runs 2000 samples of a log
+# whose set-up writes only the attack rates and keys every operator on,
+# so that the registers it does not write sound as a reset leaves them;
+# no write of it waits for a full FIFO.
 OPM_SEED ?= 1
 OPM_COUNT ?= 20000
-OPM_RUNS = start state wrong high
+OPM_RUNS = start state wrong high bare
 OPTS_OPM_start = --seed $(OPM_SEED)
 OPTS_OPM_state = --seed $(shell expr $(OPM_SEED) + 1) --env-start 65521
 OPTS_OPM_wrong = $(OPTS_OPM_start)
 OPTS_OPM_high = $(OPTS_OPM_start)
+OPTS_OPM_bare = $(OPTS_OPM_start) --bare
 GENERICS_OPM_state = -gG_ENV_START=65521
 OPM_COUNT_high = 2000
+OPM_COUNT_bare = 2000
+GENERICS_OPM_bare = -gG_WAITS=false
 OPM_HZ_high = 268000000
 SED_OPM_wrong = && sed -i '/^end /,$$ s/^$(shell expr $(OPM_COUNT) - 1) [-0-9]* /$(shell expr $(OPM_COUNT) - 1) 12345 /' vectors
 EXPECT_OPM_wrong = 1

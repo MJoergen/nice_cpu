@@ -16,7 +16,7 @@
 -- run of more than 64 writes, such as the 228 that set up the channels
 -- at the start of a log, fills the FIFO, and each write after that waits
 -- for its ACK until a sample takes a write: p_drive counts those waits,
--- and there must be some. Before each write after a gap, it reads the
+-- and with G_WAITS there must be some. Before each write after a gap, it reads the
 -- status, whose bits 31..16 must be 0x2151, bits 15..8 at most 64, and
 -- bit 7 1 when they are not 0. First, it checks that a reset leaves the
 -- FIFO empty, that the words other than the status read 0, and that a
@@ -41,7 +41,10 @@ entity tb_opm is
    generic (
       G_VECTORS   : string  := "opm.vectors";
       G_CLK_HZ    : natural := 40000000;
-      G_ENV_START : natural := 0
+      G_ENV_START : natural := 0;
+      -- Whether some write must wait for a full FIFO. A log without a
+      -- run of more than 64 writes has none.
+      G_WAITS     : boolean := true
    );
 end entity tb_opm;
 
@@ -263,7 +266,7 @@ begin
          fails_v := fails_v + 1;
       end if;
 
-      if waits = 0 then
+      if G_WAITS and waits = 0 then
          report "tb_opm: no write waited for a full FIFO"
             severity error;
          fails_v := fails_v + 1;

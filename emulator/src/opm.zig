@@ -24,6 +24,10 @@ pub const sample_rate: u32 = @intCast(chip_hz / clocks_per_sample);
 /// The value of bits 31..16 of `OPM_STATUS`.
 pub const status_id: u32 = 0x2151;
 
+/// The bit of a write of `OPM_STATUS` or `PCM_STATUS` that resets the
+/// synthesizer or the player. A read of either status has it 0.
+pub const reset_bit: u32 = 0x8000_0000;
+
 pub const Sample = struct { left: i16, right: i16 };
 
 const State = enum(u2) { attack, decay, sustain, release };
@@ -388,8 +392,8 @@ pub const Sound = struct {
     samples: u64 = 0,
     sink: ?Sink = null,
 
-    /// A reset of the system or a start (DEVICES §12.3). The sink and
-    /// the count of samples stay.
+    /// A reset of the system, a start, or a write of the status with bit
+    /// 31 set (DEVICES §12.3). The sink and the count of samples stay.
     pub fn reset(self: *Sound) void {
         self.opm = .init();
         self.head = 0;
@@ -407,9 +411,11 @@ pub const Sound = struct {
         return status_id << 16 | @as(u32, self.count) << 8 | @as(u32, @intFromBool(self.count != 0)) << 7;
     }
 
-    /// A write of `value` to word `i`. The FIFO must have room: the
-    /// caller waits for a sample first.
+    /// A write of `value` to word `i`. For `OPM_WRITE`, the FIFO must have
+    /// room: the caller waits for a sample first. A write of the status
+    /// with bit 31 set resets the sound.
     pub fn write(self: *Sound, i: u3, value: u32) void {
+        if (i == 1 and value & reset_bit != 0) self.reset();
         if (i != 0) return;
         std.debug.assert(!self.full());
         self.fifo[(self.head + self.count) % fifo_len] = @truncate(value);
@@ -488,6 +494,29 @@ test "the FIFO takes one write before each sample, in order" {
     try testing.expect(s.full());
 }
 
+test "a write of the status with bit 31 set resets the sound" {
+    var s: Sound = .{};
+    s.write(0, 0x0F80);
+    s.tick();
+    s.write(0, 0x2007);
+    s.advance(10);
+    // Bits 30..0 do nothing, as the status that a read returns.
+    s.write(1, 0x7FFF_FFFF);
+    s.write(1, s.read(1));
+    try testing.expectEqual(0x80, s.opm.regs[0x0F]);
+    try testing.expectEqual(status_id << 16 | 1 << 8 | 0x80, s.read(1));
+    s.write(1, reset_bit);
+    try testing.expectEqual(status_id << 16, s.read(1));
+    try testing.expectEqualDeep(Opm.init(), s.opm);
+    try testing.expectEqual(0, s.acc);
+    try testing.expectEqual(1, s.samples);
+    // The sample clock starts anew: the next sample is 18 microseconds on.
+    try testing.expectEqual(18, s.microsToSample());
+    s.write(0, 0x2007);
+    s.advance(18);
+    try testing.expectEqual(0x07, s.opm.regs[0x20]);
+}
+
 test "a sample is due every 64 clocks of 3579545 Hz" {
     var s: Sound = .{};
     s.advance(17);
@@ -539,11 +568,14 @@ test "without a sink, the writes take effect and no sample is computed" {
 }
 
 // The vectors of test/opm_vectors.py, which make test writes and names
-// with -Dopm-vectors: a log of writes, then each sample.
+// with -Dopm-vectors: a log of writes and resets, then each sample.
 test "the sound replays the vectors of the model" {
     const path = build_options.opm_vectors orelse return error.SkipZigTest;
     const text = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, testing.allocator, .limited(1 << 30));
     defer testing.allocator.free(text);
+    // A write's register, or `reset` for a reset, which comes before the
+    // write of its sample.
+    const reset: u32 = 0x100;
     var writes: std.ArrayList([3]u32) = .empty;
     defer writes.deinit(testing.allocator);
     var lines = std.mem.splitScalar(u8, text, '\n');
@@ -562,6 +594,10 @@ test "the sound replays the vectors of the model" {
         }
         const n = try std.fmt.parseInt(u32, a, 10);
         const b = f.next() orelse return error.Format;
+        if (in_log and std.mem.eql(u8, b, "reset")) {
+            try writes.append(testing.allocator, .{ n, reset, 0 });
+            continue;
+        }
         const c = f.next() orelse return error.Format;
         if (in_log) {
             // A write: the sample, the register, and the data, in hex.
@@ -570,6 +606,10 @@ test "the sound replays the vectors of the model" {
         }
         // A sample: its number, left, and right.
         if (n != count) return error.Format;
+        if (next < writes.items.len and writes.items[next][0] == n and writes.items[next][1] == reset) {
+            o = .init();
+            next += 1;
+        }
         if (next < writes.items.len and writes.items[next][0] == n) {
             o.write(@intCast(writes.items[next][1]), @intCast(writes.items[next][2]));
             next += 1;

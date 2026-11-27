@@ -22,6 +22,13 @@
 -- write from the FIFO, and is acknowledged in the cycle after it goes in.
 -- So a full FIFO holds off the acknowledge, as §12.3 asks.
 --
+-- A write of OPM_STATUS with bit 31 set resets the sound, as rst_i does:
+-- it empties the FIFO at once, so that a write in the next cycle goes
+-- into the empty FIFO, and clear_r resets the sample clock and the
+-- engine in the next cycle. A sample that the engine computes then is
+-- not given. A read of the status never has bit 31 set, so a program
+-- that writes back what it read never resets the sound.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The master holds STB and the request while STALL is high.
 -- b) STB is high only for requests to the sound: the bus decoder decodes
@@ -31,8 +38,8 @@
 --    to offsets 0 and 1 alone, and on a system without it all eight.
 --
 -- RESET
--- Reset empties the FIFO, starts the sample clock anew, and resets the
--- engine, which is silent after it.
+-- Reset, by rst_i or by a write of the status, empties the FIFO, starts
+-- the sample clock anew, and resets the engine, which is silent after it.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -79,6 +86,13 @@ architecture synthesis of opm is
    signal head_r  : unsigned(5 downto 0) := (others => '0');
    signal count_r : unsigned(6 downto 0) := (others => '0');
 
+   -- The FIFO is small, and its oldest write is read at once, so it is
+   -- distributed RAM. Synthesis would otherwise take a block RAM for it,
+   -- with its read address from the bus, as a write of the status
+   -- empties it.
+   attribute ram_style : string;
+   attribute ram_style of fifo : signal is "distributed";
+
    signal acc_r     : unsigned(33 downto 0) := (others => '0');
    signal due_r     : std_logic := '0';
    signal pending_r : std_logic := '0';
@@ -89,6 +103,11 @@ architecture synthesis of opm is
    signal push      : std_logic;
    signal push_data : std_logic_vector(15 downto 0);
    signal pop       : std_logic;
+
+   -- A write of the status with bit 31 set, in the cycle after it is
+   -- accepted, and the reset of the sample clock and the engine.
+   signal clear_r    : std_logic := '0';
+   signal engine_rst : std_logic;
 
    signal oldest : std_logic_vector(15 downto 0);
    signal ready  : std_logic;
@@ -122,7 +141,7 @@ begin
             pending_r <= '1';
          end if;
 
-         if rst_i = '1' then
+         if engine_rst = '1' then
             acc_r     <= (others => '0');
             due_r     <= '0';
             pending_r <= '0';
@@ -130,10 +149,11 @@ begin
       end if;
    end process p_clock;
 
-   start  <= pending_r and ready;
-   oldest <= fifo(to_integer(head_r));
-   pop    <= '1' when start = '1' and count_r /= 0 else
-            '0';
+   engine_rst <= rst_i or clear_r;
+   start      <= pending_r and ready;
+   oldest     <= fifo(to_integer(head_r));
+   pop        <= '1' when start = '1' and count_r /= 0 else
+                 '0';
 
 
    -----------------------------------------------------------------------------
@@ -164,6 +184,7 @@ begin
    begin
       if rising_edge(clk_i) then
          wb_ack_o <= '0';
+         clear_r  <= '0';
          if pop = '1' then
             head_r <= head_r + 1;
          end if;
@@ -192,6 +213,12 @@ begin
                      wb_data_o(7) <= '1';
                   end if;
                end if;
+               if wb_we_i = '1' and wb_addr_i = "001" and wb_data_i(31) = '1' then
+                  -- A reset by a program: the FIFO at once, the rest next.
+                  head_r  <= (others => '0');
+                  count_r <= (others => '0');
+                  clear_r <= '1';
+               end if;
             end if;
          end if;
 
@@ -200,6 +227,7 @@ begin
             count_r  <= (others => '0');
             hold_r   <= '0';
             wb_ack_o <= '0';
+            clear_r  <= '0';
          end if;
       end if;
    end process p_port;
@@ -215,7 +243,7 @@ begin
       )
       port map (
          clk_i   => clk_i,
-         rst_i   => rst_i,
+         rst_i   => engine_rst,
          ready_o => ready,
          start_i => start,
          write_i => pop,

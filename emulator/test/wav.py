@@ -2,13 +2,17 @@
 """Test niceemu --wav (doc/DEVICES.md §12.3) against the model.
 
 A program writes the registers of DEVICES.md §12.5, one write in a
-step, waits with TIME_SKIP while the note sounds, writes the key off,
-and waits again. With --step-time, a write in the step whose
-microseconds are m lands before the sample floor(m * 3579545 /
-64000000), or after the write before it, if that is later; the run
-computes the samples up to the microseconds of its halt. The model,
-given those writes, must give every sample of the WAV file, and its
-header must say so. Then the usage errors of --wav.
+step, and waits with TIME_SKIP while the note sounds. Then it resets
+the synthesizer with a write of OPM_STATUS, which silences it, and
+plays a note on C2 of channel 0 with three writes, the other registers
+as the reset leaves them. It waits, writes the key off, and waits
+again. With --step-time, a write in the step whose microseconds are m,
+counted from the start or from the reset, lands before the sample
+floor(m * 3579545 / 64000000) of those since, or after the write
+before it, if that is later; the run computes the samples up to the
+microseconds of its halt. The model, given those writes and the reset,
+must give every sample of the WAV file, and its header must say so.
+Then the usage errors of --wav.
 
 --pcm-wav (DEVICES.md §12.7): a program writes PCM_COUNT samples into
 the sample player's FIFO, a step each, sets the rate, and waits with
@@ -50,7 +54,10 @@ NICEEMU = os.environ.get("NICEEMU", os.path.join(HERE, "..", "zig-out", "bin", "
 NICEASM = os.path.join(HERE, "..", "..", "assembler", "niceasm.py")
 
 WRITES = [0x20C7, 0x284A, 0x607F, 0x687F, 0x707F, 0x5801, 0x981F, 0xF80F, 0x0878]
+# After the reset: AR 31 and RR 15 of C2 of channel 0, and its key on.
+RESET_WRITES = [0x981F, 0xF80F, 0x0840]
 SKIP_ON = 50000
+SKIP_RESET = 30000
 SKIP_OFF = 20000
 QUIET_SKIPS = 8
 QUIET_TIMEOUT = 30
@@ -63,10 +70,18 @@ failures: List[str] = []
 
 
 def program() -> str:
-    lines = ["OPM_WRITE       .EQU    0xFFFFFF08", "TIME_SKIP       .EQU    0xFFFFFF5F"]
+    lines = [
+        "OPM_WRITE       .EQU    0xFFFFFF08",
+        "OPM_STATUS      .EQU    0xFFFFFF09",
+        "TIME_SKIP       .EQU    0xFFFFFF5F",
+    ]
     for w in WRITES:
         lines.append(f"                MOVE    @OPM_WRITE, 0x{w:04X}")
     lines.append(f"                MOVE    @TIME_SKIP, {SKIP_ON}")
+    lines.append("                MOVE    @OPM_STATUS, 0x80000000")
+    for w in RESET_WRITES:
+        lines.append(f"                MOVE    @OPM_WRITE, 0x{w:04X}")
+    lines.append(f"                MOVE    @TIME_SKIP, {SKIP_RESET}")
     lines.append("                MOVE    @OPM_WRITE, 0x0800")
     lines.append(f"                MOVE    @TIME_SKIP, {SKIP_OFF}")
     lines.append("                HALT")
@@ -166,17 +181,33 @@ def expected() -> List[Tuple[int, int]]:
     times: List[Tuple[int, int]] = [(m, w) for m, w in enumerate(WRITES)]
     m = len(WRITES)  # the TIME_SKIP of SKIP_ON
     m += 1 + SKIP_ON
+    reset = m  # the write of OPM_STATUS
+    m += 1
+    for w in RESET_WRITES:
+        times.append((m, w))
+        m += 1
+    m += 1 + SKIP_RESET  # the TIME_SKIP of SKIP_RESET
     times.append((m, 0x0800))
     m += 1  # the TIME_SKIP of SKIP_OFF
     m += 1 + SKIP_OFF
     end = m + 1  # the HALT
+    # The reset starts the sample clock anew: the samples after it are
+    # counted from its microsecond, after those before it.
+    before = due(reset)
     log: List[opm_model.Write] = []
+    last = -1
     for t, w in times:
-        n = due(t)
-        if log and log[-1][0] >= n:
-            n = log[-1][0] + 1
+        if t < reset:
+            n = due(t)
+        else:
+            if last < before:
+                log.append((before, opm_model.RESET, 0))
+                last = before - 1
+            n = before + due(t - reset)
+        n = max(n, last + 1)
         log.append((n, w >> 8, w & 0xFF))
-    return opm_model.run(log, due(end))
+        last = n
+    return opm_model.run(log, before + due(end - reset))
 
 
 def read_wav(path: str) -> Tuple[bytes, List[Tuple[int, int]]]:

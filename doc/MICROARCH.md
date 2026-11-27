@@ -887,8 +887,9 @@ system built from them must follow these rules:
   31..3, and gives the sound bits 2..0. Beside the sample player it
   selects the sound for offsets 0 and 1 alone, and on a system without
   the player for all eight, where the sound reads 0 at offsets 2 to 7.
-  It takes the reset of a start of the processor,
-  which empties its FIFO and silences it. A write to its full FIFO holds
+  It takes the reset of a start of the processor, and a write of
+  `OPM_STATUS` with bit 31 set resets it too, which empties its FIFO
+  and silences it. A write to its full FIFO holds
   its ACK for up to one sample's time, 1788 cycles at 100 MHz, which a
   pause and a single step wait for. Its
   samples come out on a strobe, for the system's mixer
@@ -896,7 +897,8 @@ system built from them must follow these rules:
 - **Sample player.** `hdl/src/pcm.vhd` among the sound's words, at
   `0xFFFFFF0A`–`0xFFFFFF0C` (DEVICES §12.7): the decoder gives the sound
   offsets 0 and 1 of the eight, and the player offsets 2 to 7, with
-  address bits 2..0. It takes the reset of a start too. A write to its
+  address bits 2..0. It takes the reset of a start too, and a write of
+  `PCM_STATUS` with bit 31 set resets it as well. A write to its
   full FIFO while it plays holds its ACK for up to one sample's time, at
   1000 Hz 100000 cycles at 100 MHz, the longest hold of any device: a
   pause and a single step wait that long, and a watchdog of the system

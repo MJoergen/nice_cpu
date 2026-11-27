@@ -5,10 +5,15 @@
 //
 // The writes of the timers' registers, 0x10, 0x11, 0x12, and 0x14, are
 // dropped, as the synthesizer of doc/DEVICES.md §12 ignores them.
+//
+// A reset of the log ("N reset") replaces the chip with a new one. ymfm's
+// reset() is not the reset of §12.3: it keeps the LFO's counter, the
+// noise, and the envelope's counter.
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #include "ymfm_opm.h"
 
@@ -26,8 +31,8 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	ymfm::ymfm_interface intf;
-	ymfm::ym2151 chip(intf);
-	chip.reset();
+	auto chip = std::make_unique<ymfm::ym2151>(intf);
+	chip->reset();
 
 	char line[256];
 	long next = -1, count = 0;
@@ -47,6 +52,14 @@ int main(int argc, char **argv)
 			{
 				std::sscanf(line, "%*s %ld", &count);
 				continue;
+			}
+			char second[32];
+			if (std::sscanf(line, "%ld %31s", &next, second) == 2 && std::strcmp(second, "reset") == 0)
+			{
+				// RESET of opm_model.py
+				reg = 0x100;
+				data = 0;
+				return;
 			}
 			std::sscanf(line, "%ld %x %x", &next, &reg, &data);
 			return;
@@ -72,18 +85,24 @@ int main(int argc, char **argv)
 	size_t i = 0;
 	for (sample = 0; sample < count; sample++)
 	{
+		if (i < nw && writes[i].n == sample && writes[i].reg == 0x100)
+		{
+			chip = std::make_unique<ymfm::ym2151>(intf);
+			chip->reset();
+			i++;
+		}
 		if (i < nw && writes[i].n == sample)
 		{
 			unsigned r = writes[i].reg;
 			if (r != 0x10 && r != 0x11 && r != 0x12 && r != 0x14)
 			{
-				chip.write_address(uint8_t(r));
-				chip.write_data(uint8_t(writes[i].data));
+				chip->write_address(uint8_t(r));
+				chip->write_data(uint8_t(writes[i].data));
 			}
 			i++;
 		}
 		ymfm::ym2151::output_data out;
-		chip.generate(&out);
+		chip->generate(&out);
 		std::printf("%d %d\n", int(out.data[0]), int(out.data[1]));
 	}
 	std::free(writes);

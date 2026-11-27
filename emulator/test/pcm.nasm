@@ -2,7 +2,7 @@
 ; --step-time: at the rate r, set at the microsecond s, a sample is played
 ; each time the sum of r for each microsecond since s, plus what the sum
 ; held at s, reaches a multiple of 1000000. Run with
-;   --step-time -d 0x200:13
+;   --step-time -d 0x200:16
 ; The steps, one microsecond each, and what they read:
 ;     0   [0x200] = PCM_STATUS = 0x10000000: the depth, 4096, and empty
 ;     1-2 two samples
@@ -32,12 +32,20 @@
 ; 15823   [0x20B] = CYCLE_LO = 15823: 12312 instructions before it, the
 ;         3500 steps of the skips, and the 10 microseconds of the wait
 ; 15824   [0x20C] = INSTR_LO = 12314
-; HALT, the 12316th instruction, after 15816 steps: the 12316 and the
-; 3500 of the skips. The wait of the write is not a step of the run.
+; 15825   a write of PCM_STATUS with bit 31 set resets the player, with the
+;         FIFO full and the rate 48000
+; 15826   a sample goes into the empty FIFO
+; 15827   [0x20D] = 0x10000001
+; 15828   [0x20E] = PCM_RATE = 0
+; 15829   TIME_SKIP <- 1000, to 16829: with the rate 0, nothing is played
+; 16830   [0x20F] = 0x10000001
+; HALT, the 12322nd instruction, after 16822 steps: the 12322 and the
+; 4500 of the skips. The wait of the write is not a step of the run.
 ; Also run with --no-sound (pcm_mem in the Makefile), where the words are
 ; memory: [0x200] = [0x201] = 0, [0x202] = 0xFFFF8000, the last sample
 ; written, [0x203] = 0, [0x204] = 1, [0x205]-[0x20A] = 0, [0x20B] =
-; CYCLE_LO = 15813, without the wait, and [0x20C] = 12314.
+; CYCLE_LO = 15813, without the wait, [0x20C] = 12314, [0x20D] = [0x20F]
+; = 0x80000000, the last write of PCM_STATUS, and [0x20E] = 48000.
 PCM_DATA        .EQU    0xFFFFFF0A
 PCM_RATE        .EQU    0xFFFFFF0B
 PCM_STATUS      .EQU    0xFFFFFF0C
@@ -71,4 +79,10 @@ TIME_SKIP       .EQU    0xFFFFFF5F
                 MOVE    @0x20A, @PCM_STATUS
                 MOVE    @0x20B, @CYCLE_LO
                 MOVE    @0x20C, @INSTR_LO
+                MOVE    @PCM_STATUS, 0x80000000
+                MOVE    @PCM_DATA, 0x12345678
+                MOVE    @0x20D, @PCM_STATUS
+                MOVE    @0x20E, @PCM_RATE
+                MOVE    @TIME_SKIP, 1000
+                MOVE    @0x20F, @PCM_STATUS
                 HALT

@@ -2,7 +2,7 @@
 ; a sample is computed when the microseconds m reach ceil(n * 64000000 /
 ; 3579545) for the n-th sample, at m = 18, 36, 54, 72, ..., and each
 ; takes the oldest write from the FIFO. Run with
-;   --step-time -d 0x200:9
+;   --step-time -d 0x200:11
 ; The steps, one microsecond each, and what they read:
 ;    0    [0x200] = OPM_STATUS = 0x21510000: no write waits
 ;    1-2  two writes
@@ -23,12 +23,20 @@
 ;  [0x207] = CYCLE_LO = 684: 312 instructions before it, the 16 steps
 ;         of the skip, and the 356 microseconds of the waits
 ;  [0x208] = INSTR_LO = 313
-;  HALT, the 315th instruction, after 331 steps: the 315 and the 16 of
+;         a write back of the status that [0x206] read, which has bit 31
+;         clear, is ignored
+;  [0x209] = 0x21514080: still full, as the next sample is 17 or more
+;         microseconds after the one that took the last write
+;         a write of OPM_STATUS with bit 31 set resets the sound, and the
+;         write after it goes into the empty FIFO
+;  [0x20A] = 0x21510180
+;  HALT, the 320th instruction, after 336 steps: the 320 and the 16 of
 ;  the skip. The waits of the writes are not steps of the run.
 ; Also run with --no-sound (sound_mem in the Makefile), where the words
 ; are memory: [0x200] = 0, [0x201] = 0, [0x202] = 0, [0x203] = 0x1802,
 ; the last write before it, [0x204] = 0, [0x205] = [0x206] = 0x1234,
-; [0x207] = CYCLE_LO = 328, and [0x208] = 313.
+; [0x207] = CYCLE_LO = 328, [0x208] = 313, [0x209] = 0x1234, and
+; [0x20A] = 0x80000000.
 OPM_WRITE       .EQU    0xFFFFFF08
 OPM_STATUS      .EQU    0xFFFFFF09
 CYCLE_LO        .EQU    0xFFFFFF40
@@ -51,4 +59,9 @@ TIME_SKIP       .EQU    0xFFFFFF5F
                 MOVE    @0x206, @OPM_STATUS
                 MOVE    @0x207, @CYCLE_LO
                 MOVE    @0x208, @INSTR_LO
+                MOVE    @OPM_STATUS, @0x206
+                MOVE    @0x209, @OPM_STATUS
+                MOVE    @OPM_STATUS, 0x80000000
+                MOVE    @OPM_WRITE, 0x2000
+                MOVE    @0x20A, @OPM_STATUS
                 HALT

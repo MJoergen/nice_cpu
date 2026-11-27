@@ -39,8 +39,8 @@ pub const Player = struct {
     samples: u64 = 0,
     sink: ?Sink = null,
 
-    /// A reset of the system or a start (DEVICES §12.7). The sink and the
-    /// count of samples stay.
+    /// A reset of the system, a start, or a write of the status with bit
+    /// 31 set (DEVICES §12.7). The sink and the count of samples stay.
     pub fn reset(self: *Player) void {
         self.head = 0;
         self.count = 0;
@@ -79,7 +79,10 @@ pub const Player = struct {
                 self.count += 1;
             },
             1 => self.rate = if (value == 0) 0 else std.math.clamp(value, min_rate, max_rate),
-            2 => self.underrun = false,
+            2 => {
+                self.underrun = false;
+                if (value & opm.reset_bit != 0) self.reset();
+            },
             3 => {},
         }
     }
@@ -203,4 +206,25 @@ test "without a sink, the samples leave the FIFO at once, and an underrun shows"
     // A year passes at once.
     p.advance(366 * 86400 * 1_000_000);
     try testing.expectEqual(48 + 366 * 86400 * 48000, p.samples);
+}
+
+test "a write of the status with bit 31 set resets the player" {
+    var p: Player = .{};
+    for (0..depth) |i| p.write(0, @intCast(i));
+    p.write(1, 48000);
+    p.advance(25);
+    try testing.expectEqual(0x1000_0FFF, p.read(2));
+    // Bits 30..0 do nothing more than clear the flag: a program that
+    // writes back the status it read, with an odd count, never resets.
+    p.write(2, p.read(2));
+    p.write(2, 0x7FFF_FFFF);
+    try testing.expectEqual(0x1000_0FFF, p.read(2));
+    try testing.expectEqual(48000, p.read(1));
+    p.write(2, opm.reset_bit);
+    try testing.expectEqual(0x1000_0000, p.read(2));
+    try testing.expectEqual(0, p.read(1));
+    try testing.expectEqual(0, p.acc);
+    p.write(0, 0x1234_5678);
+    try testing.expectEqual(0x1000_0001, p.read(2));
+    try testing.expectEqual(0x1234_5678, p.fifo[p.head]);
 }

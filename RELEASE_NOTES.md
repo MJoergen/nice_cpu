@@ -68,6 +68,12 @@ bit. The FPU's `SIN`, `COS`, and `TAN` take any finite argument
   stereo samples of 16 bits, played at the rate that the program sets,
   1000 to 48000 Hz, or stopped with the rate 0. An empty FIFO plays 0
   and sets the underrun flag.
+- **A program resets the sound** (#220): a write of `OPM_STATUS` or
+  `PCM_STATUS` with bit 31 set resets the synthesizer or the sample
+  player as a start does, so that a monitor that takes over from a
+  program silences both and empties their FIFOs (§12.1, §12.7). A write
+  of `PCM_STATUS` with bit 31 clear clears the underrun flag alone, so
+  a program that writes back the status it read never resets.
 - **`0xFFFFFF08`–`0xFFFFFF0F` are no longer memory** in the emulator,
   where they were reserved words. A program that kept data there runs
   with `--no-sound`, which makes them memory again.
@@ -125,16 +131,16 @@ bit. The FPU's `SIN`, `COS`, and `TAN` take any finite argument
   in the timing flow; over the seven orders of its functions of `make
   timing-spread UNIT=fpu`, the medians are 1.026 and 0.879 ns, and the
   budget lies inside the range of both flows. It still meets 100 MHz.
-  The sound leaves 2.271 ns, 6.599 ns at its inputs, and 7.958 ns at
-  its outputs, and the sample player 3.701, 5.868, and 5.185 ns: both
-  meet the FPU's budget, which they share.
+  On 2026-11-27, the sound leaves 1.939 ns, 5.798 ns at its inputs,
+  and 7.958 ns at its outputs, and the sample player 4.133, 5.399, and
+  5.138 ns: both meet the FPU's budget, which they share.
 - Zig stays 0.17.0.
 
 **Specification and documents**
 
 - ISA.md is unchanged.
 - DEVICES.md §12 is the sound: its two words, the chip's registers,
-  the writes and the samples, the formulas, an example program, and
+  the writes and the samples, a reset by a program, the formulas, an example program, and
   the differences from the YM2151. §12.7 is the sample player. §4 has
   the rule for a new device's words: the I/O range holds control and
   status words, and tables go in blocks of memory outside it. §8 says
@@ -231,11 +237,11 @@ bit. The FPU's `SIN`, `COS`, and `TAN` take any finite argument
   a slave of the data bus, as the FPU is, with a strobe for its
   samples, which a system mixes. The generic `G_CLK_HZ` gives the
   clock: 24 to 268 MHz for the sound, and 1 to 268 MHz for the player.
-  The sound takes 1453 LUTs, 773 registers, 3 block RAMs of 18 Kb, and
-  1 DSP, and the player 183 LUTs, 137 registers, and 4 block RAMs of
+  The sound takes 1451 LUTs, 774 registers, 3 block RAMs of 18 Kb, and
+  1 DSP, and the player 184 LUTs, 137 registers, and 4 block RAMs of
   36 Kb.
 - `tb_opm` replays the model's vectors on the sound, each of 20000
-  samples, and `tb_pcm` checks the player. Neither has a formal check
+  samples with two resets by a program, and `tb_pcm` checks the player. Neither has a formal check
   (#219).
 - The FPU keeps the start of a function, and X and Y, in registers
   (#194, #211), runs its steps faster (#164), and reduces a huge

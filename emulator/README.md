@@ -513,7 +513,9 @@ the wait steps of a skip, but not as steps of the run; without it, the
 emulator waits the host's time. A read changes nothing, and `--dump` and
 the debug link bring the sound no further: they show the status as of
 the program's last read or write of its words, or of the end of the
-run. A start over the link resets the sound. `--no-sound` makes the
+run. A start over the link resets the sound, and so does a write of
+`OPM_STATUS` with bit 31 set, by the program or over the link, which
+starts the sample clock anew (DEVICES.md §12.3). `--no-sound` makes the
 eight words ordinary memory.
 
 `--wav FILE` writes the samples to FILE as a WAV file: 16-bit stereo
@@ -537,10 +539,12 @@ writes it:
 `make opmcheck`, which `make test` runs, fails if the file is not what
 it writes. The unit test of `src/opm.zig` replays the vectors of
 `test/opm_vectors.py` (Tests below). `test/sound.nasm` checks the words,
-the status, a skip, and the waits of a full FIFO with `--step-time`, and
-`sound_mem` runs it again with `--no-sound`. `test/wav.py` plays the
-example of DEVICES.md §12.5 with `--wav`, and compares every sample with
-the model's, for the writes at the samples that their steps give. It
+the status, a skip, the waits of a full FIFO, and a reset with
+`--step-time`, and `sound_mem` runs it again with `--no-sound`.
+`test/wav.py` plays the example of DEVICES.md §12.5 with `--wav`,
+resets the sound, and plays a note with three writes, and compares
+every sample with the model's, for the writes and the reset at the
+samples that their steps give. It
 ends a run that loops with SIGINT, SIGTERM, and SIGHUP, and both files
 must be whole. Then
 it plays the note without `--wav` and skips 9.5 hours, which must take
@@ -556,8 +560,8 @@ them from the FIFO all at once. `--pcm-wav FILE` writes them as
 `--wav` does, at the rate of the first sample, an underrun's 0s
 included. The header has one rate: if a later sample comes at another
 rate, niceemu says so at the end. `test/pcm.nasm` checks the words, the
-status, the rate, an underrun, and a full FIFO, stopped and playing,
-with `--step-time`, and `pcm_mem` runs it again with `--no-sound`.
+status, the rate, an underrun, a full FIFO, stopped and playing, and a
+reset with the FIFO full, with `--step-time`, and `pcm_mem` runs it again with `--no-sound`.
 `test/wav.py` checks every sample of `--pcm-wav`, the underrun's
 included, and the warning of a change of rate.
 
@@ -898,7 +902,12 @@ ymfm has them, under ymfm's notice. `make test` runs
 of DEVICES.md §12.4 for the pitch, the rates, the levels, and the LFO's
 period, its rules of writes, and its DAC on hand-checked
 values. The other formulas rest on `make ymfmcheck`. `test/opm_vectors.py` writes random logs of writes from a seed,
-and with the model's samples, the vectors. `make test` writes 20000
+and with the model's samples, the vectors. A log of 500 samples or
+more has two resets, each followed by writes of the attack rates and
+key ons, so that the registers sound as the reset leaves them; `--bare`
+sets up the same at the start. At a reset, `test/opm_ymfm.cpp` replaces
+ymfm's chip with a new one, as ymfm's `reset()` keeps the LFO's
+counter, the noise, and the envelope's counter. `make test` writes 20000
 samples of them to `test/opm.vectors.out`, and the unit test of
 `src/opm.zig` replays them. `make test` then changes one sample in the
 file, and the unit test must fail. `make ymfmcheck` clones ymfm

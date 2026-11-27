@@ -86,12 +86,12 @@ OPTS_fpu     = --step-time -d 0x200:24 -d 0xffffff88:8
 # last value written there, or 0.
 OPTS_fpu_mem = --step-time --no-fpu -d 0x200:24 -d 0xffffff88:8
 OPTS_fpustack = -d 0x200:18 -d 0xffffff88:8
-OPTS_sound    = --step-time -d 0x200:9
+OPTS_sound    = --step-time -d 0x200:11
 # sound again, with its words ordinary memory.
-OPTS_sound_mem = --step-time --no-sound -d 0x200:9
-OPTS_pcm      = --step-time -d 0x200:13
+OPTS_sound_mem = --step-time --no-sound -d 0x200:11
+OPTS_pcm      = --step-time -d 0x200:16
 # pcm again, with its words ordinary memory.
-OPTS_pcm_mem  = --step-time --no-sound -d 0x200:13
+OPTS_pcm_mem  = --step-time --no-sound -d 0x200:16
 OPTS_fpufunc = -d 0x200:22
 OPTS_bytewin = -d 0x202:3 -d 0x03ffffff:1 -d 0x60000000:1 -d 0x20000809:1 -d 0x5000080e:1
 

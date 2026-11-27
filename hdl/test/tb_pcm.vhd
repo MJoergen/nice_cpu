@@ -18,6 +18,11 @@
 --   cycles and a few, and then goes in behind the others, which all play.
 -- * Every request but the held write is acknowledged in the cycle after
 --   it is accepted.
+-- * A write of the status that a read returned, with an odd count,
+--   clears the flag alone. With bit 31 set, it resets the player, with
+--   the FIFO full and the rate set: the FIFO is empty, the rate 0, and no
+--   sample plays. A write of PCM_DATA in the cycle after it goes into the
+--   empty FIFO, and plays first once the rate is set again.
 -- * Reset empties the FIFO, sets the rate to 0, clears the flag, and stops
 --   the samples.
 -- The run stops with status 0 when every check passes, and 1 at the first
@@ -176,6 +181,33 @@ begin
          end if;
       end procedure check;
 
+      -- A reset, then in the next cycle a write of d to PCM_DATA, each
+      -- acknowledged in the cycle after it.
+      procedure reset_then_write(d : std_logic_vector(31 downto 0)) is
+      begin
+         cyc      <= '1';
+         stb      <= '1';
+         we       <= '1';
+         addr     <= to_slv(C_STATUS, 3);
+         data_out <= X"80000000";
+         wait until rising_edge(clk);
+         if stall /= '0' then
+            fail("STALL is high for the reset");
+         end if;
+         addr     <= to_slv(C_DATA, 3);
+         data_out <= d;
+         wait until rising_edge(clk);
+         if stall /= '0' or ack /= '1' then
+            fail("the write after the reset stalls, or the reset has no ACK");
+         end if;
+         stb <= '0';
+         wait for 1 ns;
+         if ack /= '1' then
+            fail("the write after the reset has no ACK");
+         end if;
+         cyc <= '0';
+      end procedure reset_then_write;
+
       procedure clocks(n : natural) is
       begin
          for i in 1 to n loop
@@ -285,6 +317,30 @@ begin
       check_sample(first_v + 4097, X"0000BEEF");
       check_sample(first_v + 4098, X"00000000");
       check(C_STATUS, X"10008000", "the underrun after the FIFO");
+
+      -- A write back of the status, then a reset by a program with the
+      -- FIFO full and the rate set, and a write in the cycle after it.
+      write_word(C_RATE, X"00000000");
+      for i in 1 to 4095 loop
+         write_word(C_DATA, to_slv(i, 32));
+      end loop;
+      check(C_STATUS, X"10008FFF", "4095 samples and the flag");
+      write_word(C_STATUS, X"10008FFF");
+      check(C_STATUS, X"10000FFF", "the status written back");
+      write_word(C_DATA, to_slv(4096, 32));
+      write_word(C_RATE, to_slv(40000, 32));
+      reset_then_write(X"5555AAAA");
+      check(C_STATUS, X"10000001", "after a reset by a program");
+      check(C_RATE, X"00000000", "after a reset by a program");
+      first_v := played;
+      clocks(100);
+      if played /= first_v then
+         fail("a sample is played after a reset by a program");
+      end if;
+      write_word(C_RATE, to_slv(40000, 32));
+      wait_played(first_v + 2);
+      check_sample(first_v + 1, X"5555AAAA", false);
+      check_sample(first_v + 2, X"00000000");
 
       -- Reset with samples in the FIFO.
       write_word(C_RATE, X"00000000");

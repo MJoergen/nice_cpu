@@ -10,8 +10,8 @@ under the notice in opm_tables.py. `make -C emulator ymfmcheck`
 compares the two. Where it departs from ymfm, §12.6 says so.
 
 Opm is the synthesizer without its FIFO. write() changes a register,
-and sample() computes the next sample. The device applies at most one
-write before each sample (§12.3).
+sample() computes the next sample, and reset() resets it. The device
+applies at most one write before each sample (§12.3).
 
 The operators are numbered by slot, 0 to 31, as their registers are:
 slot 8 * op + ch for the operator op of channel ch, where op is 0 for
@@ -149,18 +149,22 @@ class Operator:
 
 
 class Opm:
-    def __init__(self) -> None:
+    def __init__(self, env_start: int = 0) -> None:
+        # The envelope's counter after a reset, which §12.3 wants 0. A
+        # test starts it elsewhere, as the RTL's G_ENV_START does.
+        self.env_start = env_start
         self.reset()
 
     def reset(self) -> None:
-        """The state after a reset of the system or a start (§12.5)."""
+        """The state after a reset of the system, a start, or a reset by a
+        program (§12.3)."""
         self.regs = bytearray(256)
         for ch in range(8):
             self.regs[0x20 + ch] = 0xC0
         self.ops = [Operator() for _ in range(32)]
         self.fb = [[0, 0] for _ in range(8)]
         self.fb_in = [0] * 8
-        self.env_counter = 0
+        self.env_counter = self.env_start
         self.lfo_counter = 0
         self.lfo_am = 0
         self.noise_lfsr = 1
@@ -371,27 +375,37 @@ class Opm:
 
 Write = Tuple[int, int, int]  # the sample before which it lands, the register, the data
 
+# The register of a Write that is a reset by a program (§12.3), which
+# takes effect before the write of its sample, if any.
+RESET = 0x100
+
 
 def run(writes: Sequence[Write], count: int, opm: Optional[Opm] = None) -> List[Tuple[int, int]]:
     """The samples 0 to count - 1 from writes, ordered by sample, with at
-    most one in a sample."""
+    most one write in a sample, and at most one reset before it."""
     opm = opm or Opm()
     out: List[Tuple[int, int]] = []
     i = 0
     for n in range(count):
+        if i < len(writes) and writes[i][0] == n and writes[i][1] == RESET:
+            opm.reset()
+            i += 1
         if i < len(writes) and writes[i][0] == n:
+            if writes[i][1] == RESET:
+                raise ValueError(f"two resets, or a reset after a write, before sample {n}")
             opm.write(writes[i][1], writes[i][2])
             i += 1
             if i < len(writes) and writes[i][0] == n:
-                raise ValueError(f"two writes before sample {n}")
+                raise ValueError(f"two writes, or a reset after a write, before sample {n}")
         out.append(opm.sample())
     return out
 
 
 def read_log(lines: Sequence[str]) -> Tuple[List[Write], int]:
     """A log of writes, one a line: the sample, the register, and the
-    data, in hex but for the sample; and "end N", the number of samples.
-    "#" starts a comment."""
+    data, in hex but for the sample; "N reset", a reset by a program
+    before sample N, and before its write; and "end N", the number of
+    samples. "#" starts a comment."""
     writes: List[Write] = []
     count = 0
     for line in lines:
@@ -400,6 +414,8 @@ def read_log(lines: Sequence[str]) -> Tuple[List[Write], int]:
             continue
         if f[0] == "end":
             count = int(f[1])
+        elif f[1:] == ["reset"]:
+            writes.append((int(f[0]), RESET, 0))
         else:
             writes.append((int(f[0]), int(f[1], 16), int(f[2], 16)))
     return writes, count

@@ -897,7 +897,7 @@ The sound is an FM synthesizer whose registers are those of Yamaha's YM2151, the
 | Address | Name | A data read returns | A write |
 |---|---|---|---|
 | `0xFFFFFF08` | `OPM_WRITE` | 0 | queues a write of bits 7..0 to the register in bits 15..8, and ignores bits 31..16 |
-| `0xFFFFFF09` | `OPM_STATUS` | the status below | is ignored |
+| `0xFFFFFF09` | `OPM_STATUS` | the status below | with bit 31 set, resets the synthesizer (§12.3); otherwise is ignored |
 | `0xFFFFFF0A`–`0xFFFFFF0C` | | the sample player's (§12.7) | |
 | `0xFFFFFF0D`–`0xFFFFFF0F` | | 0 | is ignored |
 
@@ -913,6 +913,11 @@ The status:
 
 - **One word for a write.** The register and its data go in one word, so nothing waits between two halves of a write, and a pause or a memory dump cannot split one.
 - **A read has no side effect.**
+- **A reset by a program.** A write of `OPM_STATUS` with bit 31 set resets the synthesizer, as a start does (§12.3), and its other bits are ignored. Bit 31 of the status reads 0, so a program that writes back the status it read never resets. A write of the status never waits, even with the FIFO full, and a write of `OPM_WRITE` right after it goes into the empty FIFO. A monitor that takes over from a program resets the sound with two writes, the synthesizer's and the sample player's (§12.7):
+
+                    MOVE    @OPM_STATUS, 0x80000000
+                    MOVE    @PCM_STATUS, 0x80000000
+
 - `0xFFFFFF0D`–`0xFFFFFF0F` are reserved for sound, such as a mixer.
 
 ### 12.2 The chip's registers
@@ -963,9 +968,10 @@ At a reset, every register is 0 but `0x20`–`0x27`, which are `0xC0`, so that e
 - **A key off and a key on in one sample** cannot happen, as one write takes effect in a sample. The envelope reads the key once in each sample, after the write.
 - **The samples.** Each sample is a left and a right value, signed, of 16 bits, rounded as the chip's DAC rounds (§12.4). The FPGA implementation gives them with a strobe. The mixer, and the conversion to the rate of an output, are the system's. The emulator's window (§1.3) plays them on the host's audio device.
 - **When a sample is computed.** The FPGA implementation adds 3579545 to an accumulator in each cycle, and computes a sample each time the sum reaches 64 times its clock frequency in hertz, which it subtracts, as the microsecond counter does (§3). At 100 MHz, that is once in 1787.94 cycles on average. With `--step-time`, the emulator does the same with one microsecond for each step: it adds 3579545 for each step, and computes a sample each time the sum reaches 64000000, once in 17.879 steps on average. A skip (§3) computes the samples of the steps it skips, and the samples stop at a halt. A write to a full FIFO there takes the microseconds to the next sample, which the cycle counter, the microsecond counter, and the clock count, as the wait steps of a skip. Without `--step-time`, the emulator computes the samples of the host's time, so a write lands where the host's timing puts it.
-- **It always runs.** The sound computes its samples while the processor is held, paused, or halted, and empties its FIFO meanwhile, so a note that sounds goes on sounding. In the emulator, a read over the debug link brings the sound no further: a host sees the status as of the program's last read or write of the sound's words. A reset of the system, and a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), empty the FIFO and reset the sound: every register as above, every envelope at its end, 0x3FF, with its key off, every phase at 0, and the LFO and the noise at their start. So it is silent.
+- **It always runs.** The sound computes its samples while the processor is held, paused, or halted, and empties its FIFO meanwhile, so a note that sounds goes on sounding. In the emulator, a read over the debug link brings the sound no further: a host sees the status as of the program's last read or write of the sound's words.
+- **A reset.** A reset of the system, a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), and a write of `OPM_STATUS` with bit 31 set (§12.1), by a program or over the debug link, empty the FIFO and reset the sound: every register as above, every envelope at its end, 0x3FF, with its key off, every phase at 0, and the LFO and the noise at their start. So it is silent. The sample clock starts anew, so the next sample is due one sample's time after the reset. The FPGA implementation does not give a sample that it is computing when the reset arrives.
 
-A log of writes, each with the number of the sample before which it takes effect, and at most one in a sample, gives the same samples in the model, the emulator, and the FPGA implementation. That is how they are tested.
+A log of writes, each with the number of the sample before which it takes effect, and at most one in a sample, gives the same samples in the model, the emulator, and the FPGA implementation. That is how they are tested. A log may also have resets, each before the write of its sample, if any, and numbered as the writes are: in the samples that are given, so that the first sample after a reset has the reset's number.
 
 ### 12.4 Formulas
 
@@ -1015,7 +1021,7 @@ The sample player plays stereo samples of 16 bits that a program writes into a F
 |---|---|---|---|
 | `0xFFFFFF0A` | `PCM_DATA` | 0 | puts a sample into the FIFO |
 | `0xFFFFFF0B` | `PCM_RATE` | the rate in Hz | sets the rate |
-| `0xFFFFFF0C` | `PCM_STATUS` | the status below | clears the underrun flag |
+| `0xFFFFFF0C` | `PCM_STATUS` | the status below | clears the underrun flag, and with bit 31 set resets the player |
 
 The status:
 
@@ -1033,7 +1039,7 @@ The status:
 - **An underrun.** When a sample is due and the FIFO is empty, the player plays 0 and sets the underrun flag. The flag stays set until a write of `PCM_STATUS`, so that a program can tell that it fell behind. A program fills the FIFO before it sets the rate, and clears the flag after.
 - **A read has no side effect.**
 - **Time.** The FPGA implementation adds the rate to an accumulator in each cycle, and plays a sample each time the sum reaches its clock frequency in hertz, which it subtracts. With `--step-time`, the emulator adds the rate for each step, one microsecond, and plays a sample each time the sum reaches 1000000. Without it, the emulator plays the samples of the host's time. A skip, a write to a full FIFO, a hold, a pause, and a halt are as for the synthesizer (§12.3): the player always runs.
-- **A reset and a start.** A reset of the system, and a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), empty the FIFO, set the rate to 0, clear the underrun flag, and the accumulator.
+- **A reset.** A reset of the system, a start over the debug link ([DEBUG.md §6](DEBUG.md#6-the-debug-registers)), and a write of `PCM_STATUS` with bit 31 set, by a program or over the debug link, empty the FIFO, set the rate to 0, clear the underrun flag, and the accumulator. The other bits of the write are ignored. Bit 31 of the status reads 0, so a program that writes back the status it read only clears the flag. A write of `PCM_STATUS` never waits, and a write of `PCM_DATA` right after it goes into the empty FIFO. A program that skips to another sound resets the player, fills the FIFO, and sets the rate again.
 - **The samples** come out of the FPGA implementation with a strobe, at the player's rate, an underrun's 0 included. They are not mixed with the synthesizer's: the mixer, and the conversion to the rate of an output, are the system's (§12.3). The emulator's window plays both.
 - **Finding the player.** A program reads `OPM_STATUS` first, whose bits 31..16 read `0x2151` only where the sound is (§12.1). Then the player is there if `PCM_STATUS` does not read 0.
 

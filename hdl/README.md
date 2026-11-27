@@ -804,7 +804,13 @@ until a sample takes a write from the FIFO, up to one sample's time,
 1788 cycles at 100 MHz. A pause and a step of the debug link wait that
 long. Its reset is that of a start of the processor, as for the FPU, so
 that a start over the debug link empties the FIFO and silences the
-sound (DEVICES.md §12.3).
+sound (DEVICES.md §12.3). A write of `OPM_STATUS` with bit 31 set does
+the same: it empties the FIFO at the end of the cycle that accepts it,
+so that a write of `OPM_WRITE` in the next cycle goes into the empty
+FIFO, and resets the sample clock and the engine at the end of the next
+cycle. A sample that the engine computes then is not given. The FIFO is
+distributed RAM, which its attribute `ram_style` asks for: synthesis
+would take a block RAM for it otherwise.
 
 `opm_engine` computes the samples, one step at a time, in the order of
 the model, `emulator/test/opm_model.py`, so that it gives its samples
@@ -825,10 +831,10 @@ which `emulator/test/opm_tables.py --vhdl` writes from the model's, and
 `make test` checks that it is current (`make opmcheck`).
 
 `make timing UNIT=opm` places the sound alone, out of context
-([Timing](#timing)). On the MEGA65 with the default flow, on 2026-11-26,
-it leaves +2.271 ns on its own paths, +6.599 ns at its inputs, and
-+7.958 ns at its outputs. It takes 1453 LUTs, 172 of them distributed
-RAM, 773 registers, 3 block RAMs of 18 Kb, and 1 DSP: the ROMs of the
+([Timing](#timing)). On the MEGA65 with the default flow, on 2026-11-27,
+it leaves +1.939 ns on its own paths, +5.798 ns at its inputs, and
++7.958 ns at its outputs. It takes 1451 LUTs, 172 of them distributed
+RAM, 774 registers, 3 block RAMs of 18 Kb, and 1 DSP: the ROMs of the
 sine, of the exponential, and of the phase steps, and the multiplier of
 the phase step.
 
@@ -857,12 +863,15 @@ sample's time, 100000 cycles at 100 MHz and 1000 Hz. A pause and a step
 of the debug link wait that long, and so must a watchdog of the system:
 it is the longest hold of any device, 16 times the FPU's longest
 command. Its reset is that of a start of the
-processor, as for the sound.
+processor, as for the sound. A write of `PCM_STATUS` with bit 31 set
+resets it in the same way, at the end of the cycle that accepts it, and
+is acknowledged in the next: a sample due in that cycle is not played,
+and a write of `PCM_DATA` in the next cycle goes into the empty FIFO.
 
 `make timing UNIT=pcm` places it alone, out of context ([Timing](#timing)).
-On the MEGA65 with the default flow, on 2026-11-26, it leaves +3.701 ns
-on its own paths, +5.868 ns at its inputs, and +5.185 ns at its outputs.
-It takes 183 LUTs, 137 registers, and 4 block RAMs of 36 Kb.
+On the MEGA65 with the default flow, on 2026-11-27, it leaves +4.133 ns
+on its own paths, +5.399 ns at its inputs, and +5.138 ns at its outputs.
+It takes 184 LUTs, 137 registers, and 4 block RAMs of 36 Kb.
 
 `tb_pcm` checks it (What the tests check).
 
@@ -1119,10 +1128,17 @@ passes its wrap in the 16 bits of the RTL, and its low bits differ from
 those of a reset: without the generic, 10923 samples differ.
 `run/opm/wrong` replays the vectors of `start` with the last sample
 changed, and must fail. It also checks the status after a reset, that
-the other words read 0, and that a write of the status does nothing,
-and the rate of the samples: from the first to the last, each takes
-64 · `G_CLK_HZ` / 3579545 cycles, and the sum may be off by 430
-cycles, a little more than the 422 of one sample in the engine. `run/opm/high` runs 2000 samples at
+the other words read 0, and that a write of the status with bit 31
+clear does nothing, and the rate of the samples: from the first to the
+last, each takes 64 · `G_CLK_HZ` / 3579545 cycles, and the sum may be
+off by 430 cycles, a little more than the 422 of one sample in the
+engine. A log of 500 samples or more has two resets by a program
+(DEVICES.md §12.3), each followed by 32 writes of the attack rates and 8
+key ons, the first of them in the cycle after the reset, which must go
+into the emptied FIFO. `tb_opm` writes the first reset between two
+samples, and the second once the engine has computed 100 cycles of the
+next sample, which the reset drops. The rate is checked from each
+reset to the next, as a reset starts the sample clock anew. `run/opm/high` runs 2000 samples at
 268 MHz, the most that `G_CLK_HZ` may be, with a sample every 4792
 cycles, where the sums of the sample clock need all 34 bits of its
 accumulator. `run/opm/bare` runs 2000 samples of a log whose set-up,
@@ -1138,7 +1154,12 @@ status, the rate, and the other words after a reset, the limits of the
 rate, that the rate 0 plays nothing, the order of the samples and their
 distance, the 0s of an underrun and its flag, a write to the full FIFO
 dropped while stopped and held for up to a sample's time while playing,
-4096 samples played in order behind it, and a reset.
+4096 samples played in order behind it, and a reset. A write of the
+status that a read returned, with an odd count, must clear the flag
+alone. A reset by a program with the FIFO full and the rate set must
+empty the FIFO, set the rate to 0, and play nothing, and a write of
+`PCM_DATA` in the cycle after it must go into the empty FIFO and play
+first once the rate is set again.
 
 `tb_perf` starts the counters just below a wrap of their low words. It
 checks that the cycle counter counts every cycle with `run_i` high and

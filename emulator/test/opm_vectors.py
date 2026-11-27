@@ -9,8 +9,14 @@ them on and off, and changes registers, the LFO's and the noise's
 included, while they sound. With --bare, the set-up writes only the
 attack rates, which are 0 after a reset, and keys on every operator, so
 that the registers that the log does not write sound with their values
-of a reset. opm_ymfm.py checks the model against ymfm
-with such logs, and the emulator and the RTL replay the vectors.
+of a reset. In a log of 500 samples or more, two resets by a program
+(DEVICES.md §12.3) land in it, the first between 60% and 70% of its
+samples, the second between 85% and 95%, each followed by the set-up of
+--bare, the first write of it before the same sample as the reset. The
+first sample of a reset is drawn at random, and no write lands between
+it and the write before.
+opm_ymfm.py checks the model against ymfm with such logs, and the
+emulator and the RTL replay the vectors.
 
 A vector file is the log, then one line for each sample: its number,
 and the left and the right sample, in decimal. --env-start starts the
@@ -59,17 +65,23 @@ def random_log(seed: int, count: int, bare: bool = False) -> List[Write]:
     rng = random.Random(seed)
     writes: List[Write] = []
     n = 0
+    resets = [rng.randrange(lo * count // 100, hi * count // 100) for lo, hi in ((60, 70), (85, 95))]
+    if count < 500:
+        resets = []
 
     def put(reg: int, data: int) -> None:
         nonlocal n
         writes.append((n, reg, data))
         n += 1
 
-    if bare:
+    def put_bare() -> None:
         for slot in range(32):
             put(0x80 + slot, _reg_value(rng, 0x80))
         for ch in range(8):
             put(0x08, 0x78 | ch)
+
+    if bare:
+        put_bare()
     else:
         for reg in GLOBAL_REGS:
             put(reg, _reg_value(rng, reg))
@@ -81,6 +93,12 @@ def random_log(seed: int, count: int, bare: bool = False) -> List[Write]:
                     put(reg + 8 * op + ch, _reg_value(rng, reg))
     while n < count:
         n += rng.choice((0, 1, 2, 5, 20, 100, 400))
+        if resets and n >= resets[0]:
+            n = resets[0]
+            writes.append((n, opm_model.RESET, 0))
+            put_bare()
+            resets.pop(0)
+            continue
         r = rng.random()
         if r < 0.35:
             put(0x08, rng.randrange(128))
@@ -99,7 +117,7 @@ def random_log(seed: int, count: int, bare: bool = False) -> List[Write]:
 
 
 def write_log(writes: List[Write], count: int) -> str:
-    lines = [f"{n} {reg:02x} {data:02x}" for n, reg, data in writes]
+    lines = [f"{n} reset" if reg == opm_model.RESET else f"{n} {reg:02x} {data:02x}" for n, reg, data in writes]
     lines.append(f"end {count}")
     return "\n".join(lines) + "\n"
 
@@ -118,8 +136,7 @@ def main() -> int:
     writes = random_log(a.seed, a.count, a.bare)
     text = write_log(writes, a.count)
     if not a.log:
-        opm = opm_model.Opm()
-        opm.env_counter = a.env_start
+        opm = opm_model.Opm(a.env_start)
         samples = opm_model.run(writes, a.count, opm)
         text += "".join(f"{n} {left} {right}\n" for n, (left, right) in enumerate(samples))
     if a.output == "-":

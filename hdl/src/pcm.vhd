@@ -21,6 +21,12 @@
 -- cycle after it goes in. So a full FIFO holds off the acknowledge, as
 -- §12.7 asks. With the rate 0, a write to a full FIFO is dropped.
 --
+-- A write of PCM_STATUS clears the underrun flag, and with bit 31 set
+-- resets the player, as rst_i does, at the end of the cycle that accepts
+-- it: a sample due then is not played, and a write in the next cycle
+-- goes into the empty FIFO. A read of the status never has bit 31 set,
+-- so a program that writes back what it read never resets the player.
+--
 -- INTERFACE CONTRACTS -- these are requirements on the environment:
 -- a) The master holds STB and the request while STALL is high.
 -- b) STB is high only for requests to the player: the bus decoder
@@ -30,8 +36,8 @@
 --    src/opm.vhd, 0 and 1.
 --
 -- RESET
--- Reset empties the FIFO, sets the rate to 0, and clears the underrun
--- flag and the accumulator.
+-- Reset, by rst_i or by a write of the status, empties the FIFO, sets
+-- the rate to 0, and clears the underrun flag and the accumulator.
 
 library ieee;
    use ieee.std_logic_1164.all;
@@ -93,6 +99,11 @@ architecture synthesis of pcm is
    signal push_data : std_logic_vector(31 downto 0);
    signal pop       : std_logic;
 
+   -- A write of the status with bit 31 set, and the reset of all but the
+   -- acknowledge.
+   signal clear : std_logic;
+   signal rst   : std_logic;
+
 begin
 
    -----------------------------------------------------------------------------
@@ -111,7 +122,7 @@ begin
          end if;
          acc_r <= sum_v;
 
-         if rst_i = '1' then
+         if rst = '1' then
             acc_r <= (others => '0');
             due_r <= '0';
          end if;
@@ -150,7 +161,7 @@ begin
          play_r <= due_r;
          zero_r <= not pop;
 
-         if rst_i = '1' then
+         if rst = '1' then
             play_r <= '0';
          end if;
       end if;
@@ -170,6 +181,10 @@ begin
    accept     <= wb_cyc_i and wb_stb_i and not hold_r;
    wb_stall_o <= hold_r;
    full       <= count_r(12);
+   clear      <= '1' when accept = '1' and wb_we_i = '1' and wb_addr_i = "100" and
+                          wb_data_i(31) = '1' else
+                 '0';
+   rst        <= rst_i or clear;
 
    -- A write goes in while the FIFO was not full in the cycle before.
    push      <= '1' when full = '0' and (hold_r = '1' or
@@ -233,13 +248,15 @@ begin
             end if;
          end if;
 
-         if rst_i = '1' then
+         if rst = '1' then
             head_r     <= (others => '0');
             count_r    <= (others => '0');
             rate_r     <= (others => '0');
             underrun_r <= '0';
             hold_r     <= '0';
-            wb_ack_o   <= '0';
+         end if;
+         if rst_i = '1' then
+            wb_ack_o <= '0';
          end if;
       end if;
    end process p_port;

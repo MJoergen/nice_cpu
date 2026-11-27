@@ -205,6 +205,31 @@ def test_writes() -> None:
         check("key on", on == [slot], f"bit {bit}: slots {on}")
 
 
+def test_log_reset() -> None:
+    """A reset of a log, "N reset", takes effect before sample N and
+    before its write: the samples from N on are those of a new model
+    given the writes from N on, counted from N."""
+    note = ["20 c7", "28 4a", "58 01", "98 1f", "f8 0f", "08 78", "40 33", "18 c4", "19 ff", "0f 9f"]
+    before = [f"{i} {w}" for i, w in enumerate(note)]
+    after = ["300 reset", "300 98 1f", "301 f8 0f", "302 08 40"]
+    writes, count = M.read_log(before + after + ["end 600"])
+    check("log", writes[len(note)] == (300, M.RESET, 0) and count == 600, f"{writes[len(note)]} {count}")
+    got = M.run(writes, count)
+    fresh = M.run([(n - 300, r, d) for n, r, d in writes[len(note) + 1 :]], 300)
+    check("reset", got[300:] == fresh and any(got[:300]) and any(fresh), "the samples after the reset")
+    o = M.Opm(env_start=65521)
+    o.write(0x60, 0x12)
+    o.sample()
+    o.reset()
+    check("reset", o.env_counter == 65521 and o.regs[0x60] == 0, f"{o.env_counter} {o.regs[0x60]:#x}")
+    for bad in (["5 20 c7", "5 reset"], ["5 reset", "5 reset"], ["5 20 c7", "5 28 4a"]):
+        try:
+            M.run(M.read_log(bad + ["end 10"])[0], 10)
+            check("log", False, f"{bad} is taken")
+        except ValueError:
+            pass
+
+
 def test_dac() -> None:
     """Checked by hand: a value beyond 16 bits saturates, and one within
     keeps 9 bits below its leading sign bits, rounded toward minus
@@ -227,7 +252,8 @@ def test_dac() -> None:
 
 
 def main() -> int:
-    for t in (test_pitch, test_tone, test_rates, test_effective_rate, test_levels, test_lfo, test_writes, test_dac):
+    tests = (test_pitch, test_tone, test_rates, test_effective_rate, test_levels, test_lfo, test_writes)
+    for t in tests + (test_log_reset, test_dac):
         t()
     for f in failures:
         print("FAIL opm_model", f)
